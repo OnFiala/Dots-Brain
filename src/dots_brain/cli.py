@@ -170,12 +170,14 @@ def main() -> None:
         result = run(parser().parse_args())
         if result is not None:
             print(json.dumps(result, ensure_ascii=False))
+            if result.get("state") == "verification_failed":
+                raise SystemExit(1)
     except BrainError as exc:
         print(
             json.dumps({"state": "error", "code": exc.code, "message": str(exc)}), file=sys.stderr
         )
         raise SystemExit(1) from None
-    except (OSError, ValueError, sqlite3.Error):
+    except (OSError, ValueError, sqlite3.Error, ExceptionGroup):
         # Connection and OS errors can contain secret URLs or local paths. Keep them out
         # of machine output; diagnose credentials and permissions without dumping inputs.
         print(

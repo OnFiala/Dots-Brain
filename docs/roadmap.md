@@ -1,11 +1,12 @@
 # Roadmap
 
-## First alpha
+## First alpha — implemented
 
-- Build and test source-aware memory storage, retrieval, and deletion.
-- Expose a small MCP surface through the official SDK.
-- Provide local setup, diagnostics, and agent instructions.
-- Publish reproducible source and package builds under MIT.
+- Source-aware memory storage, full-text and local semantic retrieval, and deletion.
+- Six MCP tools, scoped loopback HTTP, stdio, and a bridge to the shared service.
+- Local setup, diagnostics, agent instructions, and reproducible MIT-licensed builds.
+
+See the capability matrix and verification evidence for the exact supported scope.
 
 ## VM and remote connection milestone
 
@@ -16,7 +17,7 @@
 
 ## Product milestone
 
-- Verify local multilingual semantic retrieval against a fixed evaluation set.
+- Extend the initial multilingual smoke test to a fixed bilingual evaluation set.
 - Add provider-specific capture adapters without changing the memory core.
 - Add tested native plugin views, onboarding, and MCP Events.
 - Verify clean installation, upgrades, export, recovery, and multi-client access.

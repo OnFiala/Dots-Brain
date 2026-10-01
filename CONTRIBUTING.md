@@ -3,6 +3,13 @@
 Use English for documentation, code comments, product text, issues, and commits.
 Small, focused changes are easier to review and maintain.
 
+Install development dependencies with `uv sync --frozen --all-extras`. Before
+committing, run `uv run ruff check src tests scripts`,
+`uv run ruff format --check src tests scripts`, `uv run pytest -q`,
+`uv run python scripts/validate_project.py`, and `uv build`. Model downloads are
+not required for the default test suite. Enable the real model smoke test only
+with an explicitly prepared artifact directory as described in the verification docs.
+
 Use Conventional Commits, such as `feat(memory): preserve source revisions` or
 `fix(auth): reject expired credentials`. Commit each coherent milestone and
 include its validation. Do not squash or rewrite already published history

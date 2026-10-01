@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.0-alpha.1 — 2026-10-01
 
 - Establish the product contract, English documentation, and MIT license.
 - Add transactional SQLite memory, provenance, explicit revisions, project-filtered
@@ -10,3 +10,14 @@
   credentials, revocation, a stdio-to-HTTP bridge, and machine-readable CLI setup.
 - Add pinned multilingual CPU embeddings with artifact verification, automatic
   background indexing, and hybrid retrieval; no paid inference API is used.
+- Add a deterministic bootstrap, an onboarding skill package, English operating
+  documentation, release validation, and GitHub CI for Python 3.11 and 3.12.
+- Verify a live HTTP process through the stdio bridge and fresh source installation.
+
+### Known limits
+
+- The HTTP service binds loopback and does not implement web OAuth or a tunnel.
+- Provider capture, automatic remote configuration, native ChatGPT UI, and MCP
+  Events are not implemented. Dot VM persistence, costs, and strong credential
+  isolation are not verified.
+- The embedding smoke test is not a Cortex comparison or a production benchmark.

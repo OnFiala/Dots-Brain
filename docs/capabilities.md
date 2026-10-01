@@ -11,7 +11,7 @@ This file describes implementation and verification, not a marketing promise.
 | Six memory MCP tools | Implemented; SDK HTTP and stdio tests pass |
 | Agent setup and diagnostics | Implemented for the local host |
 | Scoped credentials, project boundaries, expiry, revocation | Implemented; tests pass |
-| Stdio bridge to an existing HTTP instance | Implemented; end-to-end verification pending |
+| Stdio bridge to an existing HTTP instance | Implemented; subprocess-to-live-HTTP test passes |
 | Autonomous remote client registration | Planned |
 | OAuth for web MCP clients | Planned |
 | Verified public VM ingress or tunnel | Not verified |

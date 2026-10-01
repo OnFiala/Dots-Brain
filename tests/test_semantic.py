@@ -1,5 +1,6 @@
 import hashlib
 import os
+import time
 from pathlib import Path
 
 import pytest
@@ -88,3 +89,23 @@ def test_real_local_model_retrieves_english_memory_from_czech_question(tmp_path)
     model = SemanticIndex(store)
     assert model.index()["indexed"] == 3
     assert model.search("Kterému jídlu se mám vyhnout?", limit=1)[0]["event_id"] == "food"
+
+    from starlette.testclient import TestClient
+
+    from dots_brain.server import create_http_app, create_server
+    from dots_brain.service import MemoryService
+
+    store.remember(
+        content="A new decision to index in the background.",
+        source="synthetic",
+        account="test",
+        event_id="background",
+    )
+    service = MemoryService(store, model)
+    server = create_server(service, http=True)
+    with TestClient(create_http_app(server, service)):
+        deadline = time.monotonic() + 10
+        while model.status()["pending"]:
+            assert time.monotonic() < deadline, "Background indexing did not complete."
+            time.sleep(0.05)
+    assert model.status()["indexed"] == 4

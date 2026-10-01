@@ -55,6 +55,14 @@ def test_project_boundaries_apply_before_search_and_to_all_reads(store):
     assert len(list(store.export(projects=("beta",)))) == 1
 
 
+def test_explicit_revision_can_restore_earlier_content(store):
+    initial = remember(store)
+    remember(store, content="A different storage decision", expected_revision=1)
+    restored = remember(store, expected_revision=2)
+    assert restored["revision"] == 3 and restored["changed"]
+    assert store.get(initial["id"])["content"].startswith("Use SQLite")
+
+
 def test_forget_removes_revisions_search_and_prevents_reimport(store):
     record = remember(store)
     remember(store, content="Changed private content", expected_revision=1)
@@ -75,6 +83,15 @@ def test_concurrent_retries_create_one_record(store):
     assert len({r["id"] for r in records}) == 1
     assert sum(r["changed"] for r in records) == 1
     assert store.status()["revisions"] == 1
+
+
+def test_concurrent_setup_converges_on_one_schema(tmp_path):
+    store = Store(tmp_path / "new-memory")
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        list(executor.map(lambda _: Store(store.directory).initialize(), range(8)))
+    assert store.status()["memories"] == 0
+    remember(store)
+    assert store.status()["memories"] == 1
 
 
 def test_search_handles_czech_and_query_syntax_without_sql_execution(store):

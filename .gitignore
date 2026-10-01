@@ -21,3 +21,4 @@ build/
 *.pem
 credentials.json
 connection.json
+*.ses

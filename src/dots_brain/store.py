@@ -77,13 +77,16 @@ class Store:
         os.close(descriptor)
         self.path.chmod(0o600)
         with self.connection() as db:
+            db.execute("PRAGMA journal_mode=WAL")
+            db.execute("BEGIN IMMEDIATE")
             version = db.execute("PRAGMA user_version").fetchone()[0]
             if version not in (0, SCHEMA_VERSION):
                 raise InputError("Unsupported database version; use a compatible Brain release.")
-            db.execute("PRAGMA journal_mode=WAL")
             if version == 0:
                 # The schema and version are committed together; failure leaves no partial schema.
-                db.executescript("BEGIN IMMEDIATE;\n" + SCHEMA + "\nCOMMIT;")
+                for statement in SCHEMA.split(";"):
+                    if statement.strip():
+                        db.execute(statement)
 
     @contextmanager
     def connection(self, *, write: bool = False) -> Iterator[sqlite3.Connection]:
@@ -173,7 +176,10 @@ class Store:
                     "SELECT revision FROM revisions WHERE memory_id=? AND digest=?",
                     (memory_id, digest),
                 ).fetchone()
-                if replay:
+                if replay and (
+                    expected_revision != existing["revision"]
+                    or replay["revision"] == existing["revision"]
+                ):
                     return {
                         "id": memory_id,
                         "revision": existing["revision"],
