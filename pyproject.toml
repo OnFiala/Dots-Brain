@@ -21,6 +21,9 @@ dependencies = ["mcp>=1.26,<2"]
 [project.optional-dependencies]
 semantic = ["fastembed>=0.7,<1"]
 
+[project.scripts]
+dots-brain = "dots_brain.cli:main"
+
 [project.urls]
 Homepage = "https://github.com/OnFiala/dots-brain"
 Issues = "https://github.com/OnFiala/dots-brain/issues"

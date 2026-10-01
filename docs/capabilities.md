@@ -6,10 +6,12 @@ This file describes implementation and verification, not a marketing promise.
 | --- | --- |
 | Source-aware local memory store | Implemented; local tests pass |
 | Full-text retrieval | Implemented; local tests pass |
-| Bounded context | In development |
-| Local semantic retrieval | Planned |
-| Six memory MCP tools | In development |
-| Agent setup and diagnostics | In development |
+| Bounded context | Implemented; character budget tested |
+| Local semantic retrieval | Implemented; synthetic Czech-to-English model test passes |
+| Six memory MCP tools | Implemented; SDK HTTP and stdio tests pass |
+| Agent setup and diagnostics | Implemented for the local host |
+| Scoped credentials, project boundaries, expiry, revocation | Implemented; tests pass |
+| Stdio bridge to an existing HTTP instance | Implemented; end-to-end verification pending |
 | Autonomous remote client registration | Planned |
 | OAuth for web MCP clients | Planned |
 | Verified public VM ingress or tunnel | Not verified |
