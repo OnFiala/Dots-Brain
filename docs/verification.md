@@ -4,6 +4,17 @@ Environment: managed Linux development workspace, Python 3.12.14, SQLite through
 the Python standard library. This workspace has not been identified as the user's
 Dot VM. Dependencies are recorded in `uv.lock`.
 
+The alpha passed 22 tests on Python 3.12.14, including the explicitly prepared
+model test. The default suite also passed on Python 3.11.16: 21 tests passed and
+the model test was intentionally skipped. A fresh writable source copy completed
+the packaged bootstrap successfully. The plugin manifest passed the published
+Agent Plugins 1.0 JSON schema. Lint, formatting, local documentation links, and
+wheel/source-distribution builds were checked locally. GitHub CI execution is a
+separate check after the commits are pushed.
+
+The opt-in model test currently emits one upstream Starlette test-client
+deprecation warning; the assertions pass. It does not affect the server transport.
+
 ## Implemented checks
 
 - Transactional persistence, revisions, concurrent retry deduplication, and restart.

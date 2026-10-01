@@ -1,5 +1,6 @@
 """Validate release identity and local documentation links without network access."""
 
+import ast
 import json
 import re
 import tomllib
@@ -14,6 +15,17 @@ def main():
     project = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]
     plugin = json.loads((ROOT / "plugin.json").read_text())
     assert Version(project["version"]) == Version(plugin["version"]), "Version mismatch"
+    module = ast.parse((ROOT / "src/dots_brain/__init__.py").read_text())
+    runtime_version = next(
+        ast.literal_eval(statement.value)
+        for statement in module.body
+        if isinstance(statement, ast.Assign)
+        and any(
+            isinstance(target, ast.Name) and target.id == "__version__"
+            for target in statement.targets
+        )
+    )
+    assert runtime_version == project["version"], "Runtime version mismatch"
     assert plugin["name"] == project["name"] == "dots-brain"
     interface = plugin["extensions"]["com.openai"]["interface"]
     assert len(interface["shortDescription"]) <= 30
