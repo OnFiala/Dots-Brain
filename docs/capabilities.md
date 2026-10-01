@@ -4,8 +4,9 @@ This file describes implementation and verification, not a marketing promise.
 
 | Capability | State |
 | --- | --- |
-| Source-aware local memory store | In development |
-| Full-text retrieval and bounded context | In development |
+| Source-aware local memory store | Implemented; local tests pass |
+| Full-text retrieval | Implemented; local tests pass |
+| Bounded context | In development |
 | Local semantic retrieval | Planned |
 | Six memory MCP tools | In development |
 | Agent setup and diagnostics | In development |
