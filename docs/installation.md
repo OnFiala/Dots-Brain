@@ -15,7 +15,10 @@ python scripts/bootstrap.py --data-dir /absolute/path/to/personal-memory --seman
 
 Replace the data directory with a real private path on the memory host. Do not
 place it inside a shared repository. The script installs dependencies and prepares
-the database and model. It does not configure a background supervisor or tunnel.
+the database and model, starts the local background service, and verifies MCP
+readiness. Add `--connect claude-code`, `--connect cursor`, or `--connect codex`
+for automatic client configuration. See [autonomous setup](autonomy.md).
+It does not configure a persistent supervisor or tunnel.
 
 ## Basic commands
 
@@ -35,10 +38,12 @@ traffic, not a human-readable log. Exit the client to stop its stdio process.
 For multiple clients on the same host, run one service:
 
 ```sh
-dots-brain --data-dir /absolute/path/to/personal-memory serve --transport http
+dots-brain --data-dir /absolute/path/to/personal-memory up
 ```
 
-The listener is `http://127.0.0.1:8765/mcp` and requires a credential on every request.
+The default listener is `http://127.0.0.1:8765/mcp`; startup selects an available
+port if the default is occupied on first installation. The JSON result contains
+the actual endpoint. Every request requires a credential.
 It is loopback-only and is not a public HTTPS deployment. Keep it behind the
 current local boundary; public ingress and OAuth are not production-ready.
 
@@ -72,8 +77,9 @@ dots-brain bridge --credential-file /absolute/private/path/client.json
 
 Configure the actual executable and arguments through that client's supported
 installation interface. The path must exist on the client machine. This alpha
-does not securely transfer credentials between machines or automatically modify
-Claude, Cursor, or web account configuration.
+does not securely transfer credentials between machines or modify web account
+configuration. `connect` automates supported client configuration on the current
+machine and verifies the generated bridge before saving it.
 
 The credential file is intentionally private but readable by its OS owner. It is
 not an isolated vault. Do not open it in chat, copy it into a plugin, or commit it.

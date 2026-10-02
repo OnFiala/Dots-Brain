@@ -13,6 +13,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data-dir", type=Path, required=True)
     parser.add_argument("--semantic", action="store_true")
+    parser.add_argument("--connect", metavar="PROVIDER")
+    parser.add_argument("--config", type=Path)
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     uv = shutil.which("uv")
@@ -30,14 +32,24 @@ def main():
     setup = subprocess.run(base + ["setup"], check=True, capture_output=True, text=True)
     if args.semantic:
         subprocess.run(base + ["model", "prepare"], check=True, stdout=sys.stderr)
+    start = base + ["up"] + (["--semantic"] if args.semantic else [])
+    service = subprocess.run(start, check=True, capture_output=True, text=True)
+    connected = None
+    if args.connect:
+        command = base + ["connect", args.connect]
+        if args.config:
+            command += ["--config", str(args.config)]
+        result = subprocess.run(command, check=True, capture_output=True, text=True)
+        connected = json.loads(result.stdout)
     print(
         json.dumps(
             {
-                "state": "local_ready",
+                "state": "configured_verified_bridge" if connected else "verified_local_service",
                 "setup": json.loads(setup.stdout),
                 "python": str(executable),
                 "semantic_model_prepared": args.semantic,
-                "service_running": False,
+                "service": json.loads(service.stdout),
+                "connection": connected,
                 "remote_connection": "not_verified",
             }
         )

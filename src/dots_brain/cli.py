@@ -27,6 +27,19 @@ def parser() -> argparse.ArgumentParser:
     commands = root.add_subparsers(dest="command", required=True)
     commands.add_parser("setup", help="Initialize or reuse the local memory database.")
     commands.add_parser(
+        "preflight", help="Inspect host capabilities without changing configuration."
+    )
+    start = commands.add_parser("up", help="Start or reuse and verify the local HTTP service.")
+    start.add_argument("--port", type=int)
+    start.add_argument("--semantic", action="store_true")
+    commands.add_parser("down", help="Stop the managed local service and preserve its data.")
+    commands.add_parser("providers", help="List implemented client adapters and their limits.")
+    connect = commands.add_parser("connect", help="Configure and verify a supported MCP client.")
+    connect.add_argument("provider")
+    connect.add_argument("--config", type=Path)
+    connect.add_argument("--credential-file", type=Path)
+    connect.add_argument("--project", action="append")
+    commands.add_parser(
         "doctor", help="Report local capabilities without assuming remote readiness."
     )
     serve = commands.add_parser("serve", help="Run on the memory host; HTTP binds loopback only.")
@@ -41,6 +54,11 @@ def parser() -> argparse.ArgumentParser:
     for name in ("bridge", "verify"):
         command = commands.add_parser(name, help="Use an existing credential file; never print it.")
         command.add_argument("--credential-file", required=True, type=Path)
+        if name == "bridge":
+            command.add_argument("--local-data-dir", type=Path)
+        else:
+            command.add_argument("--write", action="store_true")
+            command.add_argument("--project", default="default")
     client = commands.add_parser("client", help="Manage scoped credentials on the memory host.")
     actions = client.add_subparsers(dest="client_action", required=True)
     create = actions.add_parser("create")
@@ -60,6 +78,30 @@ def parser() -> argparse.ArgumentParser:
 
 def run(args) -> dict | None:
     store = Store(args.data_dir)
+    if args.command in ("connect", "providers"):
+        from .clients import connect_client, providers
+
+        return (
+            providers()
+            if args.command == "providers"
+            else connect_client(
+                store,
+                provider=args.provider,
+                config=args.config,
+                connection=args.credential_file,
+                projects=args.project,
+            )
+        )
+    if args.command in ("up", "down", "preflight"):
+        from .runtime import down, preflight, up
+
+        if args.command == "preflight":
+            return preflight()
+        return (
+            up(store, port=args.port, semantic=args.semantic)
+            if args.command == "up"
+            else down(store)
+        )
     if args.command == "setup":
         store.initialize()
         return {
@@ -89,8 +131,14 @@ def run(args) -> dict | None:
     if args.command in ("bridge", "verify"):
         from .bridge import run_bridge, verify_connection
 
+        if args.command == "bridge":
+            if args.local_data_dir is not None:
+                from .runtime import up
+
+                up(Store(args.local_data_dir))
+            return asyncio.run(run_bridge(args.credential_file))
         return asyncio.run(
-            (run_bridge if args.command == "bridge" else verify_connection)(args.credential_file)
+            verify_connection(args.credential_file, write=args.write, project=args.project)
         )
     if args.command == "serve":
         from .server import create_http_app, create_server
@@ -170,7 +218,7 @@ def main() -> None:
         result = run(parser().parse_args())
         if result is not None:
             print(json.dumps(result, ensure_ascii=False))
-            if result.get("state") == "verification_failed":
+            if result.get("state") in {"verification_failed", "blocked"}:
                 raise SystemExit(1)
     except BrainError as exc:
         print(

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Add repeatable Linux background startup, crash recovery on local client reconnect,
+  generated-bridge verification, and private credential reuse.
+- Add Claude Code, Cursor, Codex, and generic MCP configuration adapters with
+  preserved settings and explicit application-activation status.
+- Extend the bootstrap to start the service and optionally connect a client.
 - Add a manually triggered GitHub release workflow that verifies an existing
   annotated tag, builds on both supported Python versions, and uploads checked
   packages to a draft without overwriting published assets.

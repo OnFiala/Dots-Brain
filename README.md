@@ -4,7 +4,7 @@
 
 Dots Brain is an open-source memory service for an OpenAI Dot and other MCP-compatible assistants. It stores useful context with its sources, retrieves relevant memories, and lets connected assistants continue each other's work. The target deployment is your Dot's VM, with local storage and local embeddings and no paid model API.
 
-**Status: working local alpha (`0.1.0-alpha.2`).** Memory storage, local search, scoped access, and MCP transports are implemented and tested. Automatic provider setup, web OAuth, conversation capture, and native ChatGPT views are still planned. Deployment on a Dot VM is not yet verified. See the [capability matrix](docs/capabilities.md).
+**Status: local automation alpha in development.** An agent can start the shared service, configure supported clients, and verify their bridge without copying tokens. Web OAuth, public ingress, conversation capture, and native ChatGPT views are still planned. Deployment on a Dot VM is not yet verified. See the [capability matrix](docs/capabilities.md).
 
 ## What works today
 
@@ -12,10 +12,11 @@ Dots Brain is an open-source memory service for an OpenAI Dot and other MCP-comp
 - Searchable memories with source references, revisions, and explicit deletion.
 - Local text and semantic search without a paid embedding API.
 - Local setup, diagnostics, and client verification with machine-readable status.
+- Repeatable background startup and client adapters for Claude Code, Cursor, Codex, and MCP JSON.
 - Six memory tools through stdio or authenticated loopback HTTP.
 - A stdio bridge that connects to the same HTTP service without another database.
 
-Provider capture adapters, autonomous remote setup, native ChatGPT views, and
+Provider capture adapters, autonomous web setup, native ChatGPT views, and
 event-driven automations are on the [roadmap](docs/roadmap.md).
 
 An MCP connection gives an assistant access to memory. It does **not** automatically grant access to that assistant's conversations or account history.
@@ -47,6 +48,17 @@ contain a universal MCP endpoint or register a public ChatGPT plugin automatical
 
 Ask: "Set up Dots Brain from this checkout on my memory host. Use the setup skill
 and report which capabilities you actually verified."
+
+On a Linux memory host, the agent can install, start, and connect a local client:
+
+```sh
+python scripts/bootstrap.py --data-dir /absolute/private/memory --connect claude-code
+```
+
+Use `cursor` or `codex` for another supported client on that machine. The agent
+chooses the actual private directory; the user does not need to edit JSON or copy
+a token. See the [autonomous setup contract](docs/autonomy.md) for remote devices,
+resuming installation, and the exact remaining platform dependencies.
 
 ## Development
 
