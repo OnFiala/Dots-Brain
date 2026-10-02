@@ -4,7 +4,32 @@ Environment: managed Linux development workspace, Python 3.12.14, SQLite through
 the Python standard library. This workspace has not been identified as the user's
 Dot VM. Dependencies are recorded in `uv.lock`.
 
-## Local automation alpha
+## Lifecycle alpha: 0.2.0-alpha.2
+
+Python 3.12.14 and 3.11.16 each passed 47 tests with the real-model test skipped.
+This release changes lifecycle handling, not embedding inference. The previous
+model and stress measurements below are historical evidence, not new runs.
+
+The lifecycle checks cover preview without filesystem writes, repeated removal,
+unchanged-entry removal in all four adapters, preservation of newer settings and
+TOML comments, partial results for modified/malformed/symlink configurations,
+revocation, independent credentials for profiles, legacy custom paths, remote
+credential retention, no extra client database, retained memories and deletion
+suppression, and rejected automatic restart until explicit reinstall. A running
+owner stdio server also rejects memory calls after disabling.
+
+A fresh disposable source copy completed bootstrap and real Claude Code 2.1.287
+reported `Connected` in an isolated profile. The synthetic lifecycle then removed
+the integration, verified `disabled`, ran bootstrap again against the same store,
+verified read/write and the retained memory, and uninstalled twice. Package removal
+with `uv pip uninstall` and deletion of that disposable checkout left the separate
+test database intact. No user installation or personal memory was removed.
+
+Lint, formatting, documentation links, and wheel/source builds passed. Repository
+CI repeats the supported Python matrix. This does not certify external supervisors,
+old unmanaged binaries, arbitrary unrecorded legacy configurations, or Botter's VM.
+
+## Local automation alpha: 0.2.0-alpha.1
 
 The 0.2.0 alpha passed 34 tests on Python 3.12.14, including the explicitly
 prepared real model. The tests cover generated bridge startup and write/read

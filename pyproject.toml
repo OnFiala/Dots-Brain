@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "dots-brain"
-version = "0.2.0a1"
+version = "0.2.0a2"
 description = "One source-aware memory for your AI tools, hosted on your own machine."
 readme = "README.md"
 requires-python = ">=3.11"

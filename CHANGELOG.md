@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.2.0-alpha.2 — 2026-10-02
+
+- Add repeatable `uninstall` with a read-only preview, host credential revocation,
+  managed-process stopping, and removal of unchanged registered client entries.
+- Preserve memories, revisions, deletion suppression, models, unrelated client
+  settings, and modified or unreadable configurations; report incomplete cleanup.
+- Block automatic restart after removal until explicit `up --resume` or reinstall.
+- Add `disconnect`, an integration inventory, and separate credentials for newly
+  configured profiles. Recognize unchanged legacy entries and explicit custom paths.
+- Preserve user-supplied remote credentials and report required issuer revocation.
+- Document software removal as a separate step; add uninstall, upgrade, everyday
+  usage, troubleshooting, and documentation-index guides in English.
+- Extend the setup skill to cover removal and upgrades, and validate links across
+  root documentation, nested guides, and skills.
+- Verify 47 tests on Python 3.11 and 3.12 with one unchanged opt-in model test
+  skipped; verify clean bootstrap, real Claude Code health, removal, reinstall,
+  data retention, and removal of a disposable test checkout and package.
+
 ## 0.2.0-alpha.1 — 2026-10-02
 
 - Add repeatable Linux background startup, crash recovery on local client reconnect,
