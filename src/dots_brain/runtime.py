@@ -114,15 +114,25 @@ def state_path(store: Store) -> Path:
     return store.directory / "service.json"
 
 
-def up(store: Store, *, port: int | None = None, semantic: bool = False) -> dict:
+def ensure_enabled(store: Store) -> None:
+    if (store.directory / "disabled.json").exists():
+        raise InputError("This installation is disabled. Reinstall explicitly with up --resume.")
+
+
+def up(
+    store: Store, *, port: int | None = None, semantic: bool = False, resume: bool = False
+) -> dict:
     if sys.platform != "linux":
         raise InputError(
             "Background startup currently requires Linux; use supervised serve elsewhere."
         )
     if port is not None and not 0 <= port <= 65535:
         raise InputError("Port must be between 0 and 65535; zero selects an available port.")
-    store.initialize()
     with locked(store.directory / "service.lock"):
+        if resume:
+            (store.directory / "disabled.json").unlink(missing_ok=True)
+        ensure_enabled(store)
+        store.initialize()
         state = read_json(state_path(store)) if state_path(store).exists() else {}
         if active(state) and state.get("version") != __version__:
             stop_process(state)

@@ -7,6 +7,7 @@ import sys
 import time
 import tomllib
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
 import pytest
 from mcp import ClientSession, StdioServerParameters
@@ -79,7 +80,8 @@ def test_connect_verifies_write_keeps_tokens_private_and_bridge_restarts_service
         assert not again["configuration_changed"]
         assert again["client_id"] == result["client_id"]
         assert store.status()["memories"] == 0  # Synthetic probe was removed.
-        token = json.loads((store.directory / "connections/cursor.json").read_text())["token"]
+        entry = json.loads(config.read_text())["mcpServers"]["dots-brain"]
+        token = json.loads(Path(entry["args"][4]).read_text())["token"]
         assert token not in config.read_text() + json.dumps(result)
         down(store)
         entry = json.loads(config.read_text())["mcpServers"]["dots-brain"]

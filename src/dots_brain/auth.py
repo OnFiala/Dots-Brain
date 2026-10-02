@@ -101,6 +101,8 @@ def issue_client(
 
 
 def authenticate(store: Store, token: str) -> Policy | None:
+    if (store.directory / "disabled.json").exists():
+        return None
     if len(token) > 1024:
         return None
     with store.connection() as db:

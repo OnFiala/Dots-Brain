@@ -13,6 +13,8 @@ This file describes implementation and verification, not a marketing promise.
 | Repeatable background startup and recovery on local client reconnect | Implemented; process and crash-recovery tests pass |
 | Claude Code, Cursor, Codex, and generic MCP configuration adapters | Implemented; actual bridge calls tested; Claude Code connection checked |
 | Scoped credentials, project boundaries, expiry, revocation | Implemented; tests pass |
+| Client disconnection and whole-instance disabling with data retention | Implemented; lifecycle, credential isolation between profiles, and configuration preservation tested |
+| Automatic removal of package/source files or personal data | Not implemented; installation-specific program removal is documented |
 | Stdio bridge to an existing HTTP instance | Implemented; subprocess-to-live-HTTP test passes |
 | Autonomous remote client registration | Planned |
 | OAuth for web MCP clients | Planned |
@@ -20,6 +22,7 @@ This file describes implementation and verification, not a marketing promise.
 | Strong credential isolation | Not verified |
 | Storage/HTTP load and local embedding load | Synthetic stress runs passed; see [evidence](stress-tests.md) |
 | Continuous conversation capture | Planned per provider |
+| Automated backup, restore, or database migration rollback | Planned |
 | Native ChatGPT views and MCP Events | Planned |
 | Dot VM persistence and cost guarantees | Not verified |
 

@@ -20,6 +20,11 @@ readiness. Add `--connect claude-code`, `--connect cursor`, or `--connect codex`
 for automatic client configuration. See [autonomous setup](autonomy.md).
 It does not configure a persistent supervisor or tunnel.
 
+For later lifecycle operations, see [upgrading](upgrading.md),
+[uninstall and reinstall](uninstall.md), and [troubleshooting](troubleshooting.md).
+The bootstrap is an explicit install/reinstall action and re-enables an instance
+previously disabled by `uninstall`. Use `doctor` for inspection without resuming it.
+
 ## Basic commands
 
 The following commands assume the installed executable is on PATH. In a source
@@ -116,5 +121,7 @@ copies held by other assistants, old exports, or host backups. SQLite secure del
 is enabled, but physical media erasure is not guaranteed.
 
 Stop the service before taking a filesystem-level database backup and preserve
-SQLite's journal state. A supported online backup/restore command and deletion-aware
+SQLite's journal state. Close connected clients too, because a bridge can restart
+a stopped service; also stop separately supervised processes. A supported online
+backup/restore command and deletion-aware
 restore policy are future work. A backup on the same disk cannot survive loss of that disk.

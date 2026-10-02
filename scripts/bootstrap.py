@@ -32,7 +32,7 @@ def main():
     setup = subprocess.run(base + ["setup"], check=True, capture_output=True, text=True)
     if args.semantic:
         subprocess.run(base + ["model", "prepare"], check=True, stdout=sys.stderr)
-    start = base + ["up"] + (["--semantic"] if args.semantic else [])
+    start = base + ["up", "--resume"] + (["--semantic"] if args.semantic else [])
     service = subprocess.run(start, check=True, capture_output=True, text=True)
     connected = None
     if args.connect:

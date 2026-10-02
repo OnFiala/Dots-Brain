@@ -32,6 +32,9 @@ def parser() -> argparse.ArgumentParser:
     start = commands.add_parser("up", help="Start or reuse and verify the local HTTP service.")
     start.add_argument("--port", type=int)
     start.add_argument("--semantic", action="store_true")
+    start.add_argument(
+        "--resume", action="store_true", help="Explicitly re-enable a removed installation."
+    )
     commands.add_parser("down", help="Stop the managed local service and preserve its data.")
     commands.add_parser("providers", help="List implemented client adapters and their limits.")
     connect = commands.add_parser("connect", help="Configure and verify a supported MCP client.")
@@ -39,6 +42,21 @@ def parser() -> argparse.ArgumentParser:
     connect.add_argument("--config", type=Path)
     connect.add_argument("--credential-file", type=Path)
     connect.add_argument("--project", action="append")
+    disconnect = commands.add_parser("disconnect", help="Remove one managed client connection.")
+    disconnect.add_argument("provider")
+    disconnect.add_argument("--config", type=Path)
+    disconnect.add_argument("--dry-run", action="store_true")
+    uninstall = commands.add_parser(
+        "uninstall", help="Disable the service and detach clients; keep memories."
+    )
+    uninstall.add_argument("--dry-run", action="store_true")
+    uninstall.add_argument(
+        "--config",
+        action="append",
+        default=[],
+        metavar="PROVIDER=PATH",
+        help="Include a legacy custom configuration location.",
+    )
     commands.add_parser(
         "doctor", help="Report local capabilities without assuming remote readiness."
     )
@@ -78,6 +96,16 @@ def parser() -> argparse.ArgumentParser:
 
 def run(args) -> dict | None:
     store = Store(args.data_dir)
+    if args.command in ("disconnect", "uninstall"):
+        from .removal import disconnect_client, uninstall
+
+        return (
+            disconnect_client(
+                store, provider=args.provider, config=args.config, dry_run=args.dry_run
+            )
+            if args.command == "disconnect"
+            else uninstall(store, dry_run=args.dry_run, extra_configs=args.config)
+        )
     if args.command in ("connect", "providers"):
         from .clients import connect_client, providers
 
@@ -98,18 +126,19 @@ def run(args) -> dict | None:
         if args.command == "preflight":
             return preflight()
         return (
-            up(store, port=args.port, semantic=args.semantic)
+            up(store, port=args.port, semantic=args.semantic, resume=args.resume)
             if args.command == "up"
             else down(store)
         )
     if args.command == "setup":
         store.initialize()
+        disabled = (store.directory / "disabled.json").exists()
         return {
-            "state": "local_ready",
+            "state": "disabled" if disabled else "local_ready",
             "version": __version__,
             "data_dir": str(store.directory),
-            "read": "available",
-            "write": "available",
+            "read": "disabled" if disabled else "available",
+            "write": "disabled" if disabled else "available",
             "semantic": "not_enabled",
             "remote_connection": "not_verified",
             "capture": "not_implemented",
@@ -117,7 +146,11 @@ def run(args) -> dict | None:
     if args.command == "doctor":
         initialized = store.path.is_file()
         return {
-            "state": "local_ready" if initialized else "setup_required",
+            "state": "disabled"
+            if (store.directory / "disabled.json").exists()
+            else "local_ready"
+            if initialized
+            else "setup_required",
             "version": __version__,
             "sqlite_version": sqlite3.sqlite_version,
             "memory": store.status() if initialized else None,
@@ -141,9 +174,11 @@ def run(args) -> dict | None:
             verify_connection(args.credential_file, write=args.write, project=args.project)
         )
     if args.command == "serve":
+        from .runtime import ensure_enabled
         from .server import create_http_app, create_server
         from .service import MemoryService
 
+        ensure_enabled(store)
         store.status()  # Fail before starting if setup has not completed.
         semantic = None
         if args.semantic:
@@ -218,7 +253,7 @@ def main() -> None:
         result = run(parser().parse_args())
         if result is not None:
             print(json.dumps(result, ensure_ascii=False))
-            if result.get("state") in {"verification_failed", "blocked"}:
+            if result.get("state") in {"verification_failed", "blocked", "partial"}:
                 raise SystemExit(1)
     except BrainError as exc:
         print(

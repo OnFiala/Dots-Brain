@@ -1,6 +1,6 @@
 ---
 name: setup
-description: Install, inspect, or connect Dots Brain on an authorized memory host. Use when the user requests shared AI memory or asks to connect an existing Brain instance.
+description: Install, inspect, connect, upgrade, or uninstall Dots Brain on an authorized memory host. Use when the user requests shared AI memory or manages an existing Brain instance.
 ---
 
 # Set up Dots Brain
@@ -74,6 +74,33 @@ with no configured TCP destinations is not a working tunnel transport. Do not
 change platform policy, invent an endpoint, or move the store to Sites or another
 host. Continue all independent local setup and return the exact missing platform
 capability once, without asking the user to copy tokens or edit JSON.
+
+## Upgrade, disconnect, or uninstall
+
+Follow `docs/upgrading.md` for an authorized upgrade and `docs/uninstall.md` for
+removal. A question about removal is not an instruction to remove an installation.
+For an actual removal request, identify the existing host and directory, run the
+read-only `uninstall --dry-run`, inspect it, then run `uninstall` within the user's
+stated scope. Do not ask for the same authorization again or make the user copy
+commands that you can execute. Do not erase memories unless explicitly requested.
+
+For a request to disconnect only one tool, use `disconnect <provider>` with its
+actual `--config` path when nonstandard; do not disable the whole shared host.
+Removal results distinguish unchanged entries removed, modified entries preserved,
+legacy shared credentials, and remote issuer revocation. Resolve the specifically
+reported remaining work using existing authority. Return `partial` if it remains;
+do not silently declare success or restore an entire stale configuration backup.
+
+Whole-instance uninstall preserves data and leaves the program installed.
+Complete requested program removal through the actual environment's package
+manager or remove a verified disposable dedicated source checkout. Never delete
+a shared environment, unrelated tools, user changes, or a data directory to make
+cleanup appear complete. Separately installed onboarding plugins need their
+platform's removal control. Report which layers were removed and what remains.
+
+After service removal, verify `doctor` reports `disabled` and review the removal
+result. Do not run the bootstrap as a health check: it deliberately reinstalls
+and resumes the instance. Reinstall only when intended, preserving the same store.
 
 ## Report the result
 

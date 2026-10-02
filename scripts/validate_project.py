@@ -32,12 +32,15 @@ def main():
     skill = plugin["extensions"]["com.openai"]["onboardingSkill"]
     assert (ROOT / skill).is_file(), "Missing onboarding skill"
     assert (ROOT / "LICENSE").read_text().startswith("MIT License\n")
-    for document in [ROOT / "README.md", *ROOT.glob("docs/*.md")]:
+    documents = [*ROOT.glob("*.md"), *ROOT.glob("docs/**/*.md"), *ROOT.glob("skills/**/*.md")]
+    for document in documents:
         for target in re.findall(r"\]\(([^)]+)\)", document.read_text()):
             if "://" in target or target.startswith("#"):
                 continue
             target = target.split("#", 1)[0]
-            assert (document.parent / target).exists(), f"Broken link in {document.name}: {target}"
+            resolved = (document.parent / target).resolve()
+            assert resolved.is_relative_to(ROOT), f"Link leaves repository: {document.name}"
+            assert resolved.exists(), f"Broken link in {document.name}: {target}"
     print("Release identity, plugin metadata, license, and documentation links are valid.")
 
 

@@ -40,6 +40,13 @@ when a local client reconnects; it is not continuous process supervision or
 automatic startup after a VM reboot. `down` stops only the recorded process,
 checks its identity to avoid a reused PID, and preserves the database.
 
+`uninstall` disables automatic restart, revokes host credentials, and removes
+unchanged managed client entries while retaining memories. Each new configuration
+location is recorded and gets its own credential. `disconnect` removes one such
+connection. Preview with `--dry-run`; inspect partial results instead of claiming
+completion. See [removal and reinstall](uninstall.md) for legacy discovery limits,
+remote revocation, and the separate program-removal step.
+
 ## Provider adapters
 
 | Adapter | Default configuration | Evidence |

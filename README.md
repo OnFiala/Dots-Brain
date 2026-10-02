@@ -18,6 +18,7 @@ AI tools. Follow the repository's setup skill and verify the connections."
 - Repeatable background startup and client adapters for Claude Code, Cursor, Codex, and MCP JSON.
 - Six memory tools through stdio or authenticated loopback HTTP.
 - A stdio bridge that connects to the same HTTP service without another database.
+- Client disconnection and repeatable service removal that preserves memories.
 
 Provider capture adapters, autonomous web setup, native ChatGPT views, and
 event-driven automations are on the [roadmap](docs/roadmap.md).
@@ -62,6 +63,17 @@ Use `cursor` or `codex` for another supported client on that machine. The agent
 chooses the actual private directory; the user does not need to edit JSON or copy
 a token. See the [autonomous setup contract](docs/autonomy.md) for remote devices,
 resuming installation, and the exact remaining platform dependencies.
+
+## Leaving or updating
+
+Ask your agent: "Uninstall Dots Brain, disconnect its managed clients, and keep my
+memories." The `uninstall` command disables the instance and preserves personal
+data; program files are removed separately according to the installation method.
+See [uninstall and reinstall](docs/uninstall.md), [upgrading](docs/upgrading.md),
+and [troubleshooting](docs/troubleshooting.md).
+
+The [documentation index](docs/README.md) covers the implemented alpha's lifecycle
+and [everyday memory use](docs/using-memory.md), with remaining limits explicit.
 
 ## Development
 

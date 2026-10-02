@@ -21,6 +21,8 @@ from .service import MemoryService
 async def indexing_lifespan(service: MemoryService):
     async def indexing():
         while True:
+            if (service.store.directory / "disabled.json").exists():
+                return
             try:
                 result = await asyncio.to_thread(service.semantic.index, batch_size=4)
             except Exception:
@@ -97,6 +99,8 @@ def create_server(service: MemoryService, *, http: bool = False, port: int = 876
     )
 
     def policy(scope: str | None = None) -> Policy:
+        if (service.store.directory / "disabled.json").exists():
+            raise InputError("This memory installation has been disabled.")
         if http:
             request = server.get_context().request_context.request
             current = None if request is None else request.scope.get("brain_policy")
