@@ -4,13 +4,19 @@ Environment: managed Linux development workspace, Python 3.12.14, SQLite through
 the Python standard library. This workspace has not been identified as the user's
 Dot VM. Dependencies are recorded in `uv.lock`.
 
-The alpha passed 22 tests on Python 3.12.14, including the explicitly prepared
+Alpha 2 passed 23 tests on each of Python 3.12.14 and 3.11.16; the opt-in model
+test was intentionally skipped for this SQLite initialization fix. Thirty
+synchronized rounds with eight simultaneous setup calls each also passed.
+The regression checks cover recovery after a temporary journal-mode lock and
+recovery after the bounded wait expires, preserving existing database content.
+
+The initial alpha passed 22 tests on Python 3.12.14, including the explicitly prepared
 model test. The default suite also passed on Python 3.11.16: 21 tests passed and
 the model test was intentionally skipped. A fresh writable source copy completed
 the packaged bootstrap successfully. The plugin manifest passed the published
 Agent Plugins 1.0 JSON schema. Lint, formatting, local documentation links, and
-wheel/source-distribution builds were checked locally. GitHub CI execution is a
-separate check after the commits are pushed.
+wheel/source-distribution builds were checked locally. The supported-version
+matrix also runs in [GitHub CI](https://github.com/OnFiala/Dots-Brain/actions/workflows/ci.yml).
 
 The opt-in model test currently emits one upstream Starlette test-client
 deprecation warning; the assertions pass. It does not affect the server transport.

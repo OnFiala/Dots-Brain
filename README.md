@@ -4,7 +4,7 @@
 
 Dots Brain is an open-source memory service for an OpenAI Dot and other MCP-compatible assistants. It stores useful context with its sources, retrieves relevant memories, and lets connected assistants continue each other's work. The target deployment is your Dot's VM, with local storage and local embeddings and no paid model API.
 
-**Status: working local alpha (`0.1.0-alpha.1`).** Memory storage, local search, scoped access, and MCP transports are implemented and tested. Automatic provider setup, web OAuth, conversation capture, and native ChatGPT views are still planned. Deployment on a Dot VM is not yet verified. See the [capability matrix](docs/capabilities.md).
+**Status: working local alpha (`0.1.0-alpha.2`).** Memory storage, local search, scoped access, and MCP transports are implemented and tested. Automatic provider setup, web OAuth, conversation capture, and native ChatGPT views are still planned. Deployment on a Dot VM is not yet verified. See the [capability matrix](docs/capabilities.md).
 
 ## What works today
 

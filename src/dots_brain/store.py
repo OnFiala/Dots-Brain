@@ -7,6 +7,7 @@ import json
 import os
 import re
 import sqlite3
+import time
 import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -16,6 +17,7 @@ from pathlib import Path
 from .errors import ConflictError, InputError, NotFoundError, SuppressedError
 
 SCHEMA_VERSION = 1
+WAL_LOCK_TIMEOUT = 10.0
 SCHEMA = """
 CREATE TABLE memories (
     id TEXT PRIMARY KEY, source_key TEXT UNIQUE NOT NULL,
@@ -64,6 +66,30 @@ def source_key(source: str, account: str, event_id: str) -> str:
     return hashlib.sha256(json.dumps([source, account, event_id]).encode()).hexdigest()
 
 
+def enable_wal(db: sqlite3.Connection) -> None:
+    # Switching journal modes can return SQLITE_BUSY without invoking SQLite's
+    # busy handler. Retry only that idempotent operation with a bounded deadline.
+    deadline = time.monotonic() + WAL_LOCK_TIMEOUT
+    previous_timeout = db.execute("PRAGMA busy_timeout").fetchone()[0]
+    db.execute("PRAGMA busy_timeout=0")
+    try:
+        while True:
+            try:
+                mode = db.execute("PRAGMA journal_mode=WAL").fetchone()[0]
+            except sqlite3.OperationalError as exc:
+                code = getattr(exc, "sqlite_errorcode", 0) & 0xFF
+                remaining = deadline - time.monotonic()
+                if code not in (sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED) or remaining <= 0:
+                    raise
+                time.sleep(min(0.05, remaining))
+            else:
+                if mode.lower() != "wal":
+                    raise InputError("This database does not support WAL journal mode.")
+                return
+    finally:
+        db.execute(f"PRAGMA busy_timeout={int(previous_timeout)}")
+
+
 class Store:
     def __init__(self, directory: str | Path):
         self.directory = Path(directory).expanduser().resolve()
@@ -77,7 +103,7 @@ class Store:
         os.close(descriptor)
         self.path.chmod(0o600)
         with self.connection() as db:
-            db.execute("PRAGMA journal_mode=WAL")
+            enable_wal(db)
             db.execute("BEGIN IMMEDIATE")
             version = db.execute("PRAGMA user_version").fetchone()[0]
             if version not in (0, SCHEMA_VERSION):

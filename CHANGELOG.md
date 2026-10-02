@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.0-alpha.2 — 2026-10-02
+
+- Fix intermittent first-run failures when concurrent installers enable SQLite WAL.
+  Journal-mode lock contention now retries within a bounded deadline, while other
+  errors still fail immediately. The existing schema transaction remains atomic.
+- Test temporary lock recovery and timeout recovery without losing existing data.
+- Let both supported Python versions finish CI even when one matrix job fails.
+
 ## 0.1.0-alpha.1 — 2026-10-01
 
 - Establish the product contract, English documentation, and MIT license.
