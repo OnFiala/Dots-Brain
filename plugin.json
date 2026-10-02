@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "dots-brain",
-  "version": "0.1.0-alpha.2",
+  "version": "0.2.0-alpha.1",
   "description": "Install and operate a personal, source-aware memory service on your own host.",
   "author": {"name": "Dots Brain contributors"},
   "extensions": {
@@ -10,7 +10,7 @@
       "interface": {
         "displayName": "Dots Brain",
         "shortDescription": "One memory for your AI tools",
-        "longDescription": "Set up and verify the Dots Brain alpha on a supported local host. Remote OAuth, automatic conversation capture, native views, and MCP Events are not yet implemented.",
+        "longDescription": "Start a shared local memory service and configure supported clients with verified bridge calls. Public ingress, web OAuth, conversation capture, native views, and MCP Events are not yet implemented.",
         "developerName": "Dots Brain contributors",
         "category": "Productivity",
         "defaultPrompt": "Set up Dots Brain on my memory host and verify the available capabilities."

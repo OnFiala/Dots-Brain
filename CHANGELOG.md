@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.0-alpha.1 — 2026-10-02
 
 - Add repeatable Linux background startup, crash recovery on local client reconnect,
   generated-bridge verification, and private credential reuse.

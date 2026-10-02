@@ -8,6 +8,13 @@
 
 See the capability matrix and verification evidence for the exact supported scope.
 
+## Local automation alpha — implemented
+
+- One-command bootstrap, shared background startup, and recovery on local reconnect.
+- Claude Code, Cursor, Codex, and generic MCP configuration adapters.
+- Verified generated bridges, private credential reuse, and preserved client settings.
+- Synthetic stress tests, responsive reads during blocked writes, and faster backlog indexing.
+
 ## VM and remote connection milestone
 
 - Verify the target Dot VM's persistence, resource limits, and process lifecycle.

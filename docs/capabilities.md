@@ -18,6 +18,7 @@ This file describes implementation and verification, not a marketing promise.
 | OAuth for web MCP clients | Planned |
 | Verified public VM ingress or tunnel | Not verified |
 | Strong credential isolation | Not verified |
+| Storage/HTTP load and local embedding load | Synthetic stress runs passed; see [evidence](stress-tests.md) |
 | Continuous conversation capture | Planned per provider |
 | Native ChatGPT views and MCP Events | Planned |
 | Dot VM persistence and cost guarantees | Not verified |

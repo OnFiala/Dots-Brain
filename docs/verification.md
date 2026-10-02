@@ -4,6 +4,28 @@ Environment: managed Linux development workspace, Python 3.12.14, SQLite through
 the Python standard library. This workspace has not been identified as the user's
 Dot VM. Dependencies are recorded in `uv.lock`.
 
+## Local automation alpha
+
+The 0.2.0 alpha passed 34 tests on Python 3.12.14, including the explicitly
+prepared real model. The tests cover generated bridge startup and write/read
+verification, preserved client settings, concurrent startup, crash recovery,
+safe stopping, and responsive reads while a writer holds the database lock.
+Python 3.11.16 passed 33 tests with the opt-in real-model test skipped.
+
+A fresh writable source copy completed the single bootstrap command with local
+embeddings and the Claude Code adapter enabled. It verified writes and reads
+through the generated bridge and passed Claude Code's own connection health check.
+
+A real Claude Code 2.1.287 installation reported `Connected` from an isolated
+test profile after automated setup. This is not a claim that the user's laptop
+or an existing Claude account was reconfigured. Cursor and Codex configuration
+formats and SDK bridge calls are tested; their interactive UIs remain unverified.
+
+Bounded storage/HTTP and real-model stress tests ran successfully. See the
+[workloads, failures fixed, measurements, and raw results](stress-tests.md).
+
+## Earlier releases
+
 Alpha 2 passed 23 tests on each of Python 3.12.14 and 3.11.16; the opt-in model
 test was intentionally skipped for this SQLite initialization fix. Thirty
 synchronized rounds with eight simultaneous setup calls each also passed.

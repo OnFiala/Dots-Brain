@@ -1,0 +1,18 @@
+{
+  "state": "passed",
+  "model": "qdrant/paraphrase-multilingual-MiniLM-L12-v2-onnx-Q@faf4aa4225822f3bc6376869cb1164e8e3feedd0:mean-char-chunks-v1",
+  "records": 200,
+  "workers": 8,
+  "queries": {
+    "count": 96,
+    "p50_ms": 204.0,
+    "p95_ms": 301.04,
+    "p99_ms": 383.62,
+    "max_ms": 383.62
+  },
+  "synthetic_recall_at_3": 1.0,
+  "indexing_including_startup_seconds": 11.2,
+  "service_peak_rss_kib": 700212,
+  "elapsed_seconds": 14.13,
+  "limits": "Six synthetic bilingual queries; not a representative relevance benchmark."
+}
