@@ -5,8 +5,10 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+from functools import partial
 from typing import Any
 
+import anyio
 from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
@@ -20,10 +22,13 @@ async def indexing_lifespan(service: MemoryService):
     async def indexing():
         while True:
             try:
-                await asyncio.to_thread(service.semantic.index, batch_size=4)
+                result = await asyncio.to_thread(service.semantic.index, batch_size=4)
             except Exception:
                 logging.getLogger("dots_brain").warning("Local indexing failed; retrying.")
-            await asyncio.sleep(2)
+                await asyncio.sleep(2)
+            else:
+                # Drain a backlog in bounded batches; only idle polling needs a long sleep.
+                await asyncio.sleep(0.05 if result["examined"] else 2)
 
     worker = asyncio.create_task(indexing()) if service.semantic is not None else None
     try:
@@ -51,6 +56,20 @@ def create_http_app(server: FastMCP, service: MemoryService):
 
 
 def create_server(service: MemoryService, *, http: bool = False, port: int = 8765) -> FastMCP:
+    read_limiter = anyio.CapacityLimiter(8)
+    write_limiter = anyio.CapacityLimiter(1)
+
+    async def read_call(function, *args, **kwargs):
+        return await anyio.to_thread.run_sync(
+            partial(function, *args, **kwargs), limiter=read_limiter
+        )
+
+    async def write_call(function, *args, **kwargs):
+        # One in-process SQLite writer; blocked writers never consume read workers.
+        return await anyio.to_thread.run_sync(
+            partial(function, *args, **kwargs), limiter=write_limiter
+        )
+
     @contextlib.asynccontextmanager
     async def lifespan(_server):
         if http:
@@ -92,24 +111,32 @@ def create_server(service: MemoryService, *, http: bool = False, port: int = 876
     read = ToolAnnotations(readOnlyHint=True, destructiveHint=False, openWorldHint=False)
 
     @server.tool(annotations=read)
-    def memory_context(
+    async def memory_context(
         task: str, project: str | None = None, max_chars: int = 6000
     ) -> dict[str, Any]:
         """Get bounded relevant source context; the limit is characters, not tokens."""
-        return service.context(
-            task, policy=policy("memory:read"), project=project, max_chars=max_chars
+        return await read_call(
+            service.context,
+            task,
+            policy=policy("memory:read"),
+            project=project,
+            max_chars=max_chars,
         )
 
     @server.tool(annotations=read)
-    def memory_search(query: str, project: str | None = None, limit: int = 10) -> dict[str, Any]:
+    async def memory_search(
+        query: str, project: str | None = None, limit: int = 10
+    ) -> dict[str, Any]:
         """Search accessible memories and return source references and revisions."""
-        return service.search(query, policy=policy("memory:read"), project=project, limit=limit)
+        return await read_call(
+            service.search, query, policy=policy("memory:read"), project=project, limit=limit
+        )
 
     @server.tool(annotations=read)
-    def memory_get(memory_id: str, revision: int | None = None) -> dict[str, Any]:
+    async def memory_get(memory_id: str, revision: int | None = None) -> dict[str, Any]:
         """Read a current or historical memory revision under the client's project scope."""
-        return service.store.get(
-            memory_id, revision=revision, projects=policy("memory:read").projects
+        return await read_call(
+            service.store.get, memory_id, revision=revision, projects=policy("memory:read").projects
         )
 
     @server.tool(
@@ -117,7 +144,7 @@ def create_server(service: MemoryService, *, http: bool = False, port: int = 876
             readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=False
         )
     )
-    def memory_remember(
+    async def memory_remember(
         content: str,
         source: str,
         account: str,
@@ -128,7 +155,8 @@ def create_server(service: MemoryService, *, http: bool = False, port: int = 876
         expected_revision: int | None = None,
     ) -> dict[str, Any]:
         """Store a source record. Reuse event_id on retries; updates need expected_revision."""
-        return service.store.remember(
+        return await write_call(
+            service.store.remember,
             content=content,
             source=source,
             account=account,
@@ -145,14 +173,16 @@ def create_server(service: MemoryService, *, http: bool = False, port: int = 876
             readOnlyHint=False, destructiveHint=True, idempotentHint=True, openWorldHint=False
         )
     )
-    def memory_forget(memory_id: str) -> dict[str, Any]:
+    async def memory_forget(memory_id: str) -> dict[str, Any]:
         """Delete a memory and its revisions, and suppress reimport. Requires user intent."""
-        return service.store.forget(memory_id, projects=policy("memory:forget").projects)
+        return await write_call(
+            service.store.forget, memory_id, projects=policy("memory:forget").projects
+        )
 
     @server.tool(annotations=read)
-    def memory_status() -> dict[str, Any]:
+    async def memory_status() -> dict[str, Any]:
         """Report accessible source counts and implemented capabilities without secrets."""
-        return service.status(policy=policy("memory:read"))
+        return await read_call(service.status, policy=policy("memory:read"))
 
     @server._mcp_server.list_tools()
     async def visible_tools():

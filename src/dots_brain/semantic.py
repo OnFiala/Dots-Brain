@@ -74,14 +74,17 @@ def prepare_model(store: Store) -> dict:
     }
 
 
+def verify_model_artifacts(store: Store) -> Path:
+    directory = model_directory(store)
+    for name, (kind, checksum) in FILES.items():
+        if not verify_file(directory / name, kind, checksum):
+            raise CapabilityError("Run dots-brain model prepare before enabling semantic search.")
+    return directory
+
+
 class SemanticIndex:
     def __init__(self, store: Store):
-        directory = model_directory(store)
-        for name, (kind, checksum) in FILES.items():
-            if not verify_file(directory / name, kind, checksum):
-                raise CapabilityError(
-                    "Run dots-brain model prepare before enabling semantic search."
-                )
+        directory = verify_model_artifacts(store)
         try:
             import onnxruntime
 

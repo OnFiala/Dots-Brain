@@ -6,9 +6,10 @@ description: Install, inspect, or connect Dots Brain on an authorized memory hos
 # Set up Dots Brain
 
 Read the package's `README.md`, `docs/capabilities.md`, and `docs/installation.md`.
-This alpha provides local memory, MCP tools, and a connection bridge. It does not
-yet implement remote OAuth, automatic capture, a public tunnel installer, or an
-isolated credential broker. Never describe those capabilities as complete.
+Also read `docs/autonomy.md`. This alpha automates local service startup, private
+credentials, supported client configuration, and real bridge read/write checks.
+Remote OAuth, automatic capture, a public tunnel installer, and an isolated
+credential broker are not implemented. Keep those states explicit.
 
 ## Identify the host and instance
 
@@ -27,37 +28,52 @@ installation process for missing prerequisites; do not invent administrator acce
 Run the packaged installer from the checkout:
 
 ```text
-python scripts/bootstrap.py --data-dir <absolute-personal-data-directory> --semantic
+python scripts/bootstrap.py --data-dir <absolute-personal-data-directory> --semantic --connect <provider>
 ```
 
-This installs locked dependencies and the pinned multilingual CPU model, and
-initializes or reuses the database. It does not start a durable background service.
-The model download is about 241 MiB. Use the JSON result and run `doctor`; distinguish
-local setup from verified VM persistence, ingress, and client connectivity.
+Use `claude-code`, `cursor`, or `codex` when that application is on the memory host.
+Omit `--connect` if the request is only to install the service. This installs
+locked dependencies and the pinned CPU model, reuses the database, starts the
+background service, and configures and verifies the generated client bridge.
+The model download is about 241 MiB. Run `preflight` and `doctor`; distinguish
+working local startup from verified VM persistence or public ingress.
 
-Use stdio only for a client running on the memory host. For a shared instance,
-run the authenticated HTTP service using a process supervisor actually supported
-by the host. The alpha binds to loopback. Do not expose it publicly or fabricate
-a URL. Public ingress and web-client OAuth remain a separate milestone.
+Startup and connection commands are resumable. Repeat the same command after a
+recoverable interruption; do not generate new credentials or new stores yourself.
+`up` starts or reuses one loopback HTTP service. Configured local bridges restart
+it on reconnect if it stopped. This is not a persistent supervisor or VM boot
+service. Public ingress and web-client OAuth remain a separate milestone.
 
 ## Connect another client
 
-Discover the client's actual version, machine, and supported transport. Reuse a
-working connection. The alpha's stdio bridge connects to the existing HTTP instance;
-it does not store a second copy of the memory.
+Discover the client's actual machine and supported transport. For a client on the
+memory host, run `dots-brain --data-dir <existing-directory> connect <provider>`.
+Use `--config <actual-path>` for a nonstandard configuration location, or the
+`mcp-json` adapter for a compatible client. The command verifies its generated
+bridge, preserves other settings, and writes no tokens into application config.
+It tests writes with an explicitly synthetic probe and removes that probe.
 
-The owner-side `client create` command writes a scoped credential directly to a
-new private file and returns metadata only. Never read that file into model context,
+The installer writes a scoped credential directly to a private file and returns
+metadata only. Never read that file into model context,
 print it, embed its token in a command, or put it in a repository. Filesystem access
 still permits the local OS user to read it: this is not strong secret isolation.
-Use the client application's supported configuration flow, preserving unrelated
-settings. Do not assume a credential on the VM has been safely delivered to a laptop.
+Do not assume a credential on the VM has been safely delivered to a laptop.
+For a different device, use its authorized execution path and an existing securely
+provisioned connection file with `connect <provider> --credential-file <path>`.
+That flow verifies reads and never initializes a second database. If access to
+the actual device is missing, report `awaiting_device` with that specific reason.
 
-Run `dots-brain verify --credential-file <absolute-private-file>` on the client
-machine to verify a real MCP read. Its result explicitly leaves write and capture
-unverified. Do not report all capabilities ready from this read-only check. For an
-unsupported web, device, or auth flow, report the specific missing capability and
-retain the existing working setup.
+Where installed, also use the application's own health check; for Claude Code,
+`claude mcp get dots-brain` reports the connection. Do not claim activation inside
+another application's conversation from the SDK bridge test alone. Do not disable
+the application's trust prompts or authentication controls. Reuse already granted
+authority rather than asking the user for it again.
+
+For web clients, inspect `preflight` before attempting a tunnel. A managed network
+with no configured TCP destinations is not a working tunnel transport. Do not
+change platform policy, invent an endpoint, or move the store to Sites or another
+host. Continue all independent local setup and return the exact missing platform
+capability once, without asking the user to copy tokens or edit JSON.
 
 ## Report the result
 

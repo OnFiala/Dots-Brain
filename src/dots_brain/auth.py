@@ -12,6 +12,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlsplit
 
+import anyio
+
 from .errors import InputError
 from .store import Store, validate_text
 
@@ -150,7 +152,11 @@ class BearerAuth:
             return await self.app(scope, receive, send)
         headers = dict(scope["headers"])
         value = headers.get(b"authorization", b"").decode("latin-1")
-        policy = authenticate(self.store, value[7:]) if value.startswith("Bearer ") else None
+        policy = (
+            await anyio.to_thread.run_sync(authenticate, self.store, value[7:])
+            if value.startswith("Bearer ")
+            else None
+        )
         if policy is None:
             from starlette.responses import JSONResponse
 

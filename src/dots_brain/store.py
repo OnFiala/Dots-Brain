@@ -242,7 +242,8 @@ class Store:
                 "INSERT INTO revisions VALUES (?,?,?,?,?,?,?)",
                 (memory_id, revision, content, digest, source_uri, title, timestamp),
             )
-            db.execute("DELETE FROM memory_fts WHERE memory_id=?", (memory_id,))
+            if existing:
+                db.execute("DELETE FROM memory_fts WHERE memory_id=?", (memory_id,))
             db.execute("INSERT INTO memory_fts VALUES (?,?,?)", (memory_id, title, content))
         return {"id": memory_id, "revision": revision, "changed": True}
 

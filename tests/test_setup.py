@@ -103,6 +103,13 @@ def test_unsupported_provider_does_not_create_another_database(tmp_path):
     assert not store.path.exists()
 
 
+def test_connect_does_not_assume_a_client_device_is_the_memory_host(tmp_path):
+    store = Store(tmp_path / "client-device")
+    with pytest.raises(InputError, match="chosen memory host"):
+        connect_client(store, provider="cursor", config=tmp_path / "cursor.json")
+    assert not store.path.exists()
+
+
 def test_down_does_not_stop_a_reused_or_unrelated_process(tmp_path):
     store = Store(tmp_path / "memory")
     store.initialize()

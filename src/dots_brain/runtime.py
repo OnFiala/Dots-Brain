@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import errno
 import os
 import shutil
 import signal
@@ -131,18 +132,32 @@ def up(store: Store, *, port: int | None = None, semantic: bool = False) -> dict
         else:
             selected_port = port if port is not None else state.get("port", 8765)
             with socket.socket() as reservation:
-                try:
-                    reservation.bind(("127.0.0.1", selected_port))
-                except OSError:
-                    if port is not None or state:
-                        raise InputError("The configured local port is already occupied.") from None
-                    reservation.bind(("127.0.0.1", 0))
+                reservation.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                deadline = time.monotonic() + (3 if state else 0)
+                while True:
+                    try:
+                        reservation.bind(("127.0.0.1", selected_port))
+                        break
+                    except OSError as exc:
+                        if exc.errno != errno.EADDRINUSE:
+                            raise
+                        # After SIGKILL the leader can be gone before its worker threads
+                        # finish releasing sockets. Keep the canonical port during recovery.
+                        if state and time.monotonic() < deadline:
+                            time.sleep(0.05)
+                            continue
+                        if port is not None or state:
+                            raise InputError(
+                                "The configured local port is already occupied."
+                            ) from None
+                        reservation.bind(("127.0.0.1", 0))
+                        break
                 selected_port = reservation.getsockname()[1]
             semantic = semantic or state.get("semantic", False)
             if semantic:
-                from .semantic import SemanticIndex
+                from .semantic import verify_model_artifacts
 
-                SemanticIndex(store)  # Validate prepared artifacts before spawning a process.
+                verify_model_artifacts(store)  # Validate without loading a second model instance.
             command = [
                 sys.executable,
                 "-m",

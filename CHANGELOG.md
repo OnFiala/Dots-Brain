@@ -7,6 +7,11 @@
 - Add Claude Code, Cursor, Codex, and generic MCP configuration adapters with
   preserved settings and explicit application-activation status.
 - Extend the bootstrap to start the service and optionally connect a client.
+- Keep MCP reads responsive while SQLite writers wait, and bound read/write workers separately.
+- Avoid scanning the full-text index when inserting a new source record.
+- Drain embedding backlogs in short bounded batches instead of sleeping between every batch.
+- Recover the canonical port after a killed process finishes releasing its sockets.
+- Add bounded synthetic storage, HTTP, and multilingual embedding stress harnesses.
 - Add a manually triggered GitHub release workflow that verifies an existing
   annotated tag, builds on both supported Python versions, and uploads checked
   packages to a draft without overwriting published assets.

@@ -106,6 +106,10 @@ def connect_client(
     target = target_path(provider, config)
     local = connection is None
     if local:
+        if not store.path.is_file():
+            raise InputError(
+                "Initialize the chosen memory host with up, or provide an existing connection."
+            )
         runtime = up(store)
         private = store.directory / "connections"
         private.mkdir(mode=0o700, exist_ok=True)
