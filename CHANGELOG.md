@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Add a manually triggered GitHub release workflow that verifies an existing
+  annotated tag, builds on both supported Python versions, and uploads checked
+  packages to a draft without overwriting published assets.
+- Document the repeatable release procedure.
+
 ## 0.1.0-alpha.2 — 2026-10-02
 
 - Fix intermittent first-run failures when concurrent installers enable SQLite WAL.

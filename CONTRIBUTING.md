@@ -15,6 +15,8 @@ Use Conventional Commits, such as `feat(memory): preserve source revisions` or
 include its validation. Do not squash or rewrite already published history
 without an explicit repository-maintainer decision.
 
+For tagged builds and release assets, follow the [release procedure](docs/releases.md).
+
 Tests must exercise behavior: persistence, retries, source conflicts, scope
 boundaries, deletion, and real protocol calls. Avoid tests that only duplicate
 the implementation. Keep the capability matrix accurate.

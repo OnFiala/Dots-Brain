@@ -1,0 +1,118 @@
+name: Prepare release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag (for example, v0.1.0-alpha.2)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    outputs:
+      commit: ${{ steps.identity.outputs.commit }}
+      tag_object: ${{ steps.identity.outputs.tag_object }}
+    steps:
+      - name: Validate tag name
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta|rc)\.[0-9]+)?$ ]]
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+          persist-credentials: false
+      - name: Resolve immutable source
+        id: identity
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          test "$(git cat-file -t "refs/tags/$RELEASE_TAG")" = tag
+          printf 'commit=%s\n' "$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")" >> "$GITHUB_OUTPUT"
+          printf 'tag_object=%s\n' "$(git rev-parse "refs/tags/$RELEASE_TAG")" >> "$GITHUB_OUTPUT"
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          assert json.loads(Path('plugin.json').read_text())['version'] == os.environ['RELEASE_TAG'][1:]
+          PY
+
+  build:
+    needs: resolve
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.11', '3.12']
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve.outputs.commit }}
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ matrix.python }}
+          enable-cache: true
+      - run: uv sync --frozen --all-extras
+      - run: uv run ruff check src tests scripts
+      - run: uv run ruff format --check src tests scripts
+      - run: uv run pytest -q
+      - run: uv run python scripts/validate_project.py
+      - run: uv build
+      - name: Package installer and checksums
+        if: matrix.python == '3.12'
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          git archive --format=zip --prefix=dots-brain/ --output="dist/dots-brain-${RELEASE_TAG#v}-plugin.zip" HEAD
+          cd dist
+          sha256sum -- *.whl *.tar.gz *.zip > SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        if: matrix.python == '3.12'
+        with:
+          name: release-assets
+          path: dist/
+          if-no-files-found: error
+          retention-days: 14
+
+  upload:
+    needs: [resolve, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-assets
+          path: dist
+      - name: Upload verified assets to the existing draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ inputs.tag }}
+          EXPECTED_TAG_OBJECT: ${{ needs.resolve.outputs.tag_object }}
+        run: |
+          test "$(gh api "repos/$GH_REPO/git/ref/tags/$RELEASE_TAG" --jq .object.sha)" = "$EXPECTED_TAG_OBJECT"
+          test "$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft)" = true
+          cd dist
+          sha256sum --check SHA256SUMS
+          gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name' > ../existing-assets.txt
+          mkdir ../existing
+          for asset in *.whl *.tar.gz *.zip SHA256SUMS; do
+            if grep -Fxq -- "$asset" ../existing-assets.txt; then
+              gh release download "$RELEASE_TAG" --pattern "$asset" --dir ../existing
+              cmp -- "$asset" "../existing/$asset"
+            else
+              gh release upload "$RELEASE_TAG" "$asset"
+            fi
+          done
+          printf 'Verified assets uploaded to draft %s. Review the notes and assets before publishing.\n' "$RELEASE_TAG" >> "$GITHUB_STEP_SUMMARY"
