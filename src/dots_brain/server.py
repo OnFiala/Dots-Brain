@@ -44,13 +44,19 @@ async def indexing_lifespan(service: MemoryService):
 
 def create_http_app(server: FastMCP, service: MemoryService):
     from .auth import BearerAuth
+    from .oauth import OAuthStore, configuration
+    from .oauth_http import routes_app
 
-    protected = BearerAuth(server.streamable_http_app(), service.store)
+    oauth = OAuthStore(service.store) if configuration(service.store) else None
+    protected = BearerAuth(server.streamable_http_app(), service.store, oauth=oauth)
+    authorization = routes_app(oauth) if oauth else None
 
     async def app(scope, receive, send):
         if scope["type"] == "lifespan":
             async with indexing_lifespan(service):
                 await protected(scope, receive, send)
+        elif authorization is not None and scope.get("path") != "/mcp":
+            await authorization(scope, receive, send)
         else:
             await protected(scope, receive, send)
 
@@ -58,6 +64,12 @@ def create_http_app(server: FastMCP, service: MemoryService):
 
 
 def create_server(service: MemoryService, *, http: bool = False, port: int = 8765) -> FastMCP:
+    from urllib.parse import urlsplit
+
+    from mcp.server.transport_security import TransportSecuritySettings
+
+    from .oauth import configuration
+
     read_limiter = anyio.CapacityLimiter(8)
     write_limiter = anyio.CapacityLimiter(1)
 
@@ -82,6 +94,23 @@ def create_server(service: MemoryService, *, http: bool = False, port: int = 876
             async with indexing_lifespan(service):
                 yield {}
 
+    config = configuration(service.store) if http else None
+    transport_security = None
+    if config:
+        transport_security = TransportSecuritySettings(
+            allowed_hosts=[
+                "127.0.0.1:*",
+                "localhost:*",
+                "[::1]:*",
+                urlsplit(config["issuer"]).netloc,
+            ],
+            allowed_origins=[
+                "http://127.0.0.1:*",
+                "http://localhost:*",
+                "http://[::1]:*",
+                config["issuer"],
+            ],
+        )
     server = FastMCP(
         "Dots Brain",
         host="127.0.0.1",
@@ -89,6 +118,7 @@ def create_server(service: MemoryService, *, http: bool = False, port: int = 876
         stateless_http=True,
         json_response=True,
         max_request_body_size=131072,
+        transport_security=transport_security,
         lifespan=lifespan,
         instructions=(
             "Use memory_context for relevant context and memory_get for the source. "

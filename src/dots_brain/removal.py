@@ -225,6 +225,9 @@ def uninstall(
             if store.path.is_file():
                 with store.connection(write=True) as db:
                     db.execute("UPDATE clients SET revoked=1")
+                    from .oauth import revoke_all
+
+                    revoke_all(db)
             try:
                 if state_path(store).exists():
                     stop_process(read_json(state_path(store)))

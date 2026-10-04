@@ -60,6 +60,27 @@ def parser() -> argparse.ArgumentParser:
     commands.add_parser(
         "doctor", help="Report local capabilities without assuming remote readiness."
     )
+    oauth = commands.add_parser("oauth", help="Manage VM-local OAuth without printing credentials.")
+    oauth_actions = oauth.add_subparsers(dest="oauth_action", required=True)
+    oauth_setup = oauth_actions.add_parser("configure")
+    oauth_setup.add_argument(
+        "--issuer", required=True, help="Existing HTTPS origin; does not create ingress."
+    )
+    for name in ("status", "pending", "grants", "disable"):
+        oauth_actions.add_parser(name)
+    approve = oauth_actions.add_parser("approve")
+    approve.add_argument("request_id")
+    projects = approve.add_mutually_exclusive_group(required=True)
+    projects.add_argument("--project", action="append")
+    projects.add_argument("--all-projects", action="store_true")
+    approve.add_argument("--allow-forget", action="store_true")
+    approve.add_argument(
+        "--scope", action="append", choices=["memory:read", "memory:write", "memory:forget"]
+    )
+    deny = oauth_actions.add_parser("deny")
+    deny.add_argument("request_id")
+    revoke_oauth = oauth_actions.add_parser("revoke")
+    revoke_oauth.add_argument("grant_id")
     serve = commands.add_parser("serve", help="Run on the memory host; HTTP binds loopback only.")
     serve.add_argument("--transport", choices=["stdio", "http"], default="stdio")
     serve.add_argument("--port", type=int, default=8765)
@@ -96,6 +117,51 @@ def parser() -> argparse.ArgumentParser:
 
 def run(args) -> dict | None:
     store = Store(args.data_dir)
+    if args.command == "oauth":
+        from .local import locked
+        from .oauth import OAuthStore, configuration, configure, revoke_all
+        from .runtime import up
+
+        if args.oauth_action == "status":
+            config = configuration(store)
+            return {
+                "state": "configured" if config else "not_configured",
+                "issuer": config["issuer"] if config else None,
+                "service_disabled": (store.directory / "disabled.json").exists(),
+                "public_ingress": "not_verified",
+                "secret_isolation": False,
+            }
+        store.status()  # Never initialize another memory on a client device.
+        with locked(store.directory / "installation.lock"):
+            if args.oauth_action == "configure":
+                result = configure(store, args.issuer)
+                return {**result, "service": up(store)}
+            if args.oauth_action == "disable":
+                with store.connection(write=True) as db:
+                    revoke_all(db)
+                (store.directory / "oauth.json").unlink(missing_ok=True)
+                return {
+                    "state": "oauth_disabled",
+                    "grants_revoked": True,
+                    "service": up(store)
+                    if not (store.directory / "disabled.json").exists()
+                    else None,
+                }
+            state = OAuthStore(store)
+            if args.oauth_action == "pending":
+                return state.pending()
+            if args.oauth_action == "grants":
+                return state.grants()
+            if args.oauth_action == "revoke":
+                return state.revoke_grant(args.grant_id)
+            if args.oauth_action == "deny":
+                return state.decide(args.request_id, deny=True)
+            return state.decide(
+                args.request_id,
+                projects=args.project,
+                allow_forget=args.allow_forget,
+                scopes=args.scope,
+            )
     if args.command in ("disconnect", "uninstall"):
         from .removal import disconnect_client, uninstall
 
@@ -144,6 +210,8 @@ def run(args) -> dict | None:
             "capture": "not_implemented",
         }
     if args.command == "doctor":
+        from .oauth import configuration
+
         initialized = store.path.is_file()
         return {
             "state": "disabled"
@@ -157,7 +225,7 @@ def run(args) -> dict | None:
             "vm_persistence": "not_verified",
             "public_ingress": "not_verified",
             "secret_isolation": False,
-            "remote_oauth": "not_implemented",
+            "remote_oauth": "configured" if configuration(store) else "not_configured",
             "host_costs": "not_verified",
             "event_automation": "not_implemented",
         }

@@ -9,6 +9,7 @@ Start with the [project README](../README.md) and [verified capabilities](capabi
 | Ask an agent to install, connect, or remove Brain | [Setup skill](../skills/setup/SKILL.md) |
 | Install on the canonical memory host | [Installation and operation](installation.md) |
 | Understand what the agent can automate | [Autonomous setup contract](autonomy.md) |
+| Configure VM-local OAuth and authorize a client | [OAuth on your memory host](oauth.md) |
 | Save, find, update, and forget memories | [Using memory](using-memory.md) |
 | Disconnect, uninstall, or reinstall | [Uninstall and data retention](uninstall.md) |
 | Update an existing installation | [Upgrading](upgrading.md) |
@@ -19,7 +20,7 @@ Start with the [project README](../README.md) and [verified capabilities](capabi
 | Develop or publish a version | [Contributing](../CONTRIBUTING.md), [releases](releases.md), [changelog](../CHANGELOG.md) |
 
 These guides cover the implemented alpha's local lifecycle and its known limits.
-Public ingress, web OAuth, conversation capture, history import, an isolated
+Public ingress, automatic web-account setup, conversation capture, history import, an isolated
 credential vault, automated backup/restore, and Dot VM durability are not shipped
 capabilities. Documentation for those future features is not an installation promise.
 

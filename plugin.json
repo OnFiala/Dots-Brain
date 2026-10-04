@@ -10,7 +10,7 @@
       "interface": {
         "displayName": "Dots Brain",
         "shortDescription": "One memory for your AI tools",
-        "longDescription": "Start a shared local memory service and configure supported clients with verified bridge calls. Public ingress, web OAuth, conversation capture, native views, and MCP Events are not yet implemented.",
+        "longDescription": "Start shared memory on your host, configure supported local clients, and authorize OAuth clients without printing tokens. Public ingress, web-account setup, conversation capture, native views, and MCP Events are not automated.",
         "developerName": "Dots Brain contributors",
         "category": "Productivity",
         "defaultPrompt": "Set up Dots Brain on my memory host and verify the available capabilities."

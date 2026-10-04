@@ -54,7 +54,10 @@ def providers() -> dict:
     return {
         "adapters": PROVIDERS,
         "verification": "SDK bridge read/write; application activation is separate",
-        "web": {"state": "blocked", "reason": "Web OAuth and public ingress are not implemented."},
+        "web": {
+            "state": "blocked",
+            "reason": "OAuth is available; public ingress and web-app setup are not automated.",
+        },
         "capture": "not_implemented",
     }
 
@@ -126,7 +129,7 @@ def connect_client(
             "state": "blocked",
             "provider": provider,
             "reason": "No verified configuration adapter is available for this provider.",
-            "required": "For web clients: supported public HTTPS ingress and OAuth registration.",
+            "required": "Verified HTTPS ingress, configured OAuth, and supported web-client setup.",
         }
     if connection is None and not store.path.is_file():
         raise InputError(

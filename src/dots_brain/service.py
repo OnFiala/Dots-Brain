@@ -76,6 +76,6 @@ class MemoryService:
             "semantic": {"state": "disabled"}
             if self.semantic is None
             else self.semantic.status(projects=policy.projects),
-            "remote_oauth": "not_implemented",
+            "remote_oauth": "available_when_configured",
             "event_automation": "not_implemented",
         }

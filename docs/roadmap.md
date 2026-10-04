@@ -15,12 +15,21 @@ See the capability matrix and verification evidence for the exact supported scop
 - Verified generated bridges, private credential reuse, and preserved client settings.
 - Synthetic stress tests, responsive reads during blocked writes, and faster backlog indexing.
 
+## Lifecycle and OAuth alpha — implemented
+
+- Retained-data uninstall, individual client disconnection, and explicit reinstall.
+- English installation, usage, upgrade, troubleshooting, and removal guides.
+- VM-local OAuth using the official MCP SDK, with agent-operated project approval.
+- PKCE, resource binding, hashed bearer tokens, rotating refresh, and revocation.
+- Official OAuth client verification against a live local HTTP memory service.
+
 ## VM and remote connection milestone
 
 - Verify the target Dot VM's persistence, resource limits, and process lifecycle.
 - Establish a stable authenticated HTTPS endpoint without additional fees.
 - Verify one actual external client's read, write, restart, and revocation path.
-- Add supported OAuth and isolate credential operations where the host allows it.
+- Verify the OAuth flow in actual web providers and isolate credential operations
+  where the host allows it.
 
 ## Product milestone
 

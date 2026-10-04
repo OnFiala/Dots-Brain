@@ -4,7 +4,7 @@
 
 Dots Brain is an open-source memory service for an OpenAI Dot and other MCP-compatible assistants. It stores useful context with its sources, retrieves relevant memories, and lets connected assistants continue each other's work. The target deployment is your Dot's VM, with local storage and local embeddings and no paid model API.
 
-**Status: local automation alpha (`0.2.0-alpha.2`).** An agent can start the shared service, configure supported clients, verify their bridge, and remove the integration while preserving memories. Web OAuth, public ingress, conversation capture, and native ChatGPT views are still planned. Deployment on a Dot VM is not yet verified. See the [capability matrix](docs/capabilities.md).
+**Status: local automation alpha (`0.2.0-alpha.2`).** An agent can start the shared service, configure supported clients, verify their bridge, and remove the integration while preserving memories. The source now includes VM-local OAuth with agent-operated authorization. Public ingress, automatic web-account setup, conversation capture, and native ChatGPT views remain planned. Deployment on a Dot VM is not yet verified. See the [capability matrix](docs/capabilities.md).
 
 Tell your agent: "Install Dots Brain on my memory host and connect my supported
 AI tools. Follow the repository's setup skill and verify the connections."
@@ -19,6 +19,7 @@ AI tools. Follow the repository's setup skill and verify the connections."
 - Six memory tools through stdio or authenticated loopback HTTP.
 - A stdio bridge that connects to the same HTTP service without another database.
 - Client disconnection and repeatable service removal that preserves memories.
+- VM-local OAuth with PKCE, scoped owner approval, refresh, and revocation.
 
 Provider capture adapters, autonomous web setup, native ChatGPT views, and
 event-driven automations are on the [roadmap](docs/roadmap.md).
@@ -63,6 +64,10 @@ Use `cursor` or `codex` for another supported client on that machine. The agent
 chooses the actual private directory; the user does not need to edit JSON or copy
 a token. See the [autonomous setup contract](docs/autonomy.md) for remote devices,
 resuming installation, and the exact remaining platform dependencies.
+
+For a client that supports remote MCP OAuth, see [OAuth on your VM](docs/oauth.md).
+The authentication service runs beside the memory; an actual reachable HTTPS
+route is still required. Configuring an issuer does not provision a tunnel.
 
 ## Leaving or updating
 

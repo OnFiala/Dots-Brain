@@ -9,7 +9,7 @@ private memory export into an issue or conversation.
 | --- | --- |
 | `setup_required` | No database exists at the selected directory. Locate the existing canonical directory before creating a new instance. |
 | `disabled` | The instance was uninstalled. Only an intentional reinstall should use `up --resume` or the bootstrap. |
-| `blocked` for a web or unknown provider | There is no tested adapter/public ingress/OAuth flow. This is a missing feature, not a token-copying task. |
+| `blocked` for a web or unknown provider | The VM-local OAuth server is available, but public ingress and provider account setup are not automated. Use the OAuth guide with a real reachable origin. |
 | Local port is occupied | Stop or identify the specific competing process. Use `up --port 0` for a new free port and reconnect affected local clients. Do not kill arbitrary processes. |
 | Readiness or bridge verification fails | Check that the exact interpreter exists, dependencies match the release, the credential is private and valid, and the loopback service is running. Use `up` and then `connect` again. |
 | Another installation is running | Let its bounded operation finish, then retry the same command. Lock files may remain on disk without an active lock; deleting them is not a recovery step. |
@@ -17,6 +17,10 @@ private memory export into an issue or conversation.
 | Existing client permissions differ | The command refuses to silently broaden access. Disconnect a dedicated local connection, then reconnect with the explicitly intended projects. |
 | `partial` during removal | Service disabling may have succeeded while configuration cleanup or remote revocation remains. Read `clients` and `issues`, resolve those exact items, and rerun. |
 | HTTP 401 | The credential is missing, expired, revoked, or its host is disabled. Reconnect locally under the host owner's authority; remote clients need the issuer to provision access. |
+| OAuth pairing page is waiting | The owner must authorize the exact request ID from the initiated flow. Use `oauth pending` and `oauth approve`; do not approve by client name alone. |
+| OAuth `invalid_target` | The token request must include the canonical `/mcp` resource from discovery. Check the client and configured issuer. |
+| OAuth `invalid_grant` | Check PKCE, exact callback, expiry, and one-time code/refresh use. Reusing an already exchanged token is rejected. |
+| OAuth capacity reached | Registration and pending flows have bounded storage. Expired state is cleaned during registration; inspect ingress abuse controls before changing limits. |
 | Bridge verifies but the application cannot see tools | Reload its MCP configuration and check its own status. SDK verification does not establish activation in an existing conversation. Keep required application permissions enabled. |
 | A laptop cannot reach `127.0.0.1` on the VM | Loopback means the current machine. Public HTTPS ingress, secure credential delivery, and web OAuth are not automated in this release. Do not create a second memory as a workaround. |
 | Semantic search is unavailable | Install the semantic extra and run `model prepare`, then start with `--semantic`. Only explicit model preparation downloads weights; there is no paid API fallback. |

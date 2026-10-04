@@ -146,26 +146,36 @@ def read_connection(path: Path) -> dict:
 class BearerAuth:
     """Authenticate every HTTP request without exposing token values to tools."""
 
-    def __init__(self, app, store: Store):
+    def __init__(self, app, store: Store, *, oauth=None):
         self.app, self.store = app, store
+        self.oauth = oauth
 
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http":
             return await self.app(scope, receive, send)
         headers = dict(scope["headers"])
         value = headers.get(b"authorization", b"").decode("latin-1")
+        bearer = value[:7].lower() == "bearer "
         policy = (
-            await anyio.to_thread.run_sync(authenticate, self.store, value[7:])
-            if value.startswith("Bearer ")
-            else None
+            await anyio.to_thread.run_sync(authenticate, self.store, value[7:]) if bearer else None
         )
+        if policy is None and self.oauth is not None and bearer:
+            policy = await anyio.to_thread.run_sync(self.oauth.policy, value[7:])
         if policy is None:
             from starlette.responses import JSONResponse
 
             response = JSONResponse(
                 {"error": "unauthorized"},
                 status_code=401,
-                headers={"WWW-Authenticate": 'Bearer realm="dots-brain"'},
+                headers={
+                    "WWW-Authenticate": 'Bearer realm="dots-brain"'
+                    + (
+                        f', resource_metadata="{self.oauth.issuer}'
+                        '/.well-known/oauth-protected-resource/mcp"'
+                        if self.oauth is not None
+                        else ""
+                    )
+                },
             )
             return await response(scope, receive, send)
         scope = {**scope, "brain_policy": policy}

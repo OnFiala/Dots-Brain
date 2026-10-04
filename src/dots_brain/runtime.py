@@ -122,6 +122,8 @@ def ensure_enabled(store: Store) -> None:
 def up(
     store: Store, *, port: int | None = None, semantic: bool = False, resume: bool = False
 ) -> dict:
+    from .oauth import configuration
+
     if sys.platform != "linux":
         raise InputError(
             "Background startup currently requires Linux; use supervised serve elsewhere."
@@ -134,7 +136,11 @@ def up(
         ensure_enabled(store)
         store.initialize()
         state = read_json(state_path(store)) if state_path(store).exists() else {}
-        if active(state) and state.get("version") != __version__:
+        oauth = configuration(store)
+        issuer = oauth["issuer"] if oauth else None
+        if active(state) and (
+            state.get("version") != __version__ or state.get("oauth_issuer") != issuer
+        ):
             stop_process(state)
         if active(state):
             if port not in (None, 0, state["port"]) or (semantic and not state["semantic"]):
@@ -204,6 +210,7 @@ def up(
                 "port": selected_port,
                 "semantic": semantic,
                 "url": f"http://127.0.0.1:{selected_port}/mcp",
+                "oauth_issuer": issuer,
             }
             try:
                 write_json(state_path(store), state)
@@ -242,6 +249,8 @@ def up(
             "lifecycle": "background_process",
             "restart_on_vm_boot": False,
             "public_ingress": "not_configured",
+            "oauth": "configured" if issuer else "not_configured",
+            "configured_mcp_url": issuer + "/mcp" if issuer else None,
             "capture": "not_implemented",
         }
 

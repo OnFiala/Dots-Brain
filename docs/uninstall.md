@@ -113,6 +113,12 @@ It removes known installer-owned credential files after revoking access. Unknown
 credential copies and manually created files may remain, but their host-issued
 tokens are revoked. Exports, backups, application history, and caches are untouched.
 
+With OAuth enabled, uninstall also removes registered OAuth clients, pending
+requests, codes, and grants from the local database. Old refresh tokens remain
+invalid after reinstall. OAuth account entries in external applications require
+those applications' own removal controls. `oauth disable` removes only OAuth
+access and keeps ordinary local bearer clients running; see [OAuth](oauth.md).
+
 To reinstall, retain or restore the same supported code version and run the
 bootstrap against the same data directory, or explicitly run:
 

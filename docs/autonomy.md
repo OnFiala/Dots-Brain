@@ -70,7 +70,13 @@ to create a second memory store. A previously provisioned credential can be used
 with `connect <provider> --credential-file <private-file>` on the client machine;
 this path never initializes another database and verifies read access only.
 
-The current release does not provide public ingress or web OAuth. `preflight`
+The OAuth service now runs on the memory host with dynamic registration, PKCE,
+locally approved project scopes, rotating refresh tokens, and revocation. The
+agent authorizes the exact request from a flow it initiated using `oauth approve`;
+it does not receive bearer tokens. See [the OAuth workflow](oauth.md). This does
+not implement provider account setup or grant the agent browser/device access.
+
+The current release does not provide public ingress. `preflight`
 reports the host's supported network-policy snapshot and whether TCP destinations
 are configured. The inspected managed development VM allows HTTP/HTTPS through
 its proxy and has no configured TCP destinations, VPN, or systemd runtime.

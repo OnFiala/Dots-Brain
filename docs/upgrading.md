@@ -28,6 +28,13 @@ release adds an integration registry and per-configuration credentials; it
 recognizes unchanged alpha.1 generated entries and can retain their existing
 credential. Re-running `connect` registers a legacy custom path for later removal.
 
+The OAuth milestone adds optional `oauth_*` tables to the same database only when
+`oauth configure` is run. Existing memories and local credentials are preserved;
+an upgrade does not turn on OAuth or publish a public endpoint automatically.
+Run `oauth disable` with an OAuth-aware release before downgrading: older removal
+commands cannot clear OAuth grants they do not know about. A complete private
+database backup contains confidential-client registration secrets as well as memory.
+
 An intentionally uninstalled instance stays disabled during ordinary `up`. Use
 `up --resume` or the bootstrap only when the user intends to reinstall. Updating
 files alone should not silently reactivate a removed integration.

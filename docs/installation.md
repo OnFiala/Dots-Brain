@@ -50,7 +50,9 @@ The default listener is `http://127.0.0.1:8765/mcp`; startup selects an availabl
 port if the default is occupied on first installation. The JSON result contains
 the actual endpoint. Every request requires a credential.
 It is loopback-only and is not a public HTTPS deployment. Keep it behind the
-current local boundary; public ingress and OAuth are not production-ready.
+current local boundary until a supported HTTPS ingress is available. The
+[VM-local OAuth service](oauth.md) is optional and tested over local HTTP;
+public deployment and specific web-provider setup remain unverified.
 
 ## Scoped client connection
 

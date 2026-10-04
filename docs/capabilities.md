@@ -17,7 +17,8 @@ This file describes implementation and verification, not a marketing promise.
 | Automatic removal of package/source files or personal data | Not implemented; installation-specific program removal is documented |
 | Stdio bridge to an existing HTTP instance | Implemented; subprocess-to-live-HTTP test passes |
 | Autonomous remote client registration | Planned |
-| OAuth for web MCP clients | Planned |
+| VM-local OAuth discovery, registration, PKCE, refresh, and revocation | Implemented; official OAuth client verified over live local HTTP; named web clients unverified |
+| Agent-operated OAuth authorization without token output | Implemented; requires identifying the exact initiated flow and selecting project access |
 | Verified public VM ingress or tunnel | Not verified |
 | Strong credential isolation | Not verified |
 | Storage/HTTP load and local embedding load | Synthetic stress runs passed; see [evidence](stress-tests.md) |
