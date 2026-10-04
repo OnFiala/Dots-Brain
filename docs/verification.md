@@ -4,6 +4,14 @@ Environment: managed Linux development workspace, Python 3.12.14, SQLite through
 the Python standard library. This workspace has not been identified as the user's
 Dot VM. Dependencies are recorded in `uv.lock`.
 
+## OAuth validation follow-up: 0.3.0-alpha.2
+
+The follow-up adds two issuer-validation cases, bringing the suite to 66 tests
+and 19 OAuth cases. Python 3.11.16 and 3.12.14 each passed all 66 tests, with the
+unchanged opt-in model test skipped. Unsupported IPv6 HTTP issuer configuration and an empty
+userinfo delimiter now fail before filesystem changes. The alpha.1 candidate
+was superseded before publication; its immutable tag and earlier evidence remain.
+
 ## OAuth alpha: 0.3.0-alpha.1
 
 Python 3.12.14 and 3.11.16 each passed 64 tests, with the unchanged opt-in real-model

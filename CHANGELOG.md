@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.0-alpha.2 — 2026-10-04
+
+- Reject IPv6 HTTP issuer origins before changing configuration: SDK 1.30 does
+  not support them. HTTPS issuers and exact localhost/127.0.0.1 development origins remain supported.
+- Reject issuer URLs with an empty user-information delimiter as well as real credentials.
+- Add regression cases and clarify the supported development origins.
+- Supersede the alpha.1 release candidate before publication; its Git tag is preserved.
+
 ## 0.3.0-alpha.1 — 2026-10-04
 
 - Add optional VM-local OAuth to the existing HTTP process and SQLite database,

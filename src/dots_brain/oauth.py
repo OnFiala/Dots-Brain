@@ -67,12 +67,12 @@ def issuer_url(value: str) -> str:
         parts.path not in ("", "/")
         or parts.query
         or parts.fragment
-        or parts.username
-        or parts.password
+        or parts.username is not None
+        or parts.password is not None
         or not parts.hostname
         or (
             parts.scheme != "https"
-            and not (parts.scheme == "http" and parts.hostname in {"127.0.0.1", "localhost", "::1"})
+            and not (parts.scheme == "http" and parts.hostname in {"127.0.0.1", "localhost"})
         )
     ):
         raise InputError("Use an HTTPS origin without a path, credentials, query, or fragment.")

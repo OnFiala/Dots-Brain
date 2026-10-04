@@ -431,7 +431,14 @@ def test_official_oauth_client_completes_discovery_registration_and_pkce_over_li
 
 @pytest.mark.parametrize(
     "uri",
-    ["http://public.example", "https://user:pass@host", "https://host/path", "https://host?key=x"],
+    [
+        "http://public.example",
+        "https://user:pass@host",
+        "https://host/path",
+        "https://host?key=x",
+        "http://[::1]:8765",
+        "https://@host",
+    ],
 )
 def test_issuer_rejects_insecure_or_secret_bearing_origins(tmp_path, uri):
     store = Store(tmp_path / "memory")

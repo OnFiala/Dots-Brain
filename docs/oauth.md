@@ -47,7 +47,8 @@ URLs. TLS terminates at the supported ingress; configure its request/rate limits
 Do not expose the loopback HTTP listener directly to the Internet.
 
 Origins with credentials, queries, fragments, or paths are rejected. HTTP is
-accepted only for exact loopback hostnames during local development. A configured
+accepted only for `localhost` and `127.0.0.1` during local development. IPv6 HTTP
+issuers are rejected because the current SDK does not support them. A configured
 issuer is reported with `public_ingress: not_verified`; a local readiness check
 does not certify that the external route reaches this VM.
 
