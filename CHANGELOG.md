@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.3.0-alpha.1 — 2026-10-04
+
+- Add optional VM-local OAuth to the existing HTTP process and SQLite database,
+  using official MCP SDK handlers with no new runtime dependency.
+- Add discovery, dynamic registration, S256 PKCE, resource-bound code exchange,
+  scoped project grants, rotating refresh tokens, and client/owner revocation.
+- Add deterministic owner commands to inspect, approve, deny, and revoke a specific
+  connection without printing its tokens. Default approval excludes deletion and
+  can narrow the client's requested scopes; all-project access remains explicit.
+- Persist grants across restart and invalidate pending flows and refresh tokens
+  on OAuth disable, issuer changes, and whole-instance uninstall.
+- Bound registration metadata, request bodies, client count, and pending flows;
+  reject invalid callback schemes and malformed registration JSON.
+- Enforce token-request resource binding and normalize the optional public-client
+  revocation field around the SDK's current handlers. Accept case-insensitive
+  HTTP Bearer scheme names.
+- Require the tested MCP SDK 1.30 or newer within the existing major version.
+- Verify 17 OAuth tests, including the official client's full flow and automatic
+  refresh over live local HTTP, concurrent code reuse, scope/project boundaries,
+  expiry, revocation, capacity recovery, and retained-data removal.
+- Document the agent workflow, storage boundaries, and remaining ingress/provider
+  requirements. Public deployment and actual web-provider setup remain unverified.
+
 ## 0.2.0-alpha.2 — 2026-10-02
 
 - Add repeatable `uninstall` with a read-only preview, host credential revocation,

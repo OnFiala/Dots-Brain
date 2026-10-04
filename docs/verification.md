@@ -4,6 +4,31 @@ Environment: managed Linux development workspace, Python 3.12.14, SQLite through
 the Python standard library. This workspace has not been identified as the user's
 Dot VM. Dependencies are recorded in `uv.lock`.
 
+## OAuth alpha: 0.3.0-alpha.1
+
+Python 3.12.14 and 3.11.16 each passed 64 tests, with the unchanged opt-in real-model
+test skipped. The 17 OAuth cases cover the full SDK protocol flow, authorization
+and token resource binding, PKCE/callback checks, scope narrowing, project isolation,
+single-use concurrent code exchange, rotating refresh tokens, expiry, owner/client
+revocation, bounded registration, malformed inputs, and retained-data uninstall.
+
+The official MCP `OAuthClientProvider` connected to a live background HTTP service:
+discovery, registration, browser redirect/callback simulation, exact-request CLI
+approval, token exchange, MCP initialization, and a synthetic memory write all
+passed. Triggering client-side expiry completed automatic refresh without another
+approval, invalidated the previous access token, and retained one grant. The test
+also disabled OAuth and verified that ordinary local service operation remained.
+
+Other tests use the real SDK HTTP handlers through ASGI and synthetic requests.
+Confidential `client_secret_post` and public clients are exercised. No actual
+ChatGPT/Claude web account, public TLS route, or Botter VM was connected. All
+OAuth test data and credentials are synthetic and remain outside the repository.
+
+Lint, formatting, documentation links, and wheel/source builds passed. The managed
+development VM still reports no VPN or configured TCP destinations; public ingress
+and zero-touch web-account onboarding remain unverified. No additional runtime
+dependency, database service, identity service, or paid API was introduced.
+
 ## Lifecycle alpha: 0.2.0-alpha.2
 
 Python 3.12.14 and 3.11.16 each passed 47 tests with the real-model test skipped.
@@ -100,6 +125,7 @@ resource test are still required. Model artifacts are excluded from the reposito
 
 ## Not yet verified
 
-Public ingress, Dot VM lifecycle, host billing/quotas, OAuth, named provider clients,
+Public ingress and public OAuth deployment, Dot VM lifecycle, host billing/quotas,
+actual web-provider clients,
 automatic conversation capture, native ChatGPT views, and MCP Events. Successful
 local MCP calls do not establish these capabilities.

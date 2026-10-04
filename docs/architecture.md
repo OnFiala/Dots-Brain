@@ -11,7 +11,7 @@ authentication, indexes, and embedding inference run on the user's host.
 ```mermaid
 flowchart LR
     clients[MCP clients] <--> server[Memory service]
-    sources[Supported hooks and importers] --> server
+    sources[Planned hooks and importers] --> server
     server <--> db[(SQLite: memories, revisions, indexes)]
     server --> model[Local embedding model]
 ```
