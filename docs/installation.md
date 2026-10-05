@@ -1,8 +1,10 @@
 # Installation and operation
 
 This alpha runs on Python 3.11+ on a supported local host. Linux with Python 3.12
-is the environment exercised during development. Do not infer Dot VM, macOS,
-Windows, or individual AI-client certification from that result.
+is the environment exercised during development and installation on one
+user-confirmed shared Work/Dot VM. See the [deployment evidence](vm-deployment.md).
+This does not certify all Dot VM configurations, macOS, Windows, or individual
+AI clients. VM boot recovery and public ingress remain unverified.
 
 ## Source installation
 

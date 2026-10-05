@@ -39,6 +39,13 @@ background service, and configures and verifies the generated client bridge.
 The model download is about 241 MiB. Run `preflight` and `doctor`; distinguish
 working local startup from verified VM persistence or public ingress.
 
+If the user confirms that their Dot shares the current Work VM, accept that
+host identification and continue installation there. For an agent with local
+shell access, the source checkout's [shell client](../../docs/shell-access.md)
+can use the existing MCP instance without public ingress. Record the canonical
+paths in the authorized workspace instructions. Keep native tool activation in
+an application's conversation separate from verified shell access.
+
 Startup and connection commands are resumable. Repeat the same command after a
 recoverable interruption; do not generate new credentials or new stores yourself.
 `up` starts or reuses one loopback HTTP service. Configured local bridges restart
@@ -70,8 +77,10 @@ another application's conversation from the SDK bridge test alone. Do not disabl
 the application's trust prompts or authentication controls. Reuse already granted
 authority rather than asking the user for it again.
 
-For web clients, inspect `preflight` before attempting a tunnel. A managed network
-with no configured TCP destinations is not a working tunnel transport. Do not
+For web clients, inspect `preflight` before attempting a tunnel. An empty TCP
+destination list does not establish a permitted TCP tunnel path, but it does not
+by itself disprove all possible public-ingress mechanisms. Verify the actual
+supported transport and distinguish network readiness from credentials. Do not
 change platform policy, invent an endpoint, or move the store to Sites or another
 host. Continue all independent local setup and return the exact missing platform
 capability once, without asking the user to copy tokens or edit JSON.

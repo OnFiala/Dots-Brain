@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Add an official-SDK shell client for an existing MCP connection, with schema
+  discovery, JSON input, scoped calls, and recovery of an enabled local service.
+- Verify an installed instance on the user-confirmed shared Work/Dot VM with
+  local CPU embeddings. Public ingress and native web-client activation remain
+  unverified.
+
 ## 0.3.0-alpha.2 — 2026-10-04
 
 - Reject IPv6 HTTP issuer origins before changing configuration: SDK 1.30 does

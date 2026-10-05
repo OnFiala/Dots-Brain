@@ -1,8 +1,10 @@
 # Verification evidence
 
-Environment: managed Linux development workspace, Python 3.12.14, SQLite through
-the Python standard library. This workspace has not been identified as the user's
-Dot VM. Dependencies are recorded in `uv.lock`.
+Environment: managed Linux workspace, Python 3.12.14, SQLite through the Python
+standard library. On 2026-10-05 the user confirmed that Work and their Dot share
+this VM. Earlier tests used disposable instances; an actual retained installation
+has now been exercised separately. See [deployment evidence](vm-deployment.md).
+Dependencies are recorded in `uv.lock`.
 
 ## OAuth validation follow-up: 0.3.0-alpha.2
 
@@ -29,7 +31,7 @@ also disabled OAuth and verified that ordinary local service operation remained.
 
 Other tests use the real SDK HTTP handlers through ASGI and synthetic requests.
 Confidential `client_secret_post` and public clients are exercised. No actual
-ChatGPT/Claude web account, public TLS route, or Botter VM was connected. All
+ChatGPT/Claude web account, public TLS route, or retained user installation was connected. All
 OAuth test data and credentials are synthetic and remain outside the repository.
 
 Lint, formatting, documentation links, and wheel/source builds passed. The managed

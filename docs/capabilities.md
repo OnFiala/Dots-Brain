@@ -10,6 +10,8 @@ This file describes implementation and verification, not a marketing promise.
 | Local semantic retrieval | Implemented; synthetic Czech-to-English model test passes |
 | Six memory MCP tools | Implemented; SDK HTTP and stdio tests pass |
 | Agent setup and diagnostics | Implemented for the local host |
+| Installed service on a shared Work/Dot VM | Verified on one user-confirmed VM with local CPU embeddings; see [deployment evidence](vm-deployment.md) |
+| Agent shell access to the existing MCP service | Verified; source helper is unreleased; native application tool activation is separate |
 | Repeatable background startup and recovery on local client reconnect | Implemented; process and crash-recovery tests pass |
 | Claude Code, Cursor, Codex, and generic MCP configuration adapters | Implemented; actual bridge calls tested; Claude Code connection checked |
 | Scoped credentials, project boundaries, expiry, revocation | Implemented; tests pass |
