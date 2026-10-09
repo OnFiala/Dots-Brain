@@ -96,6 +96,24 @@ revision-1 facts and confirmed both absent, with audit pairs 63/64 and 65/66.
 Both live grants remained unchanged. The private invocation report carries exact
 deletion IDs because the existing audit receipts do not include them.
 
+### Source repairs after live client acceptance
+
+DBR-CLEAN-001 adds only `memory_id` and `expected_revision` to deletion intent and
+receipt targets, including rejected stale revisions. DBR-ONB-001 preserves the
+original pairing request ID/time in grant metadata using three additive companion
+tables; core OAuth table layouts remain compatible with the retained schema-v2
+release. Missing legacy provenance remains unknown. These changes are not yet
+deployed; installed code remains `2c8823b`.
+
+The focused local OAuth, MCP, recovery and privacy/capture suites passed **57 tests**
+with the Linux-only background OAuth test and unchanged stdio test excluded.
+Regressions cover exact request identity, narrowed grants, restart/refresh/revocation,
+concurrent single-code exchange, legacy token/code preservation, retryable schema
+upgrade, failed-DDL rollback, failed code/grant metadata writes with exact retry,
+cascading removal, and deletion targets without memory content. Independent senior,
+test-quality and stress reviewers inspected the repair. No live database upgrade
+or production failure injection was performed.
+
 Still unverified: actual appliance reboot, encrypted off-host backup/host-loss
 recovery, large-corpus/long-duration load, upstream CORTEX, and complete live provider
 capture. Existing Workspace processes and routes

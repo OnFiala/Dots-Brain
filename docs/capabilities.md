@@ -11,8 +11,8 @@ removed the two synthetic facts and preserved both live grants.
 | Full-text and bounded context | Tests for scoped retrieval and budgets | Character budgets are not token budgets |
 | Local semantic passages | Pinned ONNX model; token-window, title, stale/deletion and real-model tests | Appliance capacity and larger bilingual evaluation |
 | MCP stdio, loopback HTTP, local bridge/adapters | SDK, supported Linux process tests; both bots' actual chat status/write/read and bidirectional cross-read | Later-session recall and sustained client use |
-| OAuth registration, PKCE, refresh, revocation | Official SDK flow, scoped handler tests, public synthetic acceptance and separate real Grok/ChatGPT grants | Durable request-to-grant provenance |
-| Sanitized action audit | Append-only rows, server mutation intent/receipt, client reports, gaps and pagination | Deletion receipts lack object IDs; submitted events do not establish full provider audit |
+| OAuth registration, PKCE, refresh, revocation | SDK, scoped tests, public acceptance, separate real bot grants; tested source repair retains original pairing identity | Deploy provenance extension; legacy history remains unknown |
+| Sanitized action audit | Append-only rows, intent/receipt, client reports, gaps, pagination; tested source repair adds deletion ID/revision | Deploy deletion target repair; submitted events do not establish full provider audit |
 | Bounded JSONL snapshot collector | ACK retry, partial lines, rotation, oversized records, missing sources, crash journal | Live provider logs and persistent collectors unverified |
 | Transcript import | User text with stable file-record identity; tool metadata only | Ambiguous assistant text excluded; no transcript timestamps/IDs invented |
 | CORTEX context and selected writes | Project mapping, source revision, scope checks, durable receipts and uncertain-write tests | Dedicated authorized upstream endpoint and live behavior |

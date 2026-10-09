@@ -35,6 +35,34 @@ MCP tool discovery and verify actual calls. Deletion now requires the positive
 `expected_revision` that the caller reviewed. New audit/CORTEX scopes are not added
 to existing grants or default OAuth approvals.
 
+## OAuth provenance extension within schema v2
+
+The candidate now retains the original pairing request ID and its creation time
+with each new grant. Three companion tables keep the existing OAuth table layouts
+unchanged. Existing grants are not revoked or widened, and missing historical
+provenance remains `null`; it is never reconstructed from expiry times.
+
+Before starting this code on an existing OAuth installation:
+
+1. Record the existing issuer with `oauth status`, and stop the service and other
+   writers. Preserve the current release for rollback.
+2. Make and validate a private backup using the existing release.
+3. Using the new release, run `oauth configure --issuer <exact-existing-origin> --no-start`
+   against the same data directory. A different issuer revokes existing
+   clients, so do not substitute or guess the origin.
+4. Restart the supervised service and verify existing client access and owner
+   `oauth grants` metadata. Repeating configuration with the same issuer is safe.
+
+The constructor only checks the extension and reports a required upgrade; read
+commands do not install it. Schema creation is transactional. Failure leaves the
+original OAuth rows intact. A code produced before the upgrade still exchanges;
+its unknown request association remains `null`.
+
+Returning to the previous schema-v2 release keeps the companion tables in place.
+Its existing positional SQL remains compatible. Flows created by that older
+release have no new provenance, and later code reports that absence explicitly.
+This compatibility does not apply to the published schema-v1 release.
+
 ## Online backup and staged restore
 
 ```sh

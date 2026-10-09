@@ -26,8 +26,9 @@ bidirectional cross-bot reads; their synthetic facts were removed by owner clean
    Tailscale remains the administration/private-client path.
 4. Both separate bot connections, each write/readback, bidirectional cross-read and
    owner cleanup are verified. Project denial and isolated revocation passed
-   synthetic acceptance. Preserve consumed pairing IDs and deletion target IDs in
-   durable metadata (DBR-ONB-001 and DBR-CLEAN-001).
+   synthetic acceptance. Deploy the tested repairs for original pairing IDs and
+   deletion targets (DBR-ONB-001 and DBR-CLEAN-001), using the explicit OAuth
+   provenance upgrade and preserving legacy unknowns.
 5. Each bot submits its available knowledge with stable identities and uncertainty
    labels, verifies receipts, then demonstrates relevant recall in a later session.
 6. Establish the available live capture mechanisms and verify the first scheduled

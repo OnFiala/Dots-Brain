@@ -185,6 +185,19 @@ synthetic facts while preserving the grants. See [deployment evidence](appliance
 The OAuth tables are additive to the existing memory schema. See
 [upgrading](upgrading.md), [uninstall](uninstall.md), and [troubleshooting](troubleshooting.md).
 
+### Pairing provenance in the candidate
+
+Owner `oauth grants` output now includes `request_id`, `request_created_at` and
+grant `created_at` timestamps. The original request ID/time is copied atomically
+through the one-time code into grant metadata; refresh and revocation preserve it.
+Consumed codes and their temporary metadata are removed. No token, authorization
+code, PKCE material or callback is added to the grant report.
+
+Legacy grants and flows created during a rollback have `null` where the origin
+was not recorded. The code does not invent their history. Existing installations
+need the explicit [OAuth provenance extension](upgrading.md#oauth-provenance-extension-within-schema-v2).
+This source repair has not yet been deployed to the live appliance.
+
 
 ## Externally supervised installations
 

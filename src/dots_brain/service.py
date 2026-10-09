@@ -27,12 +27,23 @@ class MemoryService:
         """
         observer = replace(policy, scopes=policy.scopes | {"audit:write"})
         event_id = str(uuid.uuid4())
+        # Deletion removes the record itself. Retain only its identity and the
+        # caller's observed revision so a later review can bound its impact.
+        target = (
+            {
+                "memory_id": arguments["memory_id"],
+                "expected_revision": arguments["expected_revision"],
+            }
+            if action == "memory_forget"
+            else None
+        )
         self.audit.observed(
             observer,
             project=audit_project,
             kind="intent",
             client_event_id=event_id,
             action={"tool": action},
+            target=target,
         )
         try:
             result = function(**arguments)
@@ -43,6 +54,7 @@ class MemoryService:
                 kind="receipt",
                 client_event_id=event_id + ":receipt",
                 intent_event_id=event_id,
+                target=target,
                 details={
                     "status": "failed",
                     "error_code": getattr(exc, "code", "operation_failed"),
@@ -55,6 +67,7 @@ class MemoryService:
             kind="receipt",
             client_event_id=event_id + ":receipt",
             intent_event_id=event_id,
+            target=target,
             details={"status": "completed", "result": result},
         )
         return result

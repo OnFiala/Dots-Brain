@@ -137,12 +137,16 @@ completed deletions. The private operator report preserves the exact invocation
 IDs and results; the current deletion audit does not itself contain the object ID.
 No personal knowledge was imported during this acceptance.
 
-Review follow-up DBR-ONB-001: grants do not retain the consumed pairing request ID.
-Current Grok attribution is correlated by its unique client/grant, revision writer
-and server audit. Persisting request-to-grant provenance remains a separate repair.
-Review follow-up DBR-CLEAN-001: include the deletion memory ID and observed revision
-in durable audit metadata. The current operator report supplies that association
-for this acceptance only.
+The deployed `2c8823b` still has two auditability limitations. DBR-ONB-001: its
+grants do not retain the consumed pairing request ID; current bot attribution is
+correlated through unique clients/grants, revision writers and server audit.
+DBR-CLEAN-001: deletion audit lacks the memory ID and observed revision; the private
+operator report supplies that association for this acceptance only.
+
+Both have source repairs: additive OAuth provenance tables and allowlisted deletion
+targets in intents/receipts. These repairs are tested but not deployed. Upgrading
+requires the documented stop, backup and same-issuer configuration step; it does
+not backfill old grants or rewrite existing append-only audit history.
 
 ### Repeatable installation procedure (owner approval required)
 

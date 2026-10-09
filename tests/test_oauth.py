@@ -3,6 +3,8 @@ import base64
 import hashlib
 import json
 import secrets
+import sqlite3
+import time
 from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import parse_qs, urlsplit
 
@@ -402,15 +404,208 @@ def test_pending_consent_is_local_exact_and_requires_explicit_deletion_permissio
 
 
 def test_concurrent_code_exchange_issues_at_most_one_grant(installation):
-    _, state, _, app = installation
+    store, state, _, app = installation
     with TestClient(app, base_url=ISSUER) as http:
         client = register(http, method="client_secret_post")
         form = request_code(http, client, state)
+        with store.connection() as db:
+            request_id = db.execute("SELECT request_id FROM oauth_code_provenance").fetchone()[0]
         assert http.post("/token", data={**form, "client_secret": "wrong"}).status_code == 401
         with ThreadPoolExecutor(max_workers=2) as pool:
             responses = list(pool.map(lambda _: http.post("/token", data=form), range(2)))
         assert sorted(response.status_code for response in responses) == [200, 400]
         assert len(state.grants()["grants"]) == 1
+        assert state.grants()["grants"][0]["request_id"] == request_id
+        with store.connection() as db:
+            assert db.execute("SELECT COUNT(*) FROM oauth_code_provenance").fetchone()[0] == 0
+            assert db.execute("SELECT COUNT(*) FROM oauth_grant_provenance").fetchone()[0] == 1
+
+
+def test_pairing_provenance_survives_exchange_restart_refresh_and_revocation(installation):
+    store, state, _, app = installation
+    before = time.time()
+    with TestClient(app, base_url=ISSUER) as http:
+        client = register(http)
+        verifier = secrets.token_urlsafe(48)
+        request_id, pairing = request_code(http, client, state, approve=False, verifier=verifier)
+        state.decide(request_id, projects=["work"], scopes=["memory:read"])
+        response = http.get(pairing, follow_redirects=False)
+        code = parse_qs(urlsplit(response.headers["location"]).query)["code"][0]
+        assert http.get(pairing, follow_redirects=False).status_code == 410
+        with store.connection() as db:
+            assert db.execute("SELECT COUNT(*) FROM oauth_request_provenance").fetchone()[0] == 0
+            provenance = db.execute("SELECT * FROM oauth_code_provenance").fetchone()
+            assert provenance["request_id"] == request_id
+            assert before <= provenance["request_created_at"] <= time.time()
+        result = http.post(
+            "/token",
+            data={
+                "grant_type": "authorization_code",
+                "client_id": client["client_id"],
+                "code": code,
+                "redirect_uri": CALLBACK,
+                "code_verifier": verifier,
+                "resource": state.resource,
+            },
+        )
+        assert result.status_code == 200
+        tokens = result.json()
+        restarted = OAuthStore(Store(store.directory))
+        grant = restarted.grants()["grants"][0]
+        assert grant["request_id"] == request_id
+        assert grant["request_created_at"] == provenance["request_created_at"]
+        assert grant["request_created_at"] <= grant["created_at"] <= time.time()
+        assert grant["scopes"] == ["memory:read"] and grant["projects"] == ["work"]
+        rendered = json.dumps(restarted.grants())
+        assert all(
+            value not in rendered
+            for value in (code, tokens["access_token"], tokens["refresh_token"])
+        )
+        refreshed = http.post(
+            "/token",
+            data={
+                "grant_type": "refresh_token",
+                "client_id": client["client_id"],
+                "refresh_token": tokens["refresh_token"],
+                "resource": state.resource,
+            },
+        )
+        assert refreshed.status_code == 200
+        assert restarted.grants()["grants"] == [grant]
+        restarted.revoke_grant(grant["id"])
+        assert restarted.grants()["grants"] == [grant | {"revoked": 1}]
+
+
+def test_provenance_upgrade_preserves_legacy_auth_without_fabricating_history(
+    installation, monkeypatch
+):
+    from dots_brain import oauth
+
+    store, state, _, app = installation
+    with TestClient(app, base_url=ISSUER) as http:
+        client = register(http)
+        tokens = http.post("/token", data=request_code(http, client, state)).json()
+        legacy_code = request_code(http, client, state)
+        with store.connection(write=True) as db:
+            for table in (
+                "oauth_request_provenance",
+                "oauth_code_provenance",
+                "oauth_grant_provenance",
+            ):
+                db.execute(f"DROP TABLE {table}")
+            tables = (
+                "oauth_clients",
+                "oauth_requests",
+                "oauth_codes",
+                "oauth_grants",
+                "oauth_tokens",
+            )
+            before = {name: list(db.execute(f"SELECT * FROM {name}")) for name in tables}
+        old_config = (store.directory / "oauth.json").read_bytes()
+        with pytest.raises(InputError, match="provenance upgrade required"):
+            OAuthStore(store)
+        with store.connection() as db:
+            assert (
+                db.execute(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE name LIKE '%_provenance'"
+                ).fetchone()[0]
+                == 0
+            )
+        with monkeypatch.context() as patch:
+            patch.setattr(oauth, "SCHEMA", oauth.SCHEMA + "CREATE TABLE invalid (")
+            with pytest.raises(sqlite3.OperationalError):
+                configure(store, ISSUER)
+        with store.connection() as db:
+            assert (
+                db.execute(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE name LIKE '%_provenance'"
+                ).fetchone()[0]
+                == 0
+            )
+            assert {name: list(db.execute(f"SELECT * FROM {name}")) for name in tables} == before
+        assert (store.directory / "oauth.json").read_bytes() == old_config
+        configure(store, ISSUER)
+        configure(store, ISSUER)  # Same-issuer retries must not revoke or duplicate.
+        with store.connection() as db:
+            assert {name: list(db.execute(f"SELECT * FROM {name}")) for name in tables} == before
+        restarted = OAuthStore(store)
+        assert restarted.policy(tokens["access_token"]) is not None
+        old_grant = restarted.grants()["grants"][0]
+        assert old_grant["request_id"] is None and old_grant["request_created_at"] is None
+        assert old_grant["created_at"] is None
+        # A pre-upgrade code remains usable, with no invented pairing association.
+        assert http.post("/token", data=legacy_code).status_code == 200
+        new_grant = next(g for g in restarted.grants()["grants"] if g["id"] != old_grant["id"])
+        assert new_grant["request_id"] is None and new_grant["request_created_at"] is None
+        assert new_grant["created_at"] is not None
+        # The retained release uses positional INSERTs: table layouts stay intact.
+        with store.connection(write=True) as db:
+            db.execute(
+                "INSERT INTO oauth_requests VALUES ('legacy-request',?,'{}','pending',NULL,0)",
+                (client["client_id"],),
+            )
+            db.execute(
+                "INSERT INTO oauth_codes VALUES ('legacy-code',?,'{}',NULL,0)",
+                (client["client_id"],),
+            )
+            db.execute(
+                "INSERT INTO oauth_grants VALUES ('legacy-grant',?,'[]',NULL,'resource',0,0)",
+                (client["client_id"],),
+            )
+        uninstall(store)
+        with store.connection() as db:
+            for table in (
+                "oauth_request_provenance",
+                "oauth_code_provenance",
+                "oauth_grant_provenance",
+            ):
+                assert db.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] == 0
+
+
+@pytest.mark.parametrize("stage", ["claim", "exchange"])
+def test_provenance_write_failure_rolls_back_consumption_and_allows_exact_retry(
+    installation, stage
+):
+    store, state, _, app = installation
+    with TestClient(app, base_url=ISSUER) as http:
+        client = register(http)
+        request_id, _ = request_code(http, client, state, approve=False)
+        state.decide(request_id, projects=["work"])
+        if stage == "claim":
+            table = "oauth_code_provenance"
+
+            def operation():
+                return state.claim(request_id)
+        else:
+            claimed = state.claim(request_id)
+            code = parse_qs(urlsplit(claimed["url"]).query)["code"][0]
+            registered = state.get_client(client["client_id"])
+            loaded = state.load_code(registered, code)
+            table = "oauth_grant_provenance"
+
+            def operation():
+                return state.exchange_code(registered, loaded)
+
+        with store.connection(write=True) as db:
+            tables = [
+                r[0]
+                for r in db.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'oauth_%'"
+                )
+            ]
+            before = {name: list(db.execute(f"SELECT * FROM {name}")) for name in tables}
+            db.execute(
+                f"CREATE TRIGGER synthetic_failure BEFORE INSERT ON {table} "
+                "BEGIN SELECT RAISE(ABORT,'synthetic failure'); END"
+            )
+        with pytest.raises(sqlite3.IntegrityError, match="synthetic failure"):
+            operation()
+        with store.connection(write=True) as db:
+            assert {name: list(db.execute(f"SELECT * FROM {name}")) for name in tables} == before
+            db.execute("DROP TRIGGER synthetic_failure")
+        operation()
+        with store.connection() as db:
+            assert db.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] == 1
 
 
 def test_oauth_tokens_access_the_same_memory_through_real_mcp_and_respect_projects(installation):

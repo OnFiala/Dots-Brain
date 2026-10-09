@@ -55,6 +55,18 @@ CREATE TABLE IF NOT EXISTS oauth_tokens (
     scopes TEXT NOT NULL, expires REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS oauth_tokens_grant ON oauth_tokens(grant_id);
+CREATE TABLE IF NOT EXISTS oauth_request_provenance (
+    request_id TEXT PRIMARY KEY REFERENCES oauth_requests(id) ON DELETE CASCADE,
+    request_created_at REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS oauth_code_provenance (
+    code_hash TEXT PRIMARY KEY REFERENCES oauth_codes(hash) ON DELETE CASCADE,
+    request_id TEXT NOT NULL, request_created_at REAL
+);
+CREATE TABLE IF NOT EXISTS oauth_grant_provenance (
+    grant_id TEXT PRIMARY KEY REFERENCES oauth_grants(id) ON DELETE CASCADE,
+    request_id TEXT, request_created_at REAL, created_at REAL NOT NULL
+);
 """
 
 
@@ -120,6 +132,20 @@ class OAuthStore:
             raise InputError("Configure OAuth on the existing memory host first.")
         self.issuer = config["issuer"]
         self.resource = self.issuer + "/mcp"
+        # Upgrade only through explicit configuration. Companion tables preserve
+        # the old INSERT layouts so reverting the binary does not break auth.
+        with store.connection() as db:
+            tables = {
+                row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")
+            }
+        if (
+            not {"oauth_request_provenance", "oauth_code_provenance", "oauth_grant_provenance"}
+            <= tables
+        ):
+            raise InputError(
+                "OAuth provenance upgrade required. Stop the service, back up, and run "
+                "oauth configure with the existing issuer and --no-start before restarting."
+            )
 
     def enabled(self) -> bool:
         return not (self.store.directory / "disabled.json").exists() and configuration(
@@ -195,9 +221,14 @@ class OAuthStore:
             full = db.execute("SELECT COUNT(*) FROM oauth_requests").fetchone()[0] >= MAX_PENDING
             if not full:
                 request_id = "req_" + secrets.token_urlsafe(24)
+                created_at = time.time()
                 db.execute(
                     "INSERT INTO oauth_requests VALUES (?,?,?,'pending',NULL,?)",
-                    (request_id, client.client_id, params.model_dump_json(), time.time() + 300),
+                    (request_id, client.client_id, params.model_dump_json(), created_at + 300),
+                )
+                db.execute(
+                    "INSERT INTO oauth_request_provenance VALUES (?,?)",
+                    (request_id, created_at),
                 )
         if full:
             raise AuthorizeError(
@@ -285,7 +316,10 @@ class OAuthStore:
         self.require_enabled()
         with self.store.connection(write=True) as db:
             row = db.execute(
-                "SELECT * FROM oauth_requests WHERE id=? AND expires>?", (request_id, time.time())
+                "SELECT r.*,p.request_created_at FROM oauth_requests r "
+                "LEFT JOIN oauth_request_provenance p ON p.request_id=r.id "
+                "WHERE r.id=? AND r.expires>?",
+                (request_id, time.time()),
             ).fetchone()
             if row is None:
                 return {"state": "expired"}
@@ -304,6 +338,10 @@ class OAuthStore:
             db.execute(
                 "INSERT INTO oauth_codes VALUES (?,?,?,?,?)",
                 (digest(code), row["client_id"], row["params"], row["projects"], time.time() + 60),
+            )
+            db.execute(
+                "INSERT INTO oauth_code_provenance VALUES (?,?,?)",
+                (digest(code), request_id, row["request_created_at"]),
             )
         return {
             "state": "redirect",
@@ -351,10 +389,15 @@ class OAuthStore:
         self.require_enabled()
         with self.store.connection(write=True) as db:
             row = db.execute(
-                "DELETE FROM oauth_codes WHERE hash=? AND client_id=? AND expires>? RETURNING *",
+                "SELECT c.*,p.request_id,p.request_created_at FROM oauth_codes c "
+                "LEFT JOIN oauth_code_provenance p ON p.code_hash=c.hash "
+                "WHERE c.hash=? AND c.client_id=? AND c.expires>?",
                 (digest(code.code), client.client_id, time.time()),
             ).fetchone()
             if row is not None:
+                # Copy provenance before cascading code deletion. BEGIN IMMEDIATE
+                # keeps code consumption, grant and token creation atomic.
+                db.execute("DELETE FROM oauth_codes WHERE hash=?", (row["hash"],))
                 params = AuthorizationParams.model_validate_json(row["params"])
                 grant_id, expires = "grant_" + secrets.token_urlsafe(24), time.time() + 30 * 86400
                 db.execute(
@@ -367,6 +410,10 @@ class OAuthStore:
                         self.resource,
                         expires,
                     ),
+                )
+                db.execute(
+                    "INSERT INTO oauth_grant_provenance VALUES (?,?,?,?)",
+                    (grant_id, row["request_id"], row["request_created_at"], time.time()),
                 )
                 return self.mint(db, grant_id, params.scopes, expires)
         raise TokenError("invalid_grant", "Authorization code is expired or already used.")
@@ -459,7 +506,9 @@ class OAuthStore:
     def grants(self):
         with self.store.connection() as db:
             rows = db.execute(
-                "SELECT id,client_id,scopes,projects,expires,revoked FROM oauth_grants"
+                "SELECT g.id,g.client_id,g.scopes,g.projects,g.expires,g.revoked,"
+                "p.request_id,p.request_created_at,p.created_at FROM oauth_grants g "
+                "LEFT JOIN oauth_grant_provenance p ON p.grant_id=g.id"
             ).fetchall()
         return {
             "grants": [

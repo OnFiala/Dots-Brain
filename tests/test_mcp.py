@@ -168,6 +168,23 @@ def test_two_http_clients_share_revisions_and_delete_only_the_observed_revision(
                 removed = await call(1, "memory_forget", arguments)
                 assert removed.structuredContent["deleted"] is True
                 with store.connection() as db:
+                    deletions = db.execute(
+                        "SELECT i.target intent_target,r.target receipt_target,r.details "
+                        "FROM audit_events i JOIN audit_events r "
+                        "ON r.principal=i.principal AND r.project=i.project "
+                        "AND r.intent_event_id=i.client_event_id "
+                        "WHERE json_extract(i.action,'$.tool')='memory_forget' ORDER BY i.id"
+                    ).fetchall()
+                    # One stale attempt, then the successful observed revision.
+                    assert len(deletions) == 2
+                    for row, revision, status in zip(
+                        deletions, (1, 2), ("failed", "completed"), strict=True
+                    ):
+                        target = {"memory_id": memory_id, "expected_revision": revision}
+                        assert json.loads(row["intent_target"]) == target
+                        assert json.loads(row["receipt_target"]) == target
+                        assert json.loads(row["details"])["value"]["status"] == status
+                    assert event["content"] not in json.dumps([dict(row) for row in deletions])
                     assert (
                         db.execute("SELECT deleted_by FROM scoped_suppressions").fetchone()[0]
                         == identities[1]
