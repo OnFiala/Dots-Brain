@@ -1,12 +1,14 @@
-# Appliance deployment — internal OAuth candidate running
+# Appliance deployment — public OAuth candidate running
 
 ## Observed boundary (2026-10-09)
 
 The owner approved the first internal deployment on 2026-10-09. The x86_64 Linux
 host `openclaw-appliance` now runs one dedicated Dots Brain systemd service with
-Python 3.12.3. Its only listener is `127.0.0.1:8787`. Existing Agent Workspace,
-OAuth and tunnel containers remain separate services; this deployment added no
-public route. Tailscale Serve returned an empty configuration during acceptance.
+Python 3.12.3. Its only application listener is `127.0.0.1:8787`. A separate bounded
+gateway receives the owner-approved public Cloudflare route. Existing Agent
+Workspace and OAuth containers remain separate services, with their original
+tunnel routes preserved. Tailscale Serve returned an empty configuration during
+the initial internal acceptance.
 
 The installed source is `a28d25f21a7911dd5c38f78fb0f59c04b19747bd`, including the
 reviewed public OAuth fixes and bounded ingress. Source archive SHA-256:
@@ -26,7 +28,7 @@ See [live verification and its limits](verification.md).
 | Canonical data | `/var/lib/dots-brain`, owned by service user, directory 0700 |
 | Backups | `/var/backups/dots-brain`, private; off-host destination still to provision |
 | Service | [`dots-brain.service`](../deploy/systemd/dots-brain.service), supervised foreground HTTP |
-| Listener | `127.0.0.1:8787/mcp`; no public route in this first step |
+| Listener | Application `127.0.0.1:8787/mcp`; gateway `172.17.0.1:8788`; public `https://dots-brain.ofops.co/mcp` |
 | Embeddings | Pinned quantized multilingual MiniLM, local CPU, two ONNX threads |
 | Initial resource guard | Verified CPU quota 2 cores, memory high 1.5 GiB / max 2 GiB |
 | External model calls | None |
@@ -49,8 +51,7 @@ daemon guard or sandbox socket restriction. The focused 24 OAuth tests passed th
 
 Before selecting the new release, a consistent private backup was written to
 `/var/backups/dots-brain/pre-public-a28d25f.sqlite3` (0600). Only Dots Brain was
-restarted. OAuth is configured for `https://dots-brain.ofops.co`, while the external
-route has not yet been published or verified. The dedicated gateway is active on
+restarted. OAuth is configured for `https://dots-brain.ofops.co`. The dedicated gateway is active on
 `172.17.0.1:8788`; its [configuration and rollback](appliance-ingress.md) are separate
 from the host's existing nginx service. A narrowly scoped Docker firewall exception
 was necessary; the first connection correctly timed out before it was added.
@@ -68,8 +69,25 @@ The actual ten-minute window also expired successfully: an independent reviewer
 observed the unit inactive and its marker removed at 19:19:50 UTC. Supported
 registration/authorization/pairing requests were then denied. The first close probe
 used an unsupported GET on registration and correctly received 403; the supported
-POST was verified separately as 503. Public DNS/TLS, actual bot callbacks and each
-bot's shared-memory proof remain separate pending checks.
+POST was verified separately as 503.
+
+### Owner-approved public route acceptance
+
+The owner then explicitly approved publishing `dots-brain.ofops.co` through the
+existing `agent-workspace-mcp` Cloudflare tunnel to `http://172.17.0.1:8788`.
+The UI confirmed route and DNS creation; both existing Workspace routes remained
+unchanged. External Mac probes verified DNS, TLS with certificate validation,
+discovery/resource metadata, public-client `none`, PKCE S256, anonymous MCP 401,
+unknown-path 404, closed onboarding 503 and `no-store`, without a login redirect.
+
+Two synthetic OAuth clients then completed the real public HTTPS path through
+Cloudflare, nginx and the appliance: exact owner pairing, code exchange, MCP
+status/write/read, shared ID/revision, foreign-project denial and isolated grant
+revocation. Cleanup deleted the synthetic record and revoked both grants. An
+independent reviewer repeated bounded public discovery/auth probes; a stress
+reviewer verified the 16 KiB/128 KiB body limits, methods and invalid suffix denial.
+This is public route acceptance, not an actual Botter/Grok account connection.
+The owner has the relay prompts; each bot's request ID and client usage are pending.
 
 ### Repeatable installation procedure (owner approval required)
 
@@ -137,8 +155,15 @@ The owner-requested Codex heartbeat `dots-brain-audit-2-denn` is registered ACTI
 for 09:00/21:00 in the operator's Europe/Prague timezone. App creation/view and the
 local registry contract check passed. It targets this work's existing chat; the
 observed current chat model is `gpt-6-astra/xhigh`. The heartbeat API/registry has
-no independent model or next-run timestamp field. Actual scheduled execution and
-its effective model remain unverified until the first run.
+no independent model or next-run timestamp field. The first scheduled trigger at
+`2026-10-09T19:22:13Z` ran, but its restricted shell could not resolve the canonical
+tailnet hostname. The helper reported `incomplete/CalledProcessError`; no privilege
+escalation, alternate endpoint, completion envelope or checkpoint advance occurred.
+The checkpoint remains ID 50, completed at `18:45:04Z`. Persistent thread metadata
+shows `gpt-6-astra`, provider `openai`, effort `xhigh`; that is configuration evidence,
+not backend execution telemetry for the scheduled inference. Network access for
+unattended review still needs an explicitly permitted path. This failure was not
+treated as a safe audit period or silently repaired by the automation.
 
 The manually exercised [review helper](activity.md#twice-daily-operator-review)
 read all 50 canonical audit events, checked payload/hash continuity and saved its

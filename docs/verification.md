@@ -75,11 +75,16 @@ The senior reviewer independently read the installed state and reports. Test/str
 reviewers validated the acceptance protocol and bounded evidence; they did not all
 independently execute the host tests. See [deployment and rollback](appliance-deployment.md).
 
+The subsequent `a28d25f` public OAuth candidate passed 159 tests and one skip on
+the appliance and CI Python 3.11/3.12. An owner-approved Cloudflare route then passed
+public TLS, synthetic S256 OAuth pairing and real shared MCP read/write acceptance;
+independent reviewers checked the installed configuration and public route bounds.
+See the exact [public acceptance and remaining client step](appliance-deployment.md#owner-approved-public-route-acceptance).
+
 Still unverified: actual appliance reboot, encrypted off-host backup/host-loss
-recovery, large-corpus/long-duration load, real Botter/Grok clients, public HTTPS
-and OAuth consent, upstream CORTEX, and complete live provider capture. Existing
-Workspace services were not reconfigured. No personal-memory import or paid model
-API call occurred. Internal deployment acceptance does not close those boundaries.
+recovery, large-corpus/long-duration load, real Botter/Grok client consent, upstream
+CORTEX, and complete live provider capture. Existing Workspace processes and routes
+were preserved. No personal-memory import or paid model API call occurred.
 
 ## Unreleased shared-client safety checks — 2026-10-09
 

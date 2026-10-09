@@ -5,9 +5,10 @@ database as your memory. It uses the official MCP Python SDK for discovery,
 registration, authorization-code/PKCE validation, token responses, and revocation.
 It does not require a paid identity service, hosted database, or inference API.
 
-This release verifies the full flow with the official MCP OAuth client against
-a live local HTTP service. Public HTTPS deployment and actual ChatGPT/Claude web
-account setup have not been verified. OAuth support does not create a tunnel or
+The candidate verifies the full flow with the official MCP OAuth client against
+a live local HTTP service. The appliance's public HTTPS gateway also passed
+synthetic OAuth and real MCP read/write acceptance. Actual Botter/Grok account
+connections remain unverified. OAuth support alone does not create a tunnel or
 give an agent access to a user's browser or another device.
 
 ## What an agent can do

@@ -1,13 +1,14 @@
 # Appliance ingress and bot onboarding
 
-This is the deployment contract for the candidate gateway. A configured route is
-not proof that either bot connected. Record runtime and client acceptance separately
-in [appliance deployment](appliance-deployment.md).
+This is the deployment contract for the running candidate gateway. Its public
+route passed synthetic acceptance; this is not proof that either bot connected.
+Runtime and client acceptance are recorded separately in
+[appliance deployment](appliance-deployment.md).
 
 ## One public application, separate owner access
 
-The chosen origin is `https://dots-brain.ofops.co`; publish it only after the local
-gateway checks pass. Memory remains on `openclaw-appliance`. Owner commands use
+The verified public origin is `https://dots-brain.ofops.co`. Memory remains on
+`openclaw-appliance`. Owner commands use
 the existing Tailscale SSH route. Each bot receives a separate OAuth grant with
 `memory:read memory:write` for project `shared`, without deletion or CORTEX scopes.
 
