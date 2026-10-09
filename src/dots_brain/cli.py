@@ -101,7 +101,14 @@ def parser() -> argparse.ArgumentParser:
     oauth_setup.add_argument(
         "--issuer", required=True, help="Existing HTTPS origin; does not create ingress."
     )
-    for name in ("status", "pending", "grants", "disable"):
+    oauth_setup.add_argument(
+        "--no-start", action="store_true", help="Leave startup to an external supervisor."
+    )
+    oauth_disable = oauth_actions.add_parser("disable")
+    oauth_disable.add_argument(
+        "--no-start", action="store_true", help="Leave startup to an external supervisor."
+    )
+    for name in ("status", "pending", "grants"):
         oauth_actions.add_parser(name)
     approve = oauth_actions.add_parser("approve")
     approve.add_argument("request_id")
@@ -218,7 +225,11 @@ def run(args) -> dict | None:
         with locked(store.directory / "installation.lock"):
             if args.oauth_action == "configure":
                 result = configure(store, args.issuer)
-                return {**result, "service": up(store)}
+                return {
+                    **result,
+                    "service": None if args.no_start else up(store),
+                    "restart_required": args.no_start,
+                }
             if args.oauth_action == "disable":
                 with store.connection(write=True) as db:
                     revoke_all(db)
@@ -227,8 +238,9 @@ def run(args) -> dict | None:
                     "state": "oauth_disabled",
                     "grants_revoked": True,
                     "service": up(store)
-                    if not (store.directory / "disabled.json").exists()
+                    if not args.no_start and not (store.directory / "disabled.json").exists()
                     else None,
+                    "restart_required": args.no_start,
                 }
             state = OAuthStore(store)
             if args.oauth_action == "pending":

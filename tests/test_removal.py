@@ -80,7 +80,7 @@ def test_complete_lifecycle_keeps_memories_and_blocks_restart_until_explicit_res
         assert not active(read_json(store.directory / "service.json"))
         assert read_json(config) == {"mcpServers": {}, "theme": "new preference after setup"}
         assert store.get(memory["id"])["content"] == "Keep this memory."
-        with pytest.raises(SuppressedError):
+        with pytest.raises(InputError, match="disabled"):
             store.remember(content="Forget this.", source="test", account="a", event_id="2")
         assert authenticate(store, token) is None
         assert uninstall(store)["state"] == "uninstalled"
@@ -107,6 +107,8 @@ def test_complete_lifecycle_keeps_memories_and_blocks_restart_until_explicit_res
         assert bridge.returncode == 1 and "disabled" in bridge.stderr
         assert token not in json.dumps(result) + bridge.stdout + bridge.stderr
         restarted = up(store, resume=True)
+        with pytest.raises(SuppressedError):
+            store.remember(content="Forget this.", source="test", account="a", event_id="2")
         assert restarted["pid"] != running["pid"]
         assert authenticate(store, token) is None
         connected = connect_client(store, provider="cursor", config=config)

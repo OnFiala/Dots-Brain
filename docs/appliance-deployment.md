@@ -75,7 +75,10 @@ allow only the MCP route and required OAuth discovery/registration/authorization
 token/revocation/pairing paths. Add ingress rate/body bounds without logging auth
 headers, tokens, authorization codes or pairing URLs. Do not publish the database,
 operator CLI or a general proxy. Dots uses its own issuer and scopes, not Workspace
-tokens. Inspect actual OAuth callbacks during the real connection; do not relax
+tokens. For this externally supervised instance, stop the unit, run `oauth configure
+--issuer <verified-origin> --no-start`, then start the unit again. Likewise use
+`oauth disable --no-start` with the supervisor; omit the managed `up` lifecycle.
+Inspect actual OAuth callbacks during the real connection; do not relax
 registration based on a historical forum report.
 
 Botter may support Secure MCP Tunnel, but account availability is unverified.

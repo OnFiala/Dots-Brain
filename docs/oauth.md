@@ -160,3 +160,13 @@ secrets, authorization codes, tokens, or pairing URLs.
 
 The OAuth tables are additive to the existing memory schema. See
 [upgrading](upgrading.md), [uninstall](uninstall.md), and [troubleshooting](troubleshooting.md).
+
+
+## Externally supervised installations
+
+When systemd or another supervisor owns the HTTP process, stop that service and
+use `oauth configure --issuer <verified-origin> --no-start` or
+`oauth disable --no-start`. Then restart through the same supervisor. The result
+reports `restart_required`; these commands do not launch the managed background
+process. Without `--no-start`, the original managed `up` lifecycle is retained.
+Never run both lifecycle managers against one installation.

@@ -644,3 +644,21 @@ def test_default_approval_does_not_add_audit_or_cortex_scopes(installation):
         response = http.post("/token", data=form)
         assert response.status_code == 200
         assert response.json()["scope"] == "memory:read"
+
+
+def test_supervised_oauth_configuration_never_starts_managed_process(tmp_path, monkeypatch):
+    from dots_brain import runtime
+
+    store = Store(tmp_path / "brain")
+    store.initialize()
+
+    def forbidden_start(*args, **kwargs):
+        pytest.fail("A supervised configuration must not start another managed service")
+
+    monkeypatch.setattr(runtime, "up", forbidden_start)
+    base = ["--data-dir", str(store.directory), "oauth"]
+    configured = run(parser().parse_args(base + ["configure", "--issuer", ISSUER, "--no-start"]))
+    assert configured["restart_required"] is True and configured["service"] is None
+    disabled = run(parser().parse_args(base + ["disable", "--no-start"]))
+    assert disabled["restart_required"] is True and disabled["service"] is None
+    assert not (store.directory / "service.json").exists()
