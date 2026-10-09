@@ -79,19 +79,22 @@ The subsequent `a28d25f` public OAuth candidate passed 159 tests and one skip on
 the appliance and CI Python 3.11/3.12. An owner-approved Cloudflare route then passed
 public TLS, synthetic S256 OAuth pairing and real shared MCP read/write acceptance;
 independent reviewers checked the installed configuration and public route bounds.
-See the exact [public acceptance and remaining client step](appliance-deployment.md#owner-approved-public-route-acceptance).
+See the exact [public and actual client acceptance](appliance-deployment.md#owner-approved-public-route-acceptance).
 
 Grok's actual chat status/write/readback subsequently passed, corroborated by its
 grant, revision writer and server audit. The first ChatGPT connection exposed a
 read-only DCR default mismatch; `2c8823b` passed 26 focused local OAuth tests with
 one Linux-only process test excluded, all 27 OAuth tests on the appliance, and
 [Linux CI on Python 3.11/3.12](https://github.com/OnFiala/Dots-Brain/actions/runs/37983273940).
-After its deployment, a fresh ChatGPT client completed owner-approved OAuth;
-Botter's actual chat tool calls and cross-bot readback still remain.
+After its deployment, a fresh ChatGPT client completed owner-approved OAuth.
+Botter subsequently reported actual chat status, readback of Grok's fact, its own
+synthetic write and readback. The distinct Botter revision writer and completed
+audit pair 61/62 corroborate its write at 20:06:19 UTC. Grok's reverse read of the
+Botter fact remains pending. The two synthetic facts are retained for that check.
 
 Still unverified: actual appliance reboot, encrypted off-host backup/host-loss
-recovery, large-corpus/long-duration load, real Botter chat tool use, upstream
-CORTEX, and complete live provider capture. Existing Workspace processes and routes
+recovery, large-corpus/long-duration load, upstream CORTEX, and complete live provider
+capture. Existing Workspace processes and routes
 were preserved. No personal-memory import or paid model API call occurred.
 
 ## Unreleased shared-client safety checks — 2026-10-09

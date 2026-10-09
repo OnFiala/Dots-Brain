@@ -97,7 +97,7 @@ pairing request ID; approval narrowed the request to `shared` and only
 one synthetic write and exact-ID revision-1 readback from its real chat tools.
 Independent server metadata confirmed a single matching active grant, the same
 revision writer, and completed server-observed intent/receipt IDs 59/60.
-The synthetic fact remains for Botter's cross-read; no personal import occurred.
+Botter subsequently read this same synthetic fact; no personal import occurred.
 
 The owner approved creation of a ChatGPT Dots Brain plugin. Its first OAuth attempt
 failed before pairing: registered scope was only `memory:read`, while authorization
@@ -114,9 +114,17 @@ unchanged Grok grant.
 The failed ChatGPT plugin was uninstalled. A fresh plugin, **Dots Brain Memory**,
 completed OAuth with a different client and its own `shared` read/write grant.
 Its pairing ID was observed in the actual browser and approved exactly. Both
-active grants were confirmed through owner metadata. Botter's actual chat tool
-calls and bidirectional cross-bot readback remain pending; account authorization
-alone is not that proof. The old uninstalled developer draft is retained.
+active grants were confirmed through owner metadata. The old uninstalled developer
+draft is retained.
+
+Botter then reported actual chat status, exact-ID readback of Grok's revision-1
+fact, one synthetic write and its own revision-1 readback. Server metadata places
+that write at 2026-10-09 20:06:19 UTC, attributes its revision to Botter's separate
+grant, and confirms completed server-observed intent/receipt IDs 61/62. Both grants
+remain limited to `shared` and `memory:read memory:write`; onboarding is closed and
+the service is active. Reads are client-reported through the owner relay; the
+server audit corroborates writes, not read calls. Grok's reverse read of Botter's
+fact is still pending. Both synthetic facts remain unchanged for that check.
 
 Review follow-up DBR-ONB-001: grants do not retain the consumed pairing request ID.
 Current Grok attribution is correlated by its unique client/grant, revision writer

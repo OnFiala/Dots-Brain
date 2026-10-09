@@ -11,7 +11,8 @@
 
 See [capabilities](capabilities.md) and [verification](verification.md) for evidence.
 The owner-approved internal appliance deployment passed synthetic acceptance on
-2026-10-09. Actual bot access and external integrations remain separate checks.
+2026-10-09. Both bots subsequently verified actual chat read/write access;
+Grok's reverse read of Botter's synthetic fact and external integrations remain.
 
 ## Next acceptance: canonical appliance and clients
 
@@ -20,11 +21,12 @@ The owner-approved internal appliance deployment passed synthetic acceptance on
    synthetic recovery are verified; a real appliance reboot is still untested.
 2. Provision dedicated CORTEX access over a supported authenticated boundary;
    verify both original references and one authorized selected write/receipt.
-3. Expose only the required MCP/OAuth paths for cloud clients. Tailscale remains
-   the administration/private-client path; shell reachability does not prove a
-   cloud MCP backend can reach it. Verify the actual provider callback registration.
-4. Connect Botter and Grok separately. Each writes a synthetic note the other reads
-   at the same ID/revision; test project denial, revocation and explicit cleanup.
+3. The constrained public MCP/OAuth route and both actual OAuth callbacks are
+   verified. Keep onboarding closed between owner-approved pairing sessions;
+   Tailscale remains the administration/private-client path.
+4. Complete Grok's reverse read of Botter's synthetic fact, then owner cleanup.
+   Both separate bot connections, each write/readback and Botter's cross-read are
+   verified. Project denial and isolated revocation passed synthetic acceptance.
 5. Each bot submits its available knowledge with stable identities and uncertainty
    labels, verifies receipts, then demonstrates relevant recall in a later session.
 6. Establish the available live capture mechanisms and verify the first scheduled

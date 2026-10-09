@@ -7,9 +7,10 @@ It does not require a paid identity service, hosted database, or inference API.
 
 The candidate verifies the full flow with the official MCP OAuth client against
 a live local HTTP service. The appliance's public HTTPS gateway also passed
-synthetic OAuth and real MCP read/write acceptance. Actual Botter/Grok account
-connections remain unverified. OAuth support alone does not create a tunnel or
-give an agent access to a user's browser or another device.
+synthetic OAuth and real MCP read/write acceptance. Both Botter and Grok verified
+actual chat read/write calls using separate owner-approved grants. OAuth support
+alone does not create a tunnel or give an agent access to a user's browser or
+another device.
 
 ## What an agent can do
 
@@ -175,8 +176,10 @@ readback were confirmed by the owner relay and server writer/audit metadata.
 ChatGPT's first real connection registered read-only eligibility and then requested
 read/write, which correctly failed with `invalid_scope`. The omitted-scope default
 above fixes that registration contract. After deployment, a fresh ChatGPT
-registration completed owner-approved OAuth. Botter's actual chat tool use and
-cross-bot acceptance are still required. See [deployment evidence](appliance-deployment.md).
+registration completed owner-approved OAuth. Botter then reported actual chat
+status, readback of Grok's fact, and its own synthetic write/readback, corroborated
+by the separate writer and server audit. Grok's reverse read remains pending.
+See [deployment evidence](appliance-deployment.md).
 
 The OAuth tables are additive to the existing memory schema. See
 [upgrading](upgrading.md), [uninstall](uninstall.md), and [troubleshooting](troubleshooting.md).
