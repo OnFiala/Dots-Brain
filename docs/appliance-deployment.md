@@ -64,8 +64,12 @@ than the allowed connector namespace returned 403. The synthetic fact was delete
 both test grants were revoked and `doctor` reported zero memories and revisions.
 This establishes the internal gateway path, not either named bot's connection.
 
-Public DNS/TLS, actual bot callbacks, each bot's shared-memory proof and automatic
-expiry of the ten-minute onboarding window remain separate pending checks.
+The actual ten-minute window also expired successfully: an independent reviewer
+observed the unit inactive and its marker removed at 19:19:50 UTC. Supported
+registration/authorization/pairing requests were then denied. The first close probe
+used an unsupported GET on registration and correctly received 403; the supported
+POST was verified separately as 503. Public DNS/TLS, actual bot callbacks and each
+bot's shared-memory proof remain separate pending checks.
 
 ### Repeatable installation procedure (owner approval required)
 
