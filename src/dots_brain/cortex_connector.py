@@ -214,13 +214,17 @@ class CortexConnectionConfig:
             raise InputError("CORTEX connection configuration is invalid.")
         if not 1 <= self.timeout_seconds <= 60:
             raise InputError("CORTEX connection configuration is invalid.")
+        if not self.project_mapping:
+            raise InputError("CORTEX project mapping must not be empty.")
         seen: set[str] = set()
+        targets: set[str] = set()
         for local_project, cortex_project in self.project_mapping:
             _validate_project(local_project)
             _validate_project(cortex_project)
-            if local_project in seen:
-                raise InputError("CORTEX connection configuration is invalid.")
+            if local_project in seen or cortex_project in targets:
+                raise InputError("CORTEX project mapping must be one-to-one.")
             seen.add(local_project)
+            targets.add(cortex_project)
 
     def cortex_project_for(self, local_project: str) -> str:
         for local, cortex in self.project_mapping:
@@ -470,15 +474,20 @@ class CortexConnector:
         try:
             upstream = await self._transport.call_tool(f"cortex_record_{kind}", request)
             upstream = _safe_receipt(upstream)
+            self._ledger.mark_acknowledged(
+                actual_id, receipt=upstream, upstream_object_id=_object_id(upstream)
+            )
+            row = self._ledger.get(actual_id)
+            if row is None:
+                raise CortexConnectorError("CORTEX operation receipt is unavailable.")
+            return _receipt_from_row(row, replayed=False)
         except Exception as exc:
-            self._ledger.mark_uncertain(actual_id, error_code="transport_or_upstream_failure")
+            try:
+                self._ledger.mark_uncertain(actual_id, error_code="write_or_receipt_failure")
+            except Exception:
+                # The committed sending state still blocks replay if storage is unavailable.
+                pass
             raise CortexWriteUncertain(actual_id) from exc
-        object_id = _object_id(upstream)
-        self._ledger.mark_acknowledged(actual_id, receipt=upstream, upstream_object_id=object_id)
-        row = self._ledger.get(actual_id)
-        if row is None:
-            raise CortexConnectorError("CORTEX operation receipt is unavailable.")
-        return _receipt_from_row(row, replayed=False)
 
     def operation_status(self, *, policy, project: str, operation_id: str) -> dict:
         """Read the caller's receipt without expanding project or actor permissions."""
@@ -519,7 +528,7 @@ class CortexConnector:
                 continue
             self._ledger.mark_acknowledged(
                 operation_id,
-                receipt={"object_id": object_id, "status": "reconciled"},
+                receipt=_safe_receipt({**(result["receipt"] or {}), "object_id": object_id}),
                 upstream_object_id=object_id,
             )
             return _receipt_from_row(

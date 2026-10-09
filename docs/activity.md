@@ -77,7 +77,8 @@ dots-brain --data-dir /private/brain cortex \
 
 The example is a placeholder, not a deployed URL. Use a dedicated supported MCP
 endpoint and owner-provisioned private regular token file (owner-only permissions,
-no symlink). Restart the service after configuration. A REST API or an existing
+no symlink). Mappings must be nonempty and one-to-one: two local projects cannot share an
+upstream project. Restart the service after configuration. A REST API or an existing
 read-only Grok endpoint is not automatically a writable MCP endpoint. No CORTEX
 credential is sent to a bot or stored in memory. There is no bidirectional DB sync.
 

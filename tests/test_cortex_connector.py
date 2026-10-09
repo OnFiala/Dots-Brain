@@ -395,3 +395,89 @@ def test_connection_token_requires_private_owned_regular_file(tmp_path):
     link.symlink_to(token)
     with pytest.raises(CortexConnectorError):
         _read_token(link)
+
+
+@pytest.mark.parametrize(
+    "mapping",
+    [(), (("alpha", "shared"), ("beta", "shared")), (("alpha", "one"), ("alpha", "two"))],
+)
+def test_project_mapping_cannot_collapse_caller_boundaries(mapping):
+    with pytest.raises(InputError):
+        CortexConnectionConfig(
+            endpoint="https://cortex.example.test/mcp",
+            token_file=Path("/private/cortex-token"),
+            project_mapping=mapping,
+        )
+
+
+@pytest.mark.parametrize("failure", ["transport", "acknowledgement", "readback"])
+def test_receipt_storage_failure_reports_uncertain_without_resending(tmp_path, failure):
+    store = Store(tmp_path / "brain")
+    store.initialize()
+
+    class FailedLedger(SqliteCortexLedger):
+        fail_readback = False
+
+        def mark_acknowledged(self, *args, **kwargs):
+            if failure == "acknowledgement":
+                raise sqlite3.OperationalError("synthetic unavailable storage")
+            super().mark_acknowledged(*args, **kwargs)
+            self.fail_readback = failure == "readback"
+
+        def get(self, operation_id):
+            if self.fail_readback:
+                self.fail_readback = False
+                raise sqlite3.OperationalError("synthetic failed readback")
+            return super().get(operation_id)
+
+        def mark_uncertain(self, *args, **kwargs):
+            raise sqlite3.OperationalError("synthetic failed uncertainty receipt")
+
+    transport = Transport(failure=TimeoutError() if failure == "transport" else None)
+    service = connector(transport, FailedLedger(store))
+    arguments = dict(
+        policy=policy("cortex:write"),
+        project="alpha",
+        source_ref="dots://memory/1@1",
+        title="Synthetic fact",
+    )
+    with pytest.raises(CortexWriteUncertain) as first:
+        asyncio.run(service.write_note(**arguments))
+    reopened = connector(transport, SqliteCortexLedger(store))
+    if failure == "readback":
+        receipt = asyncio.run(reopened.write_note(**arguments))
+        assert receipt["operation_id"] == first.value.operation_id
+        assert receipt["state"] == "acknowledged" and receipt["replayed"]
+    else:
+        with pytest.raises(CortexWriteUncertain) as retried:
+            asyncio.run(reopened.write_note(**arguments))
+        assert retried.value.operation_id == first.value.operation_id
+    assert len(transport.calls) == 1
+
+
+def test_reconciliation_preserves_original_acknowledgement(tmp_path):
+    store = Store(tmp_path / "brain")
+    store.initialize()
+    transport = Transport({"cortex_record_note": {"event_id": "event-ack-1"}})
+    service = connector(transport, SqliteCortexLedger(store))
+    caller = policy("cortex:write")
+    receipt = asyncio.run(
+        service.write_note(
+            policy=caller, project="alpha", source_ref="dots://memory/1@1", title="Synthetic"
+        )
+    )
+    transport.replies.update(
+        cortex_search={"results": [{"object_id": "projected-object-1"}]},
+        cortex_fetch={
+            "stored_object": {
+                "project_id": "cortex-alpha",
+                "content_text": transport.calls[0][1]["content"],
+            }
+        },
+    )
+    result = asyncio.run(
+        service.reconcile(policy=caller, project="alpha", operation_id=receipt["operation_id"])
+    )
+    assert result["receipt"] == {"event_id": "event-ack-1", "object_id": "projected-object-1"}
+    assert result["retrievable_source_ref"] == "cortex://object/projected-object-1"
+    assert len([call for call in transport.calls if call[0] == "cortex_record_note"]) == 1
