@@ -34,8 +34,15 @@ using the pinned local artifacts, with network model access disabled. This is a
 retrieval smoke/regression test, not an appliance performance measurement.
 
 Lint, formatting, documentation links and wheel/sdist build passed locally.
-The final candidate still requires its exact Linux CI result before deployment;
-record that result here after CI completes. No production appliance, CORTEX service
+Candidate code commit `582059b` passed **135 tests, 1 skipped** on both Linux
+Python 3.11 and 3.12, including process lifecycle, restart/reconnect and OAuth.
+Lint, formatting, documentation validation and wheel/sdist builds passed in
+[the exact CI run](https://github.com/OnFiala/Dots-Brain/actions/runs/37971566673).
+The real-model suite also passed all 6 tests in an isolated environment built
+with `uv sync --frozen --all-extras` (FastEmbed 0.8.1, ONNX Runtime 1.30.0), using
+only the already prepared local model. CI skips that opt-in model test.
+
+No production appliance, CORTEX service
 credential, public OAuth route, bot account or review automation was changed by
 these tests. The systemd template is a reviewed deployment artifact, not a running
 service. See [the deployment plan](appliance-deployment.md).
