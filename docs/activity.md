@@ -92,7 +92,9 @@ interface; confirm the actual model on its first scheduled run. See
 The operator checkout includes [`scripts/audit_review.py`](../scripts/audit_review.py).
 It uses a fixed read-only CLI command over the pinned appliance SSH alias. This is
 procedural read-only operation under the existing operator account, not an OS-enforced
-audit-only credential. It does not read memory content or credential files.
+audit-only credential. It does not query memory tables or read credential files.
+Audit metadata can contain client-supplied personal text after known-pattern
+sanitization; sanitization is not a guarantee that all sensitive text is removed.
 
 1. Run `python3 scripts/audit_review.py scan`. It reads from the last completed
    ID, rechecks that ID's stored hash as an overlap anchor, validates each new
@@ -123,7 +125,9 @@ audit-only credential. It does not read memory content or credential files.
 
 State lives in the operator's private `~/.local/state/dots-brain-audit`, outside
 Git and appliance data. It retains IDs/hashes, unresolved references and bounded
-finding metadata; raw audit payloads appear only in the current scan output. An
+finding metadata; it does not write audit payloads into these state files. Scan
+output can be retained in the Codex task/run history, including any personal text
+present in sanitized audit fields. Minimize client-submitted audit text. An
 initial full scan on 2026-10-09 reviewed events 1–50, including three expected
 synthetic failure receipts. Provider capture remains a known incomplete baseline.
 

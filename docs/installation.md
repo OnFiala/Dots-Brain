@@ -1,10 +1,11 @@
 # Installation and operation
 
-This alpha runs on Python 3.11+ on a supported local host. Linux with Python 3.12
-is the environment exercised during development and installation on one
-user-confirmed shared Work/Dot VM. See the [deployment evidence](vm-deployment.md).
-This does not certify all Dot VM configurations, macOS, Windows, or individual
-AI clients. VM boot recovery and public ingress remain unverified.
+This alpha runs on Python 3.11+ on a supported local host. The current internal
+deployment is Linux/Python 3.12.3 on `openclaw-appliance`; see its
+[installation and acceptance](appliance-deployment.md). The earlier shared
+Work/Dot VM is [historical evidence](vm-deployment.md), not the current service.
+These checks do not certify every host or individual AI client. Machine reboot
+recovery and public ingress remain unverified.
 
 ## Source installation
 
