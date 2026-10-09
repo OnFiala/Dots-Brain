@@ -42,10 +42,44 @@ The real-model suite also passed all 6 tests in an isolated environment built
 with `uv sync --frozen --all-extras` (FastEmbed 0.8.1, ONNX Runtime 1.30.0), using
 only the already prepared local model. CI skips that opt-in model test.
 
-No production appliance, CORTEX service
-credential, public OAuth route, bot account or review automation was changed by
-these tests. The systemd template is a reviewed deployment artifact, not a running
-service. See [the deployment plan](appliance-deployment.md).
+### Owner-approved internal appliance acceptance
+
+The candidate was subsequently deployed to `openclaw-appliance` from exact source
+commit `bd7e938e0d3bd8e4682b609aa7bdf85ccfd7ec99` (code `582059b`). The release tree
+is root-owned; the dedicated non-login service user owns 0700 private data and
+backups. Installed critical source/lockfile/unit hashes match the approved checkout.
+`systemd-analyze verify` passed; the unit is active and enabled, with exactly one
+foreground process listening on `127.0.0.1:8787`. Tailscale Serve reported `{}`.
+
+The live MCP SDK acceptance used only synthetic facts and disposable credentials:
+
+- Shared read/write clients saw identical record IDs/revisions; cross-project,
+  read-only writes, anonymous and revoked clients were rejected.
+- Sixteen concurrent identical writes produced one ID at revision 1; conflicting
+  writes and stale deletion were rejected; deletion blocked reimport.
+- The pinned CPU model returned the expected first result for four Czech/English
+  queries over two synthetic facts. This small smoke is not a quality benchmark.
+- A controlled restart at `2026-10-09T18:25:30.526009Z` changed PID from 1313383 to
+  1313725 and preserved both retained test IDs/revisions. Observed memory peak was
+  967,319,552 bytes under the 2 GiB unit limit, not a capacity or soak result.
+- A live online backup validated. A separate disposable restore/cutover preserved
+  a post-backup deletion and the exact audit suffix, revoked old credentials,
+  disabled the old source and accepted a fresh write on the recovered target.
+- Cleanup left **zero live memories**, revoked the probe credentials, and passed
+  SQLite integrity/foreign-key checks. Fifty audit events contained 25 intents and
+  25 matching receipts, no missing receipts or gaps. Three failure receipts were
+  expected conflict/suppression probes. Full payload/hash-chain verification passed.
+
+Private acceptance reports live in `/var/backups/dots-brain/acceptance-bd7e938`.
+The senior reviewer independently read the installed state and reports. Test/stress
+reviewers validated the acceptance protocol and bounded evidence; they did not all
+independently execute the host tests. See [deployment and rollback](appliance-deployment.md).
+
+Still unverified: actual appliance reboot, encrypted off-host backup/host-loss
+recovery, large-corpus/long-duration load, real Botter/Grok clients, public HTTPS
+and OAuth consent, upstream CORTEX, and complete live provider capture. Existing
+Workspace services were not reconfigured. No personal-memory import or paid model
+API call occurred. Internal deployment acceptance does not close those boundaries.
 
 ## Unreleased shared-client safety checks — 2026-10-09
 

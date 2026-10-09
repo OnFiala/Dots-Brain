@@ -4,17 +4,17 @@
 
 Dots Brain is an open-source memory service for an OpenAI Dot and other MCP-compatible assistants. It stores useful context with its sources, retrieves relevant memories, and lets connected assistants continue each other's work. The selected deployment target is an owner-operated Linux appliance, with local storage and local embeddings. Botter and Grok Bot will share this external memory and contribute their existing knowledge after connection. The core requires no paid model API.
 
-**Status: appliance candidate (`0.4.0-alpha.1`, unreleased).** The source now includes project-isolated memory, authenticated writer attribution, local passage retrieval, sanitized action audit, resumable snapshot collection, selected CORTEX operations, and deletion-aware recovery. The last published release is `0.3.0-alpha.2`. The new appliance instance, actual Botter/Grok connections, and public OAuth route are not deployed or verified. See the [capability matrix](docs/capabilities.md).
+**Status: internally deployed candidate (`0.4.0-alpha.1`, unreleased).** The source includes project-isolated memory, authenticated writer attribution, local passage retrieval, sanitized action audit, resumable snapshot collection, selected CORTEX operations, and deletion-aware recovery. The last published release is `0.3.0-alpha.2`. The appliance service passed synthetic internal acceptance on October 9, 2026. Actual Botter/Grok connections, upstream CORTEX access, and the public OAuth route remain pending. See the [capability matrix](docs/capabilities.md).
 
-The former Work/Dot VM installation was verified on October 5, 2026. On October 9, owner-relayed checks found its historical paths absent. The new appliance will be a fresh instance, not a recovered old database; see [deployment history](docs/vm-deployment.md).
+The former Work/Dot VM installation was verified on October 5, 2026. On October 9, owner-relayed checks found its historical paths absent. The appliance is a fresh instance, not a recovered old database; see [deployment history](docs/vm-deployment.md).
 
 Tell your agent: "Install Dots Brain on my memory host and connect my supported
 AI tools. Follow the repository's setup skill and verify the connections."
 
 The [appliance and connector contract](docs/appliance-contract.md) defines the
 selected host, required CORTEX integration, initial bot contributions, and ongoing
-memory use. Local connector code is implemented; appliance deployment, upstream CORTEX access,
-and actual bot onboarding still require runtime verification.
+memory use. The appliance is running on loopback with local embeddings. Upstream
+CORTEX access and actual bot onboarding still require runtime verification.
 
 ## What works today
 

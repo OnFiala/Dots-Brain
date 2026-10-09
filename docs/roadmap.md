@@ -10,13 +10,14 @@
 - Offline migration, verified backups and guarded restore/cutover.
 
 See [capabilities](capabilities.md) and [verification](verification.md) for evidence.
-These changes do not certify actual bot access or the production appliance.
+The owner-approved internal appliance deployment passed synthetic acceptance on
+2026-10-09. Actual bot access and external integrations remain separate checks.
 
 ## Next acceptance: canonical appliance and clients
 
-1. Deploy the reviewed [appliance plan](appliance-deployment.md) under its owner
-   approval. Verify its identified disk, supervision, restart and recovery with
-   synthetic data. Complete the off-host backup/restore boundary.
+1. Complete encrypted off-host backup and host-loss recovery. The [internal
+   deployment](appliance-deployment.md), service restart, online backup and isolated
+   synthetic recovery are verified; a real appliance reboot is still untested.
 2. Provision dedicated CORTEX access over a supported authenticated boundary;
    verify both original references and one authorized selected write/receipt.
 3. Expose only the required MCP/OAuth paths for cloud clients. Tailscale remains
@@ -26,8 +27,9 @@ These changes do not certify actual bot access or the production appliance.
    at the same ID/revision; test project denial, revocation and explicit cleanup.
 5. Each bot submits its available knowledge with stable identities and uncertainty
    labels, verifies receipts, then demonstrates relevant recall in a later session.
-6. Establish the available capture mechanisms honestly and enable twice-daily
-   Codex review of audit gaps, unexpected writes and affected resources.
+6. Establish the available live capture mechanisms and verify the first scheduled
+   run of the registered twice-daily Codex audit review. Its manual baseline passed;
+   it cannot infer complete provider activity from submitted audit events.
 
 ## Capture and durability gaps
 

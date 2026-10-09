@@ -1,7 +1,8 @@
 # Capability matrix
 
-This describes the unreleased `0.4.0-alpha.1` candidate. Local protocol tests are
-not evidence that an actual bot, public route, or appliance service is connected.
+This describes the unreleased `0.4.0-alpha.1` candidate. The internal appliance
+passed synthetic acceptance on 2026-10-09; this does not prove actual bot access
+or a working public route.
 
 | Capability | Implemented evidence | Remaining boundary |
 | --- | --- | --- |
@@ -16,9 +17,9 @@ not evidence that an actual bot, public route, or appliance service is connected
 | CORTEX context and selected writes | Project mapping, source revision, scope checks, durable receipts and uncertain-write tests | Dedicated authorized upstream endpoint and live behavior |
 | Schema v1→v2 migration | Offline backup, transactional rollback, preserved history/credentials and legacy barriers | No migration performed on personal data |
 | Backup and recovery | SQLite backup with validation; disabled restore; latest deletions, revoked auth and divergence-safe cutover | Scheduled off-host backups and host-loss recovery |
-| Appliance supervision | Reviewed service template and deployment procedure | Not installed or started |
+| Appliance supervision | Installed active/enabled systemd service, loopback listener, verified restart and retained IDs | Actual machine reboot and long-run capacity untested |
 | Initial bot contributions and later recall | Stable record/revision API and receipt protocol available | Both bots must actually connect, seed, and verify later-session use |
-| Twice-daily Codex audit analysis | Required procedure documented | Automation created after reachable appliance audit is verified |
+| Twice-daily Codex audit analysis | Active 09:00/21:00 operator heartbeat; live manual baseline, validated resume and durable review helper | First scheduled run/model, Mac/app availability and complete provider capture remain unverified |
 | Cerebras helper | Optional architecture proposal | No API key, call, charge or runtime dependency |
 | Native ChatGPT views, MCP Events | Planned | No client extension shipped |
 

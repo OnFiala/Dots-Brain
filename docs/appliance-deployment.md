@@ -1,33 +1,44 @@
-# Appliance deployment plan — candidate, not installed
+# Appliance deployment — internal candidate running
 
 ## Observed boundary (2026-10-09)
 
-The selected appliance is a reachable owner-operated x86_64 Linux machine with
-systemd, Python 3 and Tailscale. Port 8787 was free in the read-only inspection.
-Existing Agent Workspace, OAuth and tunnel containers belong to another service;
-their data, credentials and listener are not Dots Brain. No production state was
-changed during preparation of this candidate.
+The owner approved the first internal deployment on 2026-10-09. The x86_64 Linux
+host `openclaw-appliance` now runs one dedicated Dots Brain systemd service with
+Python 3.12.3. Its only listener is `127.0.0.1:8787`. Existing Agent Workspace,
+OAuth and tunnel containers remain separate services; this deployment added no
+public route. Tailscale Serve returned an empty configuration during acceptance.
+
+The installed source is `bd7e938e0d3bd8e4682b609aa7bdf85ccfd7ec99`, including the
+reviewed `582059b` code. Source archive SHA-256:
+`63620868664f00f395325a40bcb6b55d0965f97a1b301f829dfc07a085fa49bd`.
+Installation manifest time: `2026-10-09T18:20:29.347999Z`. Dependencies were installed
+with the committed lockfile and `uv 0.10.3`; serving uses offline local inference.
+See [live verification and its limits](verification.md).
 
 ## Concrete first deployment
 
-| Item | Planned value |
+| Item | Installed value |
 | --- | --- |
 | Service identity | Dedicated non-login `dots-brain` OS user/group |
-| Immutable code | `/opt/dots-brain/releases/<verified-commit>` with locked `.venv` |
+| Immutable code | `/opt/dots-brain/releases/bd7e938e0d3bd8e4682b609aa7bdf85ccfd7ec99` with locked `.venv`, root-owned |
 | Selected code | `/opt/dots-brain/current` symlink to the verified release |
 | Canonical data | `/var/lib/dots-brain`, owned by service user, directory 0700 |
 | Backups | `/var/backups/dots-brain`, private; off-host destination still to provision |
 | Service | [`dots-brain.service`](../deploy/systemd/dots-brain.service), supervised foreground HTTP |
 | Listener | `127.0.0.1:8787/mcp`; no public route in this first step |
 | Embeddings | Pinned quantized multilingual MiniLM, local CPU, two ONNX threads |
-| Initial resource guard | CPU quota 2 cores, memory high 1.5 GiB / max 2 GiB; verify on host |
+| Initial resource guard | Verified CPU quota 2 cores, memory high 1.5 GiB / max 2 GiB |
 | External model calls | None |
 
-Installing the service is a production change and requires the owner's actual
-deployment approval. The source implementation approval is not silently treated
-as permission to reconfigure existing infrastructure.
+The unit is active and enabled for boot. A controlled service restart retained
+the test IDs/revisions. A machine reboot and power-loss recovery have not been
+performed. Data directories are 0700 and the SQLite file is 0600. Acceptance left
+zero live memories and revoked its synthetic client credentials.
 
-### Procedure after approval
+Future production changes retain their owner approval boundary. Approval of this
+internal deployment does not activate public ingress or connect personal accounts.
+
+### Repeatable installation procedure (owner approval required)
 
 1. Recheck host identity, free disk/RAM, port, root/service ownership and absence of
    another Dots instance. Record the exact commit, package hash and current unit
@@ -89,11 +100,21 @@ the existing read-only Grok endpoint is not sufficient evidence of write access.
 
 ## Audit review and outstanding operations
 
-After the endpoint and audit access work, create the requested twice-daily Codex
-review at 09:00/21:00 Europe/Prague using the strong selected model; follow
-[review rules](activity.md). The automation must read sanitized, paginated audit
-from the canonical appliance and report unavailable/stale coverage explicitly.
-No automation has been created against the disposable development database.
+The owner-requested Codex heartbeat `dots-brain-audit-2-denn` is registered ACTIVE
+for 09:00/21:00 in the operator's Europe/Prague timezone. App creation/view and the
+local registry contract check passed. It targets this work's existing chat; the
+observed current chat model is `gpt-6-astra/xhigh`. The heartbeat API/registry has
+no independent model or next-run timestamp field. Actual scheduled execution and
+its effective model remain unverified until the first run.
+
+The manually exercised [review helper](activity.md#twice-daily-operator-review)
+read all 50 canonical audit events, checked payload/hash continuity and saved its
+private operator checkpoint. A resumed scan verified the same anchor and no new
+events. Three reviewers accepted its repaired replay/state boundaries and 20
+targeted regression tests passed. This is canonical live audit access, not a
+development-database schedule. The Mac and Codex app must remain available;
+there is no independent missed-run monitor. The smallest schedule rollback is
+pausing that exact heartbeat through the app; it does not stop the appliance.
 
 Configure scheduled backups and an approved encrypted off-host destination, with
 retention and restore verification. Select a persistent provider capture source
