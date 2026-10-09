@@ -94,8 +94,12 @@ To reject an unexpected request, use `oauth deny REQUEST_ID`.
 Access tokens last at most one hour. Refresh tokens rotate on use and retain the
 grant's original expiry, at most 30 days. Refresh invalidates the prior access and
 refresh tokens, cannot add scopes, and cannot change project access. An expired
-grant requires a new identified connection flow. Previously used refresh tokens
-are rejected; reuse does not automatically revoke the replacement token family.
+grant requires a new identified connection flow. Spent refresh-token hashes remain
+until grant expiry. Reuse by their owning client revokes the entire grant, including
+its replacement tokens. Clients must serialize refresh attempts; a racing duplicate
+also revokes the grant and requires a new identified connection flow.
+A grant permits at most 4,096 refresh rotations. Reaching this storage bound also
+revokes it and requires new owner consent; spent hashes are never discarded early.
 
 ```sh
 dots-brain --data-dir /absolute/private/memory oauth grants
@@ -103,8 +107,8 @@ dots-brain --data-dir /absolute/private/memory oauth revoke GRANT_ID
 dots-brain --data-dir /absolute/private/memory oauth disable
 ```
 
-The first two commands list metadata and revoke one authorization. They never
-return token values. The standard OAuth `/revoke` endpoint also invalidates a
+The first two commands list metadata and revoke one authorization. An unknown grant
+ID is an error. They never return token values. The standard OAuth `/revoke` endpoint also invalidates a
 grant's access and refresh tokens when called by their owning client.
 `oauth disable` revokes all OAuth registrations/flows/grants and restarts the
 service without OAuth; existing local bearer connections remain available.
@@ -128,7 +132,8 @@ entries may still need removal through that client's supported controls.
   adds that check before invoking its handler. It also supplies the optional empty
   public-client secret field expected by that SDK version's revocation parser.
 - Dynamic registrations default to read scope. Public clients and confidential
-  `client_secret_post` clients are tested. The SDK's Basic method also requires
+  `client_secret_post` clients are tested. Discovery explicitly advertises `none`
+  for public clients; registration responses are marked `no-store`. The SDK's Basic method also requires
   `client_id` in the form; Basic clients without that field are not supported here.
 - OAuth bodies are capped at 16 KiB, stored client metadata at 8 KiB, callbacks at
   eight per client, registrations at 256, and pending flows at 128. Expired flows
@@ -170,3 +175,6 @@ use `oauth configure --issuer <verified-origin> --no-start` or
 reports `restart_required`; these commands do not launch the managed background
 process. Without `--no-start`, the original managed `up` lifecycle is retained.
 Never run both lifecycle managers against one installation.
+
+For the appliance's bounded Cloudflare gateway and short onboarding windows, see
+[appliance ingress](appliance-ingress.md).

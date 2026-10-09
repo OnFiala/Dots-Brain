@@ -30,6 +30,7 @@ from .store import Store, validate_text
 
 MAX_CLIENTS = 256
 MAX_PENDING = 128
+MAX_REFRESH_ROTATIONS = 4096
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS oauth_clients (
@@ -381,8 +382,9 @@ class OAuthStore:
     def load_token(self, token, kind, client_id=None):
         if not self.enabled() or len(token) > 1024:
             return None
-        with self.store.connection() as db:
-            row = self.token_row(db, token, kind)
+        with self.store.connection(write=kind == "refresh") as db:
+            replayed = kind == "refresh" and self.revoke_refresh_replay(db, token, client_id)
+            row = None if replayed else self.token_row(db, token, kind)
         if row is None or (client_id is not None and client_id != row["client_id"]):
             return None
         model = AccessToken if kind == "access" else RefreshToken
@@ -395,17 +397,42 @@ class OAuthStore:
             subject="owner",
         )
 
+    def revoke_refresh_replay(self, db, token, client_id):
+        """Retain spent hashes until grant expiry and revoke their family on reuse."""
+        row = self.token_row(db, token, "spent_refresh")
+        if row is None or row["client_id"] != client_id:
+            return False
+        db.execute("UPDATE oauth_grants SET revoked=1 WHERE id=?", (row["grant_id"],))
+        return True
+
     def exchange_refresh(self, client, token, scopes):
         self.require_enabled()
         with self.store.connection(write=True) as db:
-            row = self.token_row(db, token.token, "refresh")
+            # Recheck inside the write transaction: two requests can load the
+            # same still-valid token before either reaches this exchange.
+            replayed = self.revoke_refresh_replay(db, token.token, client.client_id)
+            row = None if replayed else self.token_row(db, token.token, "refresh")
             if (
                 row is not None
                 and row["client_id"] == client.client_id
                 and set(scopes) <= set(json.loads(row["scopes"]))
             ):
-                db.execute("DELETE FROM oauth_tokens WHERE grant_id=?", (row["grant_id"],))
-                return self.mint(db, row["grant_id"], scopes, row["expires"])
+                rotations = db.execute(
+                    "SELECT COUNT(*) FROM oauth_tokens WHERE grant_id=? AND kind='spent_refresh'",
+                    (row["grant_id"],),
+                ).fetchone()[0]
+                if rotations >= MAX_REFRESH_ROTATIONS:
+                    db.execute("UPDATE oauth_grants SET revoked=1 WHERE id=?", (row["grant_id"],))
+                else:
+                    db.execute(
+                        "UPDATE oauth_tokens SET kind='spent_refresh' WHERE hash=?",
+                        (digest(token.token),),
+                    )
+                    db.execute(
+                        "DELETE FROM oauth_tokens WHERE grant_id=? AND kind='access'",
+                        (row["grant_id"],),
+                    )
+                    return self.mint(db, row["grant_id"], scopes, row["expires"])
         raise TokenError("invalid_grant", "Refresh token is expired, invalid, or already used.")
 
     def revoke_token(self, token):
@@ -447,7 +474,11 @@ class OAuthStore:
 
     def revoke_grant(self, grant_id):
         with self.store.connection(write=True) as db:
-            db.execute("UPDATE oauth_grants SET revoked=1 WHERE id=?", (grant_id,))
+            changed = db.execute(
+                "UPDATE oauth_grants SET revoked=1 WHERE id=?", (grant_id,)
+            ).rowcount
+            if not changed:
+                raise InputError("This OAuth grant does not exist.")
         return {"grant_id": grant_id, "revoked": True}
 
 

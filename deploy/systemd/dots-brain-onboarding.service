@@ -1,0 +1,30 @@
+[Unit]
+Description=Open Dots Brain OAuth onboarding for ten minutes
+Requires=dots-brain-ingress.service
+After=dots-brain-ingress.service
+PartOf=dots-brain-ingress.service
+
+[Service]
+Type=exec
+DynamicUser=true
+RuntimeDirectory=dots-brain-onboarding
+RuntimeDirectoryMode=0755
+RuntimeDirectoryPreserve=no
+ExecStartPre=/usr/bin/touch /run/dots-brain-onboarding/enabled
+ExecStart=/usr/bin/sleep 600
+RuntimeMaxSec=610
+UMask=0022
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateNetwork=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+CapabilityBoundingSet=
+MemoryMax=16M
+TasksMax=2
+
+# Deliberately no [Install] section: an owner starts each short window.

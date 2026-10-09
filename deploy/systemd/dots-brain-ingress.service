@@ -1,0 +1,35 @@
+[Unit]
+Description=Dots Brain bounded HTTP gateway for Cloudflare Tunnel
+After=network-online.target docker.service dots-brain.service
+Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+DynamicUser=true
+RuntimeDirectory=dots-brain-ingress
+RuntimeDirectoryMode=0700
+ExecStartPre=/usr/sbin/nginx -t -q -c /etc/dots-brain/ingress.conf
+ExecStart=/usr/sbin/nginx -c /etc/dots-brain/ingress.conf -g "daemon off;"
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=15
+KillSignal=SIGQUIT
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX AF_INET
+CapabilityBoundingSet=
+MemoryMax=128M
+TasksMax=8
+
+[Install]
+WantedBy=multi-user.target

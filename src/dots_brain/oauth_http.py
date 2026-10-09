@@ -6,11 +6,13 @@ import html
 import re
 from urllib.parse import urlencode, urlsplit
 
+from mcp.server.auth.handlers.metadata import MetadataHandler
 from mcp.server.auth.handlers.register import RegistrationHandler
 from mcp.server.auth.handlers.revoke import RevocationHandler
 from mcp.server.auth.handlers.token import TokenHandler
 from mcp.server.auth.middleware.client_auth import ClientAuthenticator
 from mcp.server.auth.routes import (
+    build_metadata,
     cors_middleware,
     create_auth_routes,
     create_protected_resource_routes,
@@ -43,7 +45,9 @@ def routes_app(state: OAuthStore):
             return JSONResponse(
                 {"error": "invalid_client_metadata"}, status_code=400, headers=NO_STORE
             )
-        return await RegistrationHandler(provider, registration_options).handle(request)
+        response = await RegistrationHandler(provider, registration_options).handle(request)
+        response.headers.update(NO_STORE)
+        return response
 
     async def token(request):
         form = await request.form()
@@ -115,7 +119,24 @@ Once authorized, this page returns you to your AI tool automatically.</p>
         client_registration_options=registration_options,
         revocation_options=RevocationOptions(enabled=True),
     )
-    routes = [route for route in routes if route.path not in {"/token", "/revoke", "/register"}]
+    metadata = build_metadata(
+        AnyHttpUrl(state.issuer), None, registration_options, RevocationOptions(enabled=True)
+    )
+    # SDK 1.30 accepts public clients but omits their auth method from discovery.
+    metadata.token_endpoint_auth_methods_supported.append("none")
+    routes = [
+        route
+        for route in routes
+        if route.path
+        not in {"/token", "/revoke", "/register", "/.well-known/oauth-authorization-server"}
+    ]
+    routes.append(
+        Route(
+            "/.well-known/oauth-authorization-server",
+            endpoint=cors_middleware(MetadataHandler(metadata).handle, ["GET", "OPTIONS"]),
+            methods=["GET", "OPTIONS"],
+        )
+    )
     for path, endpoint in (("/token", token), ("/revoke", revoke), ("/register", register)):
         routes.append(
             Route(

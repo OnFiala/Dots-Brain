@@ -103,6 +103,7 @@ def test_discovery_pkce_binding_rotation_revocation_and_no_plaintext_tokens(inst
         assert "resource_metadata=" in unauthenticated.headers["www-authenticate"]
         metadata = http.get("/.well-known/oauth-authorization-server").json()
         assert metadata["code_challenge_methods_supported"] == ["S256"]
+        assert "none" in metadata["token_endpoint_auth_methods_supported"]
         resource = http.get("/.well-known/oauth-protected-resource/mcp").json()
         assert resource["resource"] == state.resource
         client = register(http)
@@ -167,18 +168,6 @@ def test_discovery_pkce_binding_rotation_revocation_and_no_plaintext_tokens(inst
                 data={
                     "grant_type": "refresh_token",
                     "client_id": client["client_id"],
-                    "refresh_token": tokens["refresh_token"],
-                    "resource": state.resource,
-                },
-            ).status_code
-            == 400
-        )
-        assert (
-            http.post(
-                "/token",
-                data={
-                    "grant_type": "refresh_token",
-                    "client_id": client["client_id"],
                     "refresh_token": replacement["refresh_token"],
                     "resource": state.resource,
                     "scope": "memory:read memory:write",
@@ -195,6 +184,103 @@ def test_discovery_pkce_binding_rotation_revocation_and_no_plaintext_tokens(inst
         )
         assert revoked.status_code == 200, revoked.text
         assert state.policy(replacement["access_token"]) is None
+
+
+def test_refresh_replay_revokes_only_the_matching_client_family(installation):
+    _, state, _, app = installation
+    with TestClient(app, base_url=ISSUER) as http:
+        client = register(http)
+        other = register(http)
+        tokens = http.post("/token", data=request_code(http, client, state)).json()
+        other_tokens = http.post("/token", data=request_code(http, other, state)).json()
+        form = {
+            "grant_type": "refresh_token",
+            "client_id": client["client_id"],
+            "refresh_token": tokens["refresh_token"],
+            "resource": state.resource,
+        }
+        replacement = http.post("/token", data=form).json()
+        assert http.post("/token", data=form | {"client_id": other["client_id"]}).status_code == 400
+        assert state.policy(replacement["access_token"]) is not None
+        assert http.post("/token", data=form).status_code == 400
+        assert state.policy(replacement["access_token"]) is None
+        assert (
+            http.post(
+                "/token", data=form | {"refresh_token": replacement["refresh_token"]}
+            ).status_code
+            == 400
+        )
+        assert state.policy(other_tokens["access_token"]) is not None
+
+
+def test_refresh_race_revokes_the_replacement_and_unknown_revocation_fails(installation):
+    from mcp.server.auth.provider import TokenError
+
+    _, state, _, app = installation
+    with TestClient(app, base_url=ISSUER) as http:
+        client_data = register(http)
+        tokens = http.post("/token", data=request_code(http, client_data, state)).json()
+        client = state.get_client(client_data["client_id"])
+        token = state.load_token(tokens["refresh_token"], "refresh", client.client_id)
+
+        def refresh():
+            try:
+                return state.exchange_refresh(client, token, token.scopes)
+            except TokenError:
+                return None
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(lambda _: refresh(), range(2)))
+        minted = [result for result in results if result is not None]
+        assert len(minted) == 1
+        assert state.policy(minted[0].access_token) is None
+        with pytest.raises(InputError, match="does not exist"):
+            state.revoke_grant("grant_unknown")
+
+
+def test_confidential_registration_is_not_cacheable(installation):
+    _, _, _, app = installation
+    with TestClient(app, base_url=ISSUER) as http:
+        response = http.post(
+            "/register",
+            json={
+                "redirect_uris": [CALLBACK],
+                "token_endpoint_auth_method": "client_secret_post",
+            },
+        )
+        assert response.status_code == 201
+        assert response.json()["client_secret"]
+        assert response.headers["cache-control"] == "no-store"
+        assert response.headers["pragma"] == "no-cache"
+
+
+def test_refresh_rotation_budget_bounds_storage_and_requires_new_consent(installation, monkeypatch):
+    monkeypatch.setattr("dots_brain.oauth.MAX_REFRESH_ROTATIONS", 2)
+    store, state, _, app = installation
+    with TestClient(app, base_url=ISSUER) as http:
+        client = register(http)
+        tokens = http.post("/token", data=request_code(http, client, state)).json()
+        form = {
+            "grant_type": "refresh_token",
+            "client_id": client["client_id"],
+            "resource": state.resource,
+        }
+        for _ in range(2):
+            response = http.post("/token", data=form | {"refresh_token": tokens["refresh_token"]})
+            assert response.status_code == 200
+            tokens = response.json()
+        for _ in range(2):
+            assert (
+                http.post(
+                    "/token", data=form | {"refresh_token": tokens["refresh_token"]}
+                ).status_code
+                == 400
+            )
+        assert state.policy(tokens["access_token"]) is None
+        with store.connection() as db:
+            assert db.execute("SELECT COUNT(*) FROM oauth_tokens").fetchone()[0] == 4
+        new_tokens = http.post("/token", data=request_code(http, client, state)).json()
+        assert state.policy(new_tokens["access_token"]) is not None
 
 
 def test_pending_consent_is_local_exact_and_requires_explicit_deletion_permission(installation):
