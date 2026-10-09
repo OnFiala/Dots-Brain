@@ -29,8 +29,9 @@ bidirectional cross-bot reads; their synthetic facts were removed by owner clean
    synthetic acceptance. Deploy the tested repairs for original pairing IDs and
    deletion targets (DBR-ONB-001 and DBR-CLEAN-001), using the explicit OAuth
    provenance upgrade and preserving legacy unknowns.
-5. Each bot submits its available knowledge with stable identities and uncertainty
-   labels, verifies receipts, then demonstrates relevant recall in a later session.
+5. Initial contributions are verified: 37 Botter and 8 Grok records with stable
+   identities, client readbacks and server write receipts. Deploy the tested
+   title/body context repair, then demonstrate relevant recall in a later session.
 6. Establish the available live capture mechanisms and verify the first scheduled
    run of the registered twice-daily Codex audit review. Its manual baseline passed;
    it cannot infer complete provider activity from submitted audit events.

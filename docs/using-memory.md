@@ -54,6 +54,14 @@ Keep source references and inspect the original record when accuracy matters.
 Local semantic search augments full-text retrieval; it does not guarantee recall
 of every relevant memory. See the bounded [evaluation evidence](stress-tests.md).
 
+The source candidate expands a winning title passage in `memory_context` into
+that exact revision's title and body excerpt, capped at 800 characters and the
+remaining total budget. At most one third of this space goes to the title.
+Search rankings and `memory_search` passage output remain unchanged. A concurrent
+deletion skips the result; an update may return the ranked historical revision,
+identified in the context header. Use `memory_get` for full detail or latest-state
+verification. The appliance still awaits this repair's deployment.
+
 Forgetting removes live text, revisions, and derived indexes, and retains a source
 identity hash to prevent accidental reimport. It does not erase another tool's
 history, exports, or backups. Uninstall preserves memories by default; consult

@@ -8,7 +8,7 @@ from dataclasses import replace
 
 from .activity import AuditLog
 from .auth import Policy
-from .errors import InputError
+from .errors import InputError, NotFoundError
 from .store import Store
 
 
@@ -115,7 +115,22 @@ class MemoryService:
             remaining = max_chars - used - len(header) - 3
             if remaining < 1:
                 break
-            excerpt = record["excerpt"][:remaining]
+            excerpt = record["excerpt"]
+            if record.get("passage", {}).get("field") == "title":
+                # A title locates the memory but carries little usable context.
+                # Fetch that exact revision, with the same project boundary, and
+                # include a bounded body excerpt without changing search ranking.
+                try:
+                    memory = self.store.get(
+                        record["id"], revision=record["revision"], projects=policy.projects
+                    )
+                except NotFoundError:
+                    continue
+                passage_budget = min(800, remaining)
+                # Reserve most of the space for the body, even with a long title.
+                title = memory["title"][: passage_budget // 3]
+                excerpt = title + "\n" + memory["content"][: passage_budget - len(title) - 1]
+            excerpt = excerpt[:remaining]
             chunk = header + "\n" + excerpt + "\n\n"
             chunks.append(chunk)
             used += len(chunk)

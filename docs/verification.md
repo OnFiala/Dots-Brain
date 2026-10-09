@@ -114,10 +114,31 @@ cascading removal, and deletion targets without memory content. Independent seni
 test-quality and stress reviewers inspected the repair. No live database upgrade
 or production failure injection was performed.
 
+The audit/provenance source at `f5e5143` also passed Linux Python 3.11/3.12
+[CI run 37987120571](https://github.com/OnFiala/Dots-Brain/actions/runs/37987120571).
+
+### Initial contributions and context repair
+
+Both bots reported per-record write/get confirmation: 37 Botter records and 8 Grok
+records, no reported duplicates/conflicts/failures. Independent safe metadata
+confirmed all 45 revision-1 writers and completed receipts. Both reported successful
+Czech hybrid lookup with a verified source; Grok reported 45 indexed, zero pending.
+Only metadata was inspected on the server, not private memory contents. This
+proves storage and a retrieval smoke, not completeness or truth of the submitted
+self-reports or later-session use.
+
+Botter's title-only `memory_context` report was reproduced with synthetic vectors.
+Source repair DBR-CTX-001 retains a bounded title/body excerpt from the exact ranked
+revision. Six focused semantic tests passed: short/long title with 256/6000-character
+budgets, project canary isolation, update/delete races, and existing matching-tail
+and title-passage behavior. These use deterministic synthetic embeddings, not a new
+real-model quality benchmark. The context repair is not yet deployed.
+
 Still unverified: actual appliance reboot, encrypted off-host backup/host-loss
 recovery, large-corpus/long-duration load, upstream CORTEX, and complete live provider
 capture. Existing Workspace processes and routes
-were preserved. No personal-memory import or paid model API call occurred.
+were preserved. The initial bot contributions above are now stored; no paid model
+API call occurred.
 
 ## Unreleased shared-client safety checks — 2026-10-09
 

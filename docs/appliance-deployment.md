@@ -148,6 +148,31 @@ targets in intents/receipts. These repairs are tested but not deployed. Upgradin
 requires the documented stop, backup and same-issuer configuration step; it does
 not backfill old grants or rewrite existing append-only audit history.
 
+### Initial knowledge contributions
+
+The owner relayed both bots' initial contribution receipts. Safe server metadata
+confirmed **37 Botter records** written at 20:21:52–20:23:32 UTC and **8 Grok
+records** at 20:24:49–20:25:09 UTC on 2026-10-09. All 45 have revision 1, project
+`shared`, their respective authenticated grant writers and completed write receipts
+(Botter receipts 68–140; Grok 142–156). No personal content was read for verification.
+
+Each bot reported exact-ID readbacks and a successful Czech hybrid query with
+supporting source identity. Grok reported 45 indexed records and no pending work.
+These contributions are bot self-reports, not an independent audit of the truth or
+completeness of their personal knowledge. Source text and topic identifiers remain
+outside this repository.
+
+Botter reported title-only output for one `memory_context` result. A synthetic
+regression reproduced that behavior; source repair DBR-CTX-001 supplies a bounded
+title/body excerpt from the same revision without changing search ranking. It is
+not yet deployed. Until then, clients should use `memory_get` when a retrieved
+excerpt lacks the needed details.
+
+Grok reports storing the lookup/save rule in its own persistent agent memory;
+Botter reports only a current-chat instruction. Neither is a verified provider
+hook or later-session acceptance. Live CORTEX and full provider capture remain
+unverified.
+
 ### Repeatable installation procedure (owner approval required)
 
 1. Recheck host identity, free disk/RAM, port, root/service ownership and absence of

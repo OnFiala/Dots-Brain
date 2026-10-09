@@ -5,7 +5,9 @@ from pathlib import Path
 
 import pytest
 
+from dots_brain.auth import Policy
 from dots_brain.semantic import SemanticIndex, verify_file
+from dots_brain.service import MemoryService
 from dots_brain.store import Store
 
 
@@ -99,6 +101,55 @@ def test_title_passage_revision_and_forget_remove_derived_chunks(index):
     index.store.forget(memory["id"], expected_revision=2)
     with index.store.connection() as db:
         assert db.execute("SELECT COUNT(*) FROM semantic_chunks").fetchone()[0] == 0
+
+
+@pytest.mark.parametrize("title", ["Food allergy", "Food allergy " + "x" * 240])
+def test_context_uses_scoped_body_when_semantic_title_wins(index, title):
+    index._embed = lambda text: index.np.array(
+        [0.0, 1.0] if "allergy" in text else [1.0, 0.0], dtype="<f4"
+    )
+    memory = save(index, title=title, content="Avoid peanuts. " + "Detail. " * 200)
+    save(index, event_id="private", project="beta", title="Food allergy", content="PRIVATE_CANARY")
+    index.index()
+    service = MemoryService(index.store, index)
+    caller = Policy(frozenset({"memory:read"}), ("alpha",))
+    assert service.search("allergy", policy=caller)["results"][0]["passage"]["field"] == "title"
+    for budget in (256, 6000):
+        result = service.context("allergy", policy=caller, max_chars=budget)
+        assert "Avoid peanuts." in result["context"] and memory["id"] in result["context"]
+        assert "Food allergy" in result["context"]
+        assert "PRIVATE_CANARY" not in result["context"]
+        assert result["characters"] == len(result["context"]) <= budget
+        assert result["memories"] == 1
+    assert len(result["context"]) < 1100  # The fallback remains an excerpt, not a full export.
+
+
+@pytest.mark.parametrize("change", ["update", "delete"])
+def test_title_context_never_mixes_revisions_or_restores_deleted_content(index, change):
+    index._embed = lambda text: index.np.array(
+        [0.0, 1.0] if "allergy" in text else [1.0, 0.0], dtype="<f4"
+    )
+    memory = save(index, title="Food allergy", content="Original detail.")
+    index.index()
+    search = index.search
+
+    def search_then_change(*args, **kwargs):
+        results = search(*args, **kwargs)
+        if change == "update":
+            save(index, content="NEW_REVISION_CANARY", expected_revision=1)
+        else:
+            index.store.forget(memory["id"], expected_revision=1)
+        return results
+
+    index.search = search_then_change
+    result = MemoryService(index.store, index).context(
+        "allergy", policy=Policy(frozenset({"memory:read"}), ("alpha",))
+    )
+    assert "NEW_REVISION_CANARY" not in result["context"]
+    if change == "update":
+        assert "Original detail." in result["context"] and '"revision": 1' in result["context"]
+    else:
+        assert result["memories"] == 0 and "Original detail." not in result["context"]
 
 
 @pytest.mark.skipif(
