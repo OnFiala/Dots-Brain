@@ -10,11 +10,12 @@ Workspace and OAuth containers remain separate services, with their original
 tunnel routes preserved. Tailscale Serve returned an empty configuration during
 the initial internal acceptance.
 
-The installed source is `a28d25f21a7911dd5c38f78fb0f59c04b19747bd`, including the
-reviewed public OAuth fixes and bounded ingress. Source archive SHA-256:
-`47763505d6567dc3fef7accac4d716da686e2c170acefbb7f04dcc99f4ed5410`.
-The initial `bd7e938` deployment (manifest `2026-10-09T18:20:29.347999Z`) remains
-available as a rollback release. Dependencies were installed
+The installed source is `2c8823b1f97cac2cd1fbd117164a0e8e026c9097`, including the
+reviewed public OAuth fixes, bounded ingress and omitted-DCR-scope compatibility.
+Source archive SHA-256:
+`575a2d1aa3277d9fb5bd096a1590068a109914cc65bee2d02e51a9979ae8ef47`.
+Previous `a28d25f` and initial `bd7e938` deployments remain
+available as rollback releases. Dependencies were installed
 with the committed lockfile and `uv 0.10.3`; serving uses offline local inference.
 See [live verification and its limits](verification.md).
 
@@ -23,7 +24,7 @@ See [live verification and its limits](verification.md).
 | Item | Installed value |
 | --- | --- |
 | Service identity | Dedicated non-login `dots-brain` OS user/group |
-| Immutable code | `/opt/dots-brain/releases/a28d25f21a7911dd5c38f78fb0f59c04b19747bd` with locked `.venv`, root-owned |
+| Immutable code | `/opt/dots-brain/releases/2c8823b1f97cac2cd1fbd117164a0e8e026c9097` with locked `.venv`, root-owned |
 | Selected code | `/opt/dots-brain/current` symlink to the verified release |
 | Canonical data | `/var/lib/dots-brain`, owned by service user, directory 0700 |
 | Backups | `/var/backups/dots-brain`, private; off-host destination still to provision |
@@ -103,8 +104,19 @@ failed before pairing: registered scope was only `memory:read`, while authorizat
 requested read/write (`invalid_scope`). The code now defaults omitted registration
 scope to read/write eligibility, still requiring exact owner approval. Explicit
 read-only registration remains restricted. Focused local tests: 26 passed, one
-Linux process test excluded. Deployment of that fix and a new ChatGPT registration
-remain pending at this checkpoint; do not widen the stored old client manually.
+Linux process test excluded. All 27 OAuth tests passed on the appliance as
+`nobody` with disposable fixtures; [CI on Python 3.11/3.12 also passed](https://github.com/OnFiala/Dots-Brain/actions/runs/37983273940).
+The new release was selected after a verified backup at
+`/var/backups/dots-brain/pre-dcr-2c8823b.sqlite3`. Only Dots Brain restarted;
+independent inspection confirmed source hashes, private backup integrity and the
+unchanged Grok grant.
+
+The failed ChatGPT plugin was uninstalled. A fresh plugin, **Dots Brain Memory**,
+completed OAuth with a different client and its own `shared` read/write grant.
+Its pairing ID was observed in the actual browser and approved exactly. Both
+active grants were confirmed through owner metadata. Botter's actual chat tool
+calls and bidirectional cross-bot readback remain pending; account authorization
+alone is not that proof. The old uninstalled developer draft is retained.
 
 Review follow-up DBR-ONB-001: grants do not retain the consumed pairing request ID.
 Current Grok attribution is correlated by its unique client/grant, revision writer

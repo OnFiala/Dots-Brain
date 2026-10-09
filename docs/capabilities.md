@@ -10,7 +10,7 @@ read/write connection is verified. Botter and cross-bot acceptance remain pendin
 | Full-text and bounded context | Tests for scoped retrieval and budgets | Character budgets are not token budgets |
 | Local semantic passages | Pinned ONNX model; token-window, title, stale/deletion and real-model tests | Appliance capacity and larger bilingual evaluation |
 | MCP stdio, loopback HTTP, local bridge/adapters | SDK, synthetic credentials, supported Linux process tests; Grok actual chat status/write/read | Botter client activation and cross-bot readback |
-| OAuth registration, PKCE, refresh, revocation | Official SDK flow, scoped handler tests, public synthetic acceptance and real Grok grant | Botter fresh registration after read-only DCR mismatch; durable request-to-grant provenance |
+| OAuth registration, PKCE, refresh, revocation | Official SDK flow, scoped handler tests, public synthetic acceptance and separate real Grok/ChatGPT grants | Botter actual chat use; durable request-to-grant provenance |
 | Sanitized action audit | Append-only rows, server mutation intent/receipt, client reports, gaps and pagination | Full provider audit cannot be inferred from submitted events |
 | Bounded JSONL snapshot collector | ACK retry, partial lines, rotation, oversized records, missing sources, crash journal | Live provider logs and persistent collectors unverified |
 | Transcript import | User text with stable file-record identity; tool metadata only | Ambiguous assistant text excluded; no transcript timestamps/IDs invented |

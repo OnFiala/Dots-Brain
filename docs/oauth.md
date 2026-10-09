@@ -174,8 +174,9 @@ separate owner-approved `shared` read/write grant. Real chat status, write and
 readback were confirmed by the owner relay and server writer/audit metadata.
 ChatGPT's first real connection registered read-only eligibility and then requested
 read/write, which correctly failed with `invalid_scope`. The omitted-scope default
-above fixes that registration contract; fresh ChatGPT registration and live
-acceptance are still required. See [deployment evidence](appliance-deployment.md).
+above fixes that registration contract. After deployment, a fresh ChatGPT
+registration completed owner-approved OAuth. Botter's actual chat tool use and
+cross-bot acceptance are still required. See [deployment evidence](appliance-deployment.md).
 
 The OAuth tables are additive to the existing memory schema. See
 [upgrading](upgrading.md), [uninstall](uninstall.md), and [troubleshooting](troubleshooting.md).

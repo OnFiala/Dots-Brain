@@ -83,11 +83,14 @@ See the exact [public acceptance and remaining client step](appliance-deployment
 
 Grok's actual chat status/write/readback subsequently passed, corroborated by its
 grant, revision writer and server audit. The first ChatGPT connection exposed a
-read-only DCR default mismatch; the fix passed 26 focused local OAuth tests with
-one Linux-only process test excluded. Botter live acceptance still remains.
+read-only DCR default mismatch; `2c8823b` passed 26 focused local OAuth tests with
+one Linux-only process test excluded, all 27 OAuth tests on the appliance, and
+[Linux CI on Python 3.11/3.12](https://github.com/OnFiala/Dots-Brain/actions/runs/37983273940).
+After its deployment, a fresh ChatGPT client completed owner-approved OAuth;
+Botter's actual chat tool calls and cross-bot readback still remain.
 
 Still unverified: actual appliance reboot, encrypted off-host backup/host-loss
-recovery, large-corpus/long-duration load, real Botter client consent, upstream
+recovery, large-corpus/long-duration load, real Botter chat tool use, upstream
 CORTEX, and complete live provider capture. Existing Workspace processes and routes
 were preserved. No personal-memory import or paid model API call occurred.
 
