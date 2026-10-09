@@ -35,7 +35,11 @@ def routes_app(state: OAuthStore):
     provider = OAuthProvider(state)
     authenticator = ClientAuthenticator(provider)
     registration_options = ClientRegistrationOptions(
-        enabled=True, valid_scopes=sorted(SCOPES), default_scopes=["memory:read"]
+        enabled=True,
+        valid_scopes=sorted(SCOPES),
+        # Clients such as ChatGPT omit registration scopes, then request both at
+        # authorization. Registration grants no access; owner approval still does.
+        default_scopes=["memory:read", "memory:write"],
     )
 
     async def register(request):

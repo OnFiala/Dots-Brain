@@ -81,8 +81,13 @@ public TLS, synthetic S256 OAuth pairing and real shared MCP read/write acceptan
 independent reviewers checked the installed configuration and public route bounds.
 See the exact [public acceptance and remaining client step](appliance-deployment.md#owner-approved-public-route-acceptance).
 
+Grok's actual chat status/write/readback subsequently passed, corroborated by its
+grant, revision writer and server audit. The first ChatGPT connection exposed a
+read-only DCR default mismatch; the fix passed 26 focused local OAuth tests with
+one Linux-only process test excluded. Botter live acceptance still remains.
+
 Still unverified: actual appliance reboot, encrypted off-host backup/host-loss
-recovery, large-corpus/long-duration load, real Botter/Grok client consent, upstream
+recovery, large-corpus/long-duration load, real Botter client consent, upstream
 CORTEX, and complete live provider capture. Existing Workspace processes and routes
 were preserved. No personal-memory import or paid model API call occurred.
 

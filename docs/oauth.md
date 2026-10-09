@@ -132,7 +132,12 @@ entries may still need removal through that client's supported controls.
   SDK 1.30 parses but does not enforce token-request resource binding; the adapter
   adds that check before invoking its handler. It also supplies the optional empty
   public-client secret field expected by that SDK version's revocation parser.
-- Dynamic registrations default to read scope. Public clients and confidential
+- Registrations that omit `scope` default to eligibility for `memory:read` and
+  `memory:write`. Registration itself grants no access: an identified owner
+  decision must still authorize each request and its projects. Explicit read-only
+  registrations remain read-only. Clients registered under the previous read-only
+  default need a new registration to request writes; existing grants are unchanged.
+  Public clients and confidential
   `client_secret_post` clients are tested. Discovery explicitly advertises `none`
   for public clients; registration responses are marked `no-store`. The SDK's Basic method also requires
   `client_id` in the form; Basic clients without that field are not supported here.
@@ -157,12 +162,20 @@ These probes used synthetic data and did not connect a real Grok Bot client.
 
 A [September Cursor support report](https://forum.cursor.com/t/grok-bot-custom-mcp-oauth-fails-before-sign-in-redirect-uri-not-allowed/171877)
 describes that three-callback registration and a planned change. The current
-client's callback list remains unverified. Do not relax callback validation based
+client's callback list was unverified at that stage. Do not relax callback validation based
 only on that historical report. During an authorized real connection, inspect
 sanitized registration metadata for `redirect_uris` and
 `token_endpoint_auth_method`; inspect the authorization request for
 `code_challenge_method`. The latter is not a registration field. Do not record
 secrets, authorization codes, tokens, or pairing URLs.
+
+Actual Grok onboarding later succeeded with the HTTPS Cursor callback and a
+separate owner-approved `shared` read/write grant. Real chat status, write and
+readback were confirmed by the owner relay and server writer/audit metadata.
+ChatGPT's first real connection registered read-only eligibility and then requested
+read/write, which correctly failed with `invalid_scope`. The omitted-scope default
+above fixes that registration contract; fresh ChatGPT registration and live
+acceptance are still required. See [deployment evidence](appliance-deployment.md).
 
 The OAuth tables are additive to the existing memory schema. See
 [upgrading](upgrading.md), [uninstall](uninstall.md), and [troubleshooting](troubleshooting.md).

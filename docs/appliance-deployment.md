@@ -86,8 +86,29 @@ status/write/read, shared ID/revision, foreign-project denial and isolated grant
 revocation. Cleanup deleted the synthetic record and revoked both grants. An
 independent reviewer repeated bounded public discovery/auth probes; a stress
 reviewer verified the 16 KiB/128 KiB body limits, methods and invalid suffix denial.
-This is public route acceptance, not an actual Botter/Grok account connection.
-The owner has the relay prompts; each bot's request ID and client usage are pending.
+This establishes public route acceptance. Actual account evidence follows below.
+
+### Actual bot onboarding
+
+Grok completed OAuth with the HTTPS Cursor callback. The owner supplied its exact
+pairing request ID; approval narrowed the request to `shared` and only
+`memory:read memory:write`. On 2026-10-09 at 19:34:22 UTC, Grok reported status,
+one synthetic write and exact-ID revision-1 readback from its real chat tools.
+Independent server metadata confirmed a single matching active grant, the same
+revision writer, and completed server-observed intent/receipt IDs 59/60.
+The synthetic fact remains for Botter's cross-read; no personal import occurred.
+
+The owner approved creation of a ChatGPT Dots Brain plugin. Its first OAuth attempt
+failed before pairing: registered scope was only `memory:read`, while authorization
+requested read/write (`invalid_scope`). The code now defaults omitted registration
+scope to read/write eligibility, still requiring exact owner approval. Explicit
+read-only registration remains restricted. Focused local tests: 26 passed, one
+Linux process test excluded. Deployment of that fix and a new ChatGPT registration
+remain pending at this checkpoint; do not widen the stored old client manually.
+
+Review follow-up DBR-ONB-001: grants do not retain the consumed pairing request ID.
+Current Grok attribution is correlated by its unique client/grant, revision writer
+and server audit. Persisting request-to-grant provenance remains a separate repair.
 
 ### Repeatable installation procedure (owner approval required)
 

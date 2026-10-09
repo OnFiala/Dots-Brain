@@ -54,8 +54,10 @@ def register(http, *, method="none", scopes="memory:read memory:write"):
     return result.json()
 
 
-def request_code(http, client, state, *, approve=True, scopes="memory:read memory:write"):
-    verifier = secrets.token_urlsafe(48)
+def request_code(
+    http, client, state, *, approve=True, scopes="memory:read memory:write", verifier=None
+):
+    verifier = verifier or secrets.token_urlsafe(48)
     challenge = (
         base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip("=")
     )
@@ -93,6 +95,100 @@ def request_code(http, client, state, *, approve=True, scopes="memory:read memor
         "code_verifier": verifier,
         "resource": state.resource,
     }
+
+
+def test_registration_without_scope_requires_owner_approval_for_memory_access(installation):
+    store, state, server, app = installation
+    with TestClient(app, base_url=ISSUER) as http:
+        response = http.post(
+            "/register",
+            json={
+                "redirect_uris": [CALLBACK],
+                "token_endpoint_auth_method": "none",
+                "grant_types": ["authorization_code", "refresh_token"],
+            },
+        )
+        assert response.status_code == 201
+        client = response.json()
+        assert set(client["scope"].split()) == {"memory:read", "memory:write"}
+        verifier = secrets.token_urlsafe(48)
+        request_id, pairing = request_code(http, client, state, approve=False, verifier=verifier)
+        assert http.get(pairing, follow_redirects=False).status_code == 200
+        with store.connection() as db:
+            for table in ("oauth_codes", "oauth_grants", "oauth_tokens"):
+                assert db.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] == 0
+        state.decide(request_id, projects=["work"], scopes=["memory:read"])
+        redirect = http.get(pairing, follow_redirects=False)
+        code = parse_qs(urlsplit(redirect.headers["location"]).query)["code"][0]
+        exchanged = http.post(
+            "/token",
+            data={
+                "grant_type": "authorization_code",
+                "client_id": client["client_id"],
+                "code": code,
+                "redirect_uri": CALLBACK,
+                "code_verifier": verifier,
+                "resource": state.resource,
+            },
+        )
+        assert exchanged.status_code == 200
+        tokens = exchanged.json()
+        assert tokens["scope"] == "memory:read"
+
+    async def rejected_write():
+        async with server.session_manager.run():
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app),
+                headers={"Authorization": "Bearer " + tokens["access_token"]},
+            ) as http:
+                async with streamable_http_client(state.resource, http_client=http) as (
+                    read,
+                    write,
+                    _,
+                ):
+                    async with ClientSession(read, write) as session:
+                        await session.initialize()
+                        result = await session.call_tool(
+                            "memory_remember",
+                            {
+                                "content": "Must not be stored",
+                                "source": "test",
+                                "account": "test",
+                                "event_id": "read-only",
+                                "project": "work",
+                            },
+                        )
+                        assert result.isError
+
+    # The OAuth TestClient already consumed the first app's lifespan.
+    service = MemoryService(store)
+    server = create_server(service, http=True)
+    app = create_http_app(server, service)
+    asyncio.run(rejected_write())
+    with store.connection() as db:
+        assert db.execute("SELECT COUNT(*) FROM memories").fetchone()[0] == 0
+
+
+def test_explicit_read_only_registration_cannot_request_write(installation):
+    _, state, _, app = installation
+    with TestClient(app, base_url=ISSUER) as http:
+        client = register(http, scopes="memory:read")
+        response = http.get(
+            "/authorize",
+            params={
+                "client_id": client["client_id"],
+                "redirect_uri": CALLBACK,
+                "response_type": "code",
+                "code_challenge": "A" * 43,
+                "code_challenge_method": "S256",
+                "scope": "memory:read memory:write",
+                "resource": state.resource,
+            },
+            follow_redirects=False,
+        )
+        assert response.status_code == 302
+        assert parse_qs(urlsplit(response.headers["location"]).query)["error"] == ["invalid_scope"]
+        assert state.pending()["requests"] == []
 
 
 def test_discovery_pkce_binding_rotation_revocation_and_no_plaintext_tokens(installation):

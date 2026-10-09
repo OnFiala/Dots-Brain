@@ -1,16 +1,16 @@
 # Capability matrix
 
 This describes the unreleased `0.4.0-alpha.1` candidate. The appliance and public
-HTTPS/OAuth route passed synthetic acceptance on 2026-10-09. Actual Botter/Grok
-account connections remain a separate acceptance step.
+HTTPS/OAuth route passed synthetic acceptance on 2026-10-09. Grok's actual chat
+read/write connection is verified. Botter and cross-bot acceptance remain pending.
 
 | Capability | Implemented evidence | Remaining boundary |
 | --- | --- | --- |
 | Project-scoped memory, revisions, deletion, authenticated writer | SQLite and actual MCP SDK tests | Existing v1 stores need offline migration |
 | Full-text and bounded context | Tests for scoped retrieval and budgets | Character budgets are not token budgets |
 | Local semantic passages | Pinned ONNX model; token-window, title, stale/deletion and real-model tests | Appliance capacity and larger bilingual evaluation |
-| MCP stdio, loopback HTTP, local bridge/adapters | SDK, synthetic credentials, supported Linux process tests | Actual Botter/Grok client activation |
-| OAuth registration, PKCE, refresh, revocation | Official SDK flow, scoped handler tests and public HTTPS synthetic OAuth/MCP acceptance | Actual provider callbacks and consent |
+| MCP stdio, loopback HTTP, local bridge/adapters | SDK, synthetic credentials, supported Linux process tests; Grok actual chat status/write/read | Botter client activation and cross-bot readback |
+| OAuth registration, PKCE, refresh, revocation | Official SDK flow, scoped handler tests, public synthetic acceptance and real Grok grant | Botter fresh registration after read-only DCR mismatch; durable request-to-grant provenance |
 | Sanitized action audit | Append-only rows, server mutation intent/receipt, client reports, gaps and pagination | Full provider audit cannot be inferred from submitted events |
 | Bounded JSONL snapshot collector | ACK retry, partial lines, rotation, oversized records, missing sources, crash journal | Live provider logs and persistent collectors unverified |
 | Transcript import | User text with stable file-record identity; tool metadata only | Ambiguous assistant text excluded; no transcript timestamps/IDs invented |
