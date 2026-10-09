@@ -37,3 +37,13 @@ command result, and a synthetic reproduction in
 [GitHub issues](https://github.com/OnFiala/Dots-Brain/issues). Include whether the
 problem is a generated bridge failure or an actual application connection failure.
 See [verification](verification.md) for what has already been tested.
+
+
+## Cloudflare 403 with error 1010
+
+A final appliance check observed Python `urllib` denied at Cloudflare while `curl`
+reached the same discovery endpoint. [Cloudflare error 1010](https://developers.cloudflare.com/support/troubleshooting/http-status-codes/cloudflare-1xxx-errors/error-1010/)
+indicates a client browser-signature block. Record the failing client's status and
+check the Cloudflare security event before changing the application. A successful
+shell probe does not establish access from a provider's MCP backend. Do not turn
+off security checks globally merely to make a diagnostic client pass.

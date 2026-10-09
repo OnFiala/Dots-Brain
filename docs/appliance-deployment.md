@@ -1,4 +1,4 @@
-# Appliance deployment — public OAuth candidate running
+# Appliance deployment — 0.4.0-alpha.1 running
 
 ## Observed boundary (2026-10-09)
 
@@ -10,13 +10,14 @@ Workspace and OAuth containers remain separate services, with their original
 tunnel routes preserved. Tailscale Serve returned an empty configuration during
 the initial internal acceptance.
 
-The observed installed source is `7417e7bd5528be1e85025fe6d1aa337e30dca4ff`,
-including the OAuth provenance, deletion-target and useful-context repairs below.
-Source archive SHA-256:
-`a33274319e91203db3c97c1a31a7c01059c9397e0baa1259c3c473eb41b483da`.
-Previous `2c8823b`, `a28d25f` and initial `bd7e938` deployments remain
+The installed release is tag `v0.4.0-alpha.1`, source
+`d18a8972789f2cdb25eebfc441dce4ad85ec3361`, including the reviewed CORTEX receipt
+and project-map repairs. Source archive SHA-256:
+`eaa326f1e94851069617d4aee403a0d6db194fe1a8d0474e95463b27255fb4ca`.
+Previous `7417e7b`, `2c8823b`, `a28d25f` and initial `bd7e938` deployments remain
 available as rollback releases. Dependencies were installed
-with the committed lockfile and `uv 0.10.3`; serving uses offline local inference.
+with the committed lockfile and `uv 0.10.3`; all 51 installed package versions
+match the preceding release. Serving uses offline local inference.
 See [live verification and its limits](verification.md).
 
 ## Current installation
@@ -24,7 +25,7 @@ See [live verification and its limits](verification.md).
 | Item | Installed value |
 | --- | --- |
 | Service identity | Dedicated non-login `dots-brain` OS user/group |
-| Immutable code | `/opt/dots-brain/releases/7417e7bd5528be1e85025fe6d1aa337e30dca4ff` with locked `.venv`, root-owned |
+| Immutable code | `/opt/dots-brain/releases/d18a8972789f2cdb25eebfc441dce4ad85ec3361` with locked `.venv`, root-owned |
 | Selected code | `/opt/dots-brain/current` symlink to the verified release |
 | Canonical data | `/var/lib/dots-brain`, owned by service user, directory 0700 |
 | Backups | `/var/backups/dots-brain`, private; off-host destination still to provision |
@@ -328,3 +329,52 @@ During that review, core PID 1327391 and gateway PID 1317846 were unchanged and 
 onboarding was closed. The host reported about 5.5 GiB available RAM and 190 GiB
 free on the data filesystem. These are point-in-time observations, not capacity or
 uptime guarantees.
+
+
+### Final alpha rollout and artifacts
+
+At **2026-10-09 21:13:02 UTC**, the operator selected `d18a897` after its Linux CI
+passed 176 tests with one real-model skip on Python 3.11 and 3.12. The separately
+reviewed tag workflow also passed both versions and built the draft assets:
+[release run 37992007044](https://github.com/OnFiala/Dots-Brain/actions/runs/37992007044).
+All three downloaded assets matched `SHA256SUMS`; wheel, source archive and installer
+contained no database, credential, model or virtual-environment paths.
+
+The new immutable release was prepared before stopping the service. Its public
+package cache was incomplete, so missing locked wheels were fetched from PyPI;
+installed versions still matched the previous 51-package environment exactly.
+The CORTEX configuration file was absent, so stricter mapping validation could
+not invalidate an existing connector configuration.
+
+The stopped baseline contained 46 memories and 46 revisions. Private snapshot
+`/var/backups/dots-brain/pre-final-d18a897.sqlite3` passed structural validation.
+Before/after comparisons preserved memory IDs, projects, revisions, content digests,
+writer attribution, both OAuth grants and grant provenance, and the complete audit
+hash prefix. No personal record content or token material was printed.
+
+Only the core restarted, as PID 1331577; gateway PID 1317846 remained active.
+A live HTTP MCP probe in a separate synthetic project exercised the real model,
+source readback, useful bounded context and exact-revision deletion. Its record was
+removed and credential revoked. Audit intents/receipts 163–166 contain the expected
+write and cleanup, with no unresolved outcome. Metadata still matched the original
+46 records after cleanup. A complete manual review advanced the checkpoint to 166;
+unattended network access remains a separate unresolved issue.
+
+The code rollback is the retained `7417e7b` release with the current database.
+There was no schema or dependency change in this cutover. Do not restore the
+pre-upgrade database merely to roll back code: that could lose later writes.
+No bot account was re-paired and no grant was widened. Actual chat use after this
+final cutover awaits the next normal client session; the operator probe and
+preserved grants do not substitute for that client observation.
+
+The tag and draft assets are prepared. Public release publication and merging
+PR #1 remain owner-controlled actions; this rollout did not perform either.
+
+
+Final external probes with `curl` returned discovery 200, anonymous MCP 401,
+closed registration 503 and unknown route 404 with normal TLS validation. Python
+`urllib` received Cloudflare 403/error 1010 for the same discovery request, while
+`curl` returned 200. Cloudflare documents 1010 as a client browser-signature block;
+no Cloudflare security setting was changed. This client-compatibility difference
+is recorded; it is not evidence that either connected bot currently fails.
+Reference: [Cloudflare error 1010](https://developers.cloudflare.com/support/troubleshooting/http-status-codes/cloudflare-1xxx-errors/error-1010/).

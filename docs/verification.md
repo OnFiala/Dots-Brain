@@ -1,10 +1,11 @@
 # Verification evidence
 
-Environment: managed Linux workspace, Python 3.12.14, SQLite through the Python
-standard library. On 2026-10-05 the user confirmed that Work and their Dot shared
+Historical development environment: managed Linux workspace, Python 3.12.14 and
+SQLite through the Python standard library. On 2026-10-05 the user confirmed that Work and their Dot shared
 this VM. Earlier tests used disposable instances; a retained installation was
 exercised separately that day. Its historical paths were absent in owner-relayed
-checks on 2026-10-09; see [current deployment status](vm-deployment.md).
+checks on 2026-10-09; see [the historical VM record](vm-deployment.md). Current appliance deployment
+is documented [separately](appliance-deployment.md).
 Dependencies are recorded in `uv.lock`.
 
 ## Appliance candidate 0.4.0-alpha.1 — 2026-10-09
@@ -338,3 +339,12 @@ does not establish the absence of undisclosed vulnerabilities.
 Workflow Actions are now pinned to official resolved commit hashes; the release
 identity validator rejects moving Action refs. The security review of the preceding
 source found this release supply-chain gap; no observed compromise was reported.
+
+
+Final release `d18a897` passed **176 tests, one opt-in model skip** on Linux Python
+3.11 and 3.12 in [CI](https://github.com/OnFiala/Dots-Brain/actions/runs/37991674568)
+and again in the [tag release workflow](https://github.com/OnFiala/Dots-Brain/actions/runs/37992007044).
+The wheel, source distribution and installer ZIP were downloaded from the draft
+and all SHA-256 checksums passed. The final live operator MCP/model probe passed
+while retaining all 46 preexisting memories/revisions and both bot grants. See
+[the final rollout](appliance-deployment.md#final-alpha-rollout-and-artifacts).

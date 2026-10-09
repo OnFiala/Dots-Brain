@@ -4,7 +4,7 @@
 
 - Local memory, revisions, full-text/semantic search, MCP and scoped local clients.
 - Lifecycle, explicit reinstall, OAuth PKCE, refresh and revocation.
-- Candidate schema v2, authenticated authorship, project identities and suppression.
+- Schema v2, authenticated authorship, project identities and suppression.
 - Sanitized audit, explicit coverage gaps and bounded resumable snapshot collectors.
 - Scoped CORTEX context and selected publication with uncertain-write reconciliation.
 - Offline migration, verified backups and guarded restore/cutover.
@@ -33,9 +33,10 @@ bidirectional cross-bot reads; their synthetic facts were removed by owner clean
    repair passed live acceptance and Botter's affected-query check. Both bots
    confirmed their retained access and index state; demonstrate relevant recall
    in a later session.
-6. Establish the available live capture mechanisms and verify the first scheduled
-   run of the registered twice-daily Codex audit review. Its manual baseline passed;
-   it cannot infer complete provider activity from submitted audit events.
+6. Establish the available live capture mechanisms and a working unattended network
+   path for the registered twice-daily Codex review. The first scheduled attempt
+   failed to reach the appliance; manual complete-range reviews reached ID 166.
+   Submitted audit events cannot establish complete provider activity.
 
 ## Capture and durability gaps
 

@@ -22,7 +22,7 @@ total to 46. Safe writer/audit metadata corroborates the writes.
 | Backup and recovery | SQLite backup with validation; disabled restore; latest deletions, revoked auth and divergence-safe cutover | Scheduled off-host backups and host-loss recovery |
 | Appliance supervision | Installed active/enabled systemd service, loopback listener, verified restart and retained IDs | Actual machine reboot and long-run capacity untested |
 | Initial bot contributions and later recall | 37 Botter + 8 Grok records, writer/receipt corroboration and client readbacks/query checks | Later-session recall; reported knowledge is not independently fact-checked |
-| Twice-daily Codex audit analysis | Active 09:00/21:00 heartbeat, manual baseline and durable review helper; first scheduled attempt observed | First attempt could not resolve the tailnet host in its restricted execution context; no cursor advancement in that scheduled run. A later manual full review advanced through ID 162; restricted unattended transport remains blocked. Backend model identity and full provider capture unverified |
+| Twice-daily Codex audit analysis | Active 09:00/21:00 heartbeat, manual baseline and durable review helper; first scheduled attempt observed | First attempt could not resolve the tailnet host in its restricted execution context; no cursor advancement in that scheduled run. A later manual full review advanced through ID 166; restricted unattended transport remains blocked. Backend model identity and full provider capture unverified |
 | Cerebras helper | Optional architecture proposal | No API key, call, charge or runtime dependency |
 | Native ChatGPT views, MCP Events | Planned | No client extension shipped |
 
