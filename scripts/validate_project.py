@@ -1,4 +1,4 @@
-"""Validate release identity and local documentation links without network access."""
+"""Validate release identity, immutable Actions and documentation without network access."""
 
 import ast
 import json
@@ -32,6 +32,12 @@ def main():
     skill = plugin["extensions"]["com.openai"]["onboardingSkill"]
     assert (ROOT / skill).is_file(), "Missing onboarding skill"
     assert (ROOT / "LICENSE").read_text().startswith("MIT License\n")
+    workflows = ROOT / ".github/workflows"
+    for workflow in (*workflows.glob("*.yml"), *workflows.glob("*.yaml")):
+        for action in re.findall(r"\buses:\s+(\S+)", workflow.read_text()):
+            assert re.fullmatch(r"[\w./-]+@[0-9a-f]{40}", action), (
+                f"Action must use a full commit hash in {workflow.name}: {action}"
+            )
     documents = [*ROOT.glob("*.md"), *ROOT.glob("docs/**/*.md"), *ROOT.glob("skills/**/*.md")]
     for document in documents:
         for target in re.findall(r"\]\(([^)]+)\)", document.read_text()):
@@ -41,7 +47,7 @@ def main():
             resolved = (document.parent / target).resolve()
             assert resolved.is_relative_to(ROOT), f"Link leaves repository: {document.name}"
             assert resolved.exists(), f"Broken link in {document.name}: {target}"
-    print("Release identity, plugin metadata, license, and documentation links are valid.")
+    print("Release identity, Action pins, plugin metadata, license, and links are valid.")
 
 
 if __name__ == "__main__":
