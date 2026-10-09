@@ -267,6 +267,9 @@ def test_oauth_tokens_access_the_same_memory_through_real_mcp_and_respect_projec
                             },
                         )
                         assert not result.isError
+                        assert store.get(result.structuredContent["id"])["writer_principal"] == (
+                            "oauth-grant:" + state.grants()["grants"][0]["id"]
+                        )
                         assert (
                             store.get(result.structuredContent["id"])["content"]
                             == "Shared OAuth memory"
@@ -630,3 +633,14 @@ def test_authorization_rejects_wrong_resource_callback_and_weak_pkce(installatio
         )
         assert response.status_code == 400 and "location" not in response.headers
         assert state.pending()["requests"] == []
+
+
+def test_default_approval_does_not_add_audit_or_cortex_scopes(installation):
+    _, state, _, app = installation
+    requested = "memory:read audit:read cortex:read cortex:write"
+    with TestClient(app, base_url=ISSUER) as http:
+        client = register(http, scopes=requested)
+        form = request_code(http, client, state, scopes=requested)
+        response = http.post("/token", data=form)
+        assert response.status_code == 200
+        assert response.json()["scope"] == "memory:read"

@@ -23,7 +23,7 @@ from mcp.server.auth.provider import (
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
 from pydantic import AnyHttpUrl
 
-from .auth import SCOPES, Policy
+from .auth import MEMORY_SCOPES, SCOPES, Policy
 from .errors import InputError
 from .local import read_json, write_json
 from .store import Store, validate_text
@@ -248,7 +248,11 @@ class OAuthStore:
                 set(
                     scopes
                     if scopes is not None
-                    else [scope for scope in requested if scope != "memory:forget" or allow_forget]
+                    else [
+                        scope
+                        for scope in requested
+                        if scope in MEMORY_SCOPES and (scope != "memory:forget" or allow_forget)
+                    ]
                 )
             )
             if not deny and (not scopes or not set(scopes) <= set(requested)):
@@ -422,6 +426,7 @@ class OAuthStore:
         return Policy(
             frozenset(json.loads(row["scopes"])),
             None if row["projects"] is None else tuple(json.loads(row["projects"])),
+            f"oauth-grant:{row['grant_id']}",
         )
 
     def grants(self):

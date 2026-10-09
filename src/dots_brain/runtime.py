@@ -116,7 +116,17 @@ def state_path(store: Store) -> Path:
 
 def ensure_enabled(store: Store) -> None:
     if (store.directory / "disabled.json").exists():
-        raise InputError("This installation is disabled. Reinstall explicitly with up --resume.")
+        raise InputError("This installation is disabled. Inspect its recovery or removal state.")
+
+
+def resume_installation(store: Store) -> None:
+    marker = store.directory / "disabled.json"
+    if marker.exists() and read_json(marker).get("reason") in {
+        "restored_requires_review",
+        "restore_cutover",
+    }:
+        raise InputError("Recovery requires activate-restore; up --resume cannot bypass it.")
+    marker.unlink(missing_ok=True)
 
 
 def up(
@@ -132,7 +142,7 @@ def up(
         raise InputError("Port must be between 0 and 65535; zero selects an available port.")
     with locked(store.directory / "service.lock"):
         if resume:
-            (store.directory / "disabled.json").unlink(missing_ok=True)
+            resume_installation(store)
         ensure_enabled(store)
         store.initialize()
         state = read_json(state_path(store)) if state_path(store).exists() else {}

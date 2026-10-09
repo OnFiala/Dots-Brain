@@ -190,8 +190,13 @@ def create_server(service: MemoryService, *, http: bool = False, port: int = 876
         expected_revision: int | None = None,
     ) -> dict[str, Any]:
         """Store a source record. Reuse event_id on retries; updates need expected_revision."""
+        current = policy("memory:write")
         return await write_call(
+            service.mutate,
             service.store.remember,
+            policy=current,
+            audit_project=project,
+            action="memory_remember",
             content=content,
             source=source,
             account=account,
@@ -200,7 +205,8 @@ def create_server(service: MemoryService, *, http: bool = False, port: int = 876
             title=title,
             source_uri=source_uri,
             expected_revision=expected_revision,
-            projects=policy("memory:write").projects,
+            projects=current.projects,
+            writer_principal=current.principal,
         )
 
     @server.tool(
@@ -216,11 +222,23 @@ def create_server(service: MemoryService, *, http: bool = False, port: int = 876
         Read with memory_get first. On conflict, review the new content and user intent;
         never retry deletion automatically with a newer revision.
         """
+        current = policy("memory:forget")
+        from .errors import NotFoundError
+
+        try:
+            record = await read_call(service.store.get, memory_id, projects=current.projects)
+        except NotFoundError:
+            return {"deleted": False}
         return await write_call(
+            service.mutate,
             service.store.forget,
-            memory_id,
+            policy=current,
+            audit_project=record["project"],
+            action="memory_forget",
+            memory_id=memory_id,
             expected_revision=expected_revision,
-            projects=policy("memory:forget").projects,
+            projects=current.projects,
+            writer_principal=current.principal,
         )
 
     @server.tool(annotations=read)
@@ -228,14 +246,21 @@ def create_server(service: MemoryService, *, http: bool = False, port: int = 876
         """Report accessible source counts and implemented capabilities without secrets."""
         return await read_call(service.status, policy=policy("memory:read"))
 
+    from .integration_tools import register_tools
+
+    required = register_tools(server, service, policy, read_call, write_call)
+    required.update({"memory_remember": "memory:write", "memory_forget": "memory:forget"})
+
     @server._mcp_server.list_tools()
     async def visible_tools():
         scopes = policy().scopes
-        required = {"memory_remember": "memory:write", "memory_forget": "memory:forget"}
-        return [
-            tool
-            for tool in await server.list_tools()
-            if required.get(tool.name, "memory:read") in scopes
-        ]
+
+        def allowed(name):
+            needed = required.get(name, "memory:read")
+            return all(
+                scope in scopes for scope in ((needed,) if isinstance(needed, str) else needed)
+            )
+
+        return [tool for tool in await server.list_tools() if allowed(tool.name)]
 
     return server

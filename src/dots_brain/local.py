@@ -59,6 +59,16 @@ def write_json(path: Path, value: dict) -> None:
     atomic_write(path, json.dumps(value, indent=2) + "\n")
 
 
+def sync_file_and_parent(path: Path) -> None:
+    with path.open("rb") as stream:
+        os.fsync(stream.fileno())
+    descriptor = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
 def read_json(path: Path) -> dict:
     if path.is_symlink():
         raise InputError("Installation state must not be a symbolic link.")

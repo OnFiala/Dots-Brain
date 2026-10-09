@@ -14,7 +14,19 @@ from .store import Store
 MODEL_NAME = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 MODEL_REPO = "qdrant/paraphrase-multilingual-MiniLM-L12-v2-onnx-Q"
 MODEL_REVISION = "faf4aa4225822f3bc6376869cb1164e8e3feedd0"
-MODEL_ID = f"{MODEL_REPO}@{MODEL_REVISION}:mean-char-chunks-v1"
+MODEL_ID = f"{MODEL_REPO}@{MODEL_REVISION}:token-windows-v2"
+SCHEMA_SQL = (
+    """
+CREATE TABLE semantic_chunks (
+    memory_id TEXT NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
+    revision INTEGER NOT NULL, model TEXT NOT NULL, chunk_index INTEGER NOT NULL,
+    field TEXT NOT NULL CHECK(field IN ('title','content')),
+    start_char INTEGER NOT NULL, end_char INTEGER NOT NULL,
+    dimension INTEGER NOT NULL, vector BLOB NOT NULL,
+    PRIMARY KEY(memory_id, model, chunk_index)
+)
+""",
+)
 FILES = {
     "model_optimized.onnx": (
         "sha256",
@@ -104,14 +116,32 @@ class SemanticIndex:
             threads=2,
             providers=["CPUExecutionProvider"],
         )
+        from tokenizers import Tokenizer
+
+        self.tokenizer = Tokenizer.from_file(str(directory / "tokenizer.json"))
+        self.tokenizer.no_truncation()
+        self.tokenizer.no_padding()
+
+    def _chunks(self, text: str) -> list[tuple[int, int]]:
+        """Token offsets keep every passage within the model's 128-token limit."""
+        offsets = self.tokenizer.encode(text, add_special_tokens=False).offsets
+        if not offsets:
+            return [(0, len(text))]
+        chunks = []
+        for start in range(0, len(offsets), 80):
+            end = min(start + 96, len(offsets))
+            first = 0 if start == 0 else offsets[start][0]
+            last = len(text) if end == len(offsets) else offsets[end - 1][1]
+            chunks.append((first, last))
+            if end == len(offsets):
+                break
+        return chunks
 
     def _embed(self, text: str):
-        # Bounded chunks avoid silently dropping the tail of long records. Mean pooling
-        # is an alpha tradeoff, not a claim of chunk-level retrieval or Cortex parity.
-        chunks = [text[start : start + 1200] for start in range(0, len(text), 1000)] or [""]
+        if len(self.tokenizer.encode(text, add_special_tokens=True).ids) > 128:
+            raise CapabilityError("The passage exceeds the embedding token limit.")
         with self.lock:
-            vectors = list(self.model.embed(chunks, batch_size=8))
-        vector = self.np.mean(vectors, axis=0).astype("<f4")
+            vector = next(iter(self.model.embed([text]))).astype("<f4")
         norm = self.np.linalg.norm(vector)
         if not self.np.isfinite(vector).all() or norm == 0:
             raise CapabilityError("The embedding model returned an invalid vector.")
@@ -120,30 +150,47 @@ class SemanticIndex:
     def index(self, *, batch_size: int = 16) -> dict:
         with self.store.connection() as db:
             rows = db.execute(
-                "SELECT m.id,m.revision,r.title,r.content FROM memories m JOIN revisions r "
-                "ON r.memory_id=m.id AND r.revision=m.revision WHERE NOT EXISTS "
-                "(SELECT 1 FROM vectors v WHERE v.memory_id=m.id AND v.model=? "
-                "AND v.revision=m.revision) ORDER BY m.id LIMIT ?",
+                "SELECT m.id,m.current_revision AS revision,r.title,r.content "
+                "FROM memories m JOIN revisions r "
+                "ON r.memory_id=m.id AND r.revision=m.current_revision WHERE NOT EXISTS "
+                "(SELECT 1 FROM semantic_chunks v WHERE v.memory_id=m.id AND v.model=? "
+                "AND v.revision=m.current_revision) ORDER BY m.id LIMIT ?",
                 (MODEL_ID, batch_size),
             ).fetchall()
         indexed = 0
         for row in rows:
-            vector = self._embed(row["title"] + "\n" + row["content"])
+            chunks = [
+                (field, start, end, self._embed(row[field][start:end]))
+                for field in ("title", "content")
+                if row[field].strip()
+                for start, end in self._chunks(row[field])
+            ]
             with self.store.connection(write=True) as db:
                 current = db.execute(
-                    "SELECT revision FROM memories WHERE id=?", (row["id"],)
+                    "SELECT current_revision AS revision FROM memories WHERE id=?", (row["id"],)
                 ).fetchone()
                 if current is None or current["revision"] != row["revision"]:
                     continue
                 db.execute(
-                    "INSERT OR REPLACE INTO vectors VALUES (?,?,?,?,?)",
-                    (
-                        row["id"],
-                        row["revision"],
-                        MODEL_ID,
-                        len(vector),
-                        vector.tobytes(),
-                    ),
+                    "DELETE FROM semantic_chunks WHERE memory_id=? AND model=?",
+                    (row["id"], MODEL_ID),
+                )
+                db.executemany(
+                    "INSERT INTO semantic_chunks VALUES (?,?,?,?,?,?,?,?,?)",
+                    [
+                        (
+                            row["id"],
+                            row["revision"],
+                            MODEL_ID,
+                            number,
+                            field,
+                            start,
+                            end,
+                            len(vector),
+                            vector.tobytes(),
+                        )
+                        for number, (field, start, end, vector) in enumerate(chunks)
+                    ],
                 )
                 indexed += 1
         return {"indexed": indexed, "examined": len(rows), **self.status()}
@@ -156,8 +203,9 @@ class SemanticIndex:
                 args,
             ).fetchone()[0]
             indexed = db.execute(
-                "SELECT COUNT(*) FROM memories m JOIN vectors v ON v.memory_id=m.id "
-                "AND v.revision=m.revision WHERE v.model=?" + clause,
+                "SELECT COUNT(DISTINCT m.id) FROM memories m "
+                "JOIN semantic_chunks v ON v.memory_id=m.id "
+                "AND v.revision=m.current_revision WHERE v.model=?" + clause,
                 [MODEL_ID, *args],
             ).fetchone()[0]
         return {
@@ -176,36 +224,51 @@ class SemanticIndex:
         limit: int = 10,
         projects: tuple[str, ...] | None = None,
     ) -> list[dict]:
-        vector = self._embed(query)
+        vectors = [self._embed(query[start:end]) for start, end in self._chunks(query)]
         clause, args = self.store._filter(projects, project)
-        best = []
+        best = {}
         with self.store.connection() as db:
             cursor = db.execute(
-                "SELECT m.id,m.revision,v.dimension,v.vector FROM memories m JOIN vectors v "
-                "ON v.memory_id=m.id AND v.revision=m.revision WHERE v.model=?" + clause,
+                "SELECT m.id,m.current_revision AS revision,v.dimension,v.vector,"
+                "v.start_char,v.end_char,v.field FROM memories m JOIN semantic_chunks v "
+                "ON v.memory_id=m.id AND v.revision=m.current_revision WHERE v.model=?" + clause,
                 [MODEL_ID, *args],
             )
             for row in cursor:
                 other = self.np.frombuffer(row["vector"], dtype="<f4")
-                if row["dimension"] != len(vector) or len(other) != len(vector):
+                if row["dimension"] != len(vectors[0]) or len(other) != len(vectors[0]):
                     raise CapabilityError("A stored vector has incompatible dimensions.")
-                score = float(self.np.dot(vector, other))
-                best.append((score, row["id"], row["revision"]))
+                if not self.np.isfinite(other).all():
+                    raise CapabilityError("A stored vector contains invalid values.")
+                score = max(float(self.np.dot(vector, other)) for vector in vectors)
+                candidate = (
+                    score,
+                    row["revision"],
+                    row["start_char"],
+                    row["end_char"],
+                    row["field"],
+                )
+                if row["id"] not in best or candidate > best[row["id"]]:
+                    best[row["id"]] = candidate
                 if len(best) > limit * 2:
-                    best.sort(reverse=True)
-                    del best[limit:]
-        best.sort(reverse=True)
+                    best = dict(
+                        sorted(best.items(), key=lambda pair: pair[1], reverse=True)[:limit]
+                    )
         records = []
         from .errors import NotFoundError
 
-        for score, memory_id, revision in best[:limit]:
+        for memory_id, (score, revision, start, end, field) in sorted(
+            best.items(), key=lambda pair: pair[1], reverse=True
+        )[:limit]:
             try:
                 record = self.store.get(memory_id, projects=projects)
             except NotFoundError:
                 continue
             if record["revision"] != revision:
                 continue
-            record["excerpt"] = record.pop("content")[:800]
+            record["excerpt"] = record[field][start:end][:800]
+            record.pop("content")
+            record["passage"] = {"field": field, "start_char": start, "end_char": end}
             record["semantic_score"] = score
             records.append(record)
         return records

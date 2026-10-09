@@ -9,7 +9,7 @@ The selected rollout starts with each bot contributing what it currently knows,
 then using the shared appliance memory in ordinary work. See the
 [initial contribution and CORTEX contract](appliance-contract.md). Such a
 contribution must preserve uncertainties and sources; it is not proof of access
-to complete conversation history. CORTEX connectors are required but not yet shipped.
+to complete conversation history. CORTEX connectors are required but implemented locally in the candidate; upstream access is unverified.
 
 For example, tell a connected assistant: "Remember that this project's deployment
 target is my VM. Save the source of this decision under project `demo`." Then ask

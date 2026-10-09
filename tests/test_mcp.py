@@ -68,6 +68,9 @@ def test_http_protocol_scopes_project_boundaries_and_revocation(tmp_path):
                         )
                         assert not result.isError, result
                         memory_id = result.structuredContent["id"]
+                        assert store.get(memory_id)["writer_principal"] == (
+                            "local-client:" + writer["client_id"]
+                        )
                         forbidden = await session.call_tool(
                             "memory_forget", {"memory_id": memory_id, "expected_revision": 1}
                         )
@@ -94,10 +97,10 @@ def test_http_protocol_scopes_project_boundaries_and_revocation(tmp_path):
 def test_two_http_clients_share_revisions_and_delete_only_the_observed_revision(tmp_path):
     store = Store(tmp_path / "memory")
     store.initialize()
-    tokens = []
+    tokens, identities = [], []
     for name in ("writer", "deleter"):
         path = tmp_path / f"{name}.json"
-        issue_client(
+        issued = issue_client(
             store,
             name=name,
             scopes=["memory:read", "memory:write", "memory:forget"],
@@ -107,6 +110,7 @@ def test_two_http_clients_share_revisions_and_delete_only_the_observed_revision(
             url="http://127.0.0.1:8765/mcp",
         )
         tokens.append(json.loads(path.read_text())["token"])
+        identities.append("local-client:" + issued["client_id"])
     server = create_server(MemoryService(store), http=True)
     app = BearerAuth(server.streamable_http_app(), store)
 
@@ -136,6 +140,7 @@ def test_two_http_clients_share_revisions_and_delete_only_the_observed_revision(
                 memory_id = saved.structuredContent["id"]
                 observed = await call(1, "memory_get", {"memory_id": memory_id})
                 assert observed.structuredContent["content"] == event["content"]
+                assert observed.structuredContent["writer_principal"] == identities[0]
                 updated = await call(
                     0,
                     "memory_remember",
@@ -162,6 +167,11 @@ def test_two_http_clients_share_revisions_and_delete_only_the_observed_revision(
                 }
                 removed = await call(1, "memory_forget", arguments)
                 assert removed.structuredContent["deleted"] is True
+                with store.connection() as db:
+                    assert (
+                        db.execute("SELECT deleted_by FROM scoped_suppressions").fetchone()[0]
+                        == identities[1]
+                    )
                 retry = await call(1, "memory_forget", arguments)
                 assert retry.structuredContent["deleted"] is False
                 reimport = await call(0, "memory_remember", event)

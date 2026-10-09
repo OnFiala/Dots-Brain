@@ -1,6 +1,21 @@
 # Changelog
 
-## Unreleased
+## Unreleased — 0.4.0-alpha.1 candidate
+
+- Migrate explicitly to schema v2: project-scoped identities and deletion barriers,
+  server-derived revision authorship, retained unknown legacy authorship and global
+  legacy suppression hashes. Migration requires stopped writers and a verified backup.
+- Index title/content token windows independently and return matching passages;
+  reject credential-like memory input instead of silently truncating it.
+- Add separately scoped sanitized action audit, mutation intent/receipt tracking,
+  coverage gaps, and resumable bounded provider JSONL snapshot collection.
+- Add project-mapped CORTEX reads and selected source-referenced publication with
+  durable uncertain-write handling. No full database mirroring or automatic promotion.
+- Add validated online backups, disabled staged restores, credential revocation,
+  final deletion reconciliation, and refusal to discard newer canonical state.
+- Prepare an isolated systemd appliance deployment; actual deployment, bot OAuth,
+  full capture, off-host recovery and twice-daily operator review remain pending.
+
 
 - Require a positive `expected_revision` for MCP and store deletion. Reject stale
   deletes atomically, keep completed-delete retries idempotent, and update probe

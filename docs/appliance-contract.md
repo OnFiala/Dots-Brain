@@ -6,8 +6,9 @@ On 2026-10-09 the owner selected `openclaw-appliance` as the host for the bots'
 shared external memory and required CORTEX connectors. Botter and Grok Bot will
 each contribute the knowledge currently available to them, then use this memory
 in their ordinary work. Recovering the historical Dot VM is not a prerequisite.
-This document defines the delivery contract. The connectors, contribution receipt
-format, and appliance deployment described here are not shipped capabilities.
+This document defines the delivery contract. The unreleased candidate implements
+scoped connectors and per-record write receipts; appliance deployment and actual
+client onboarding remain unverified.
 
 Keep one canonical Dots Brain instance on the appliance, with persistent private
 storage, local embeddings, and its own supervised process. The development
@@ -34,7 +35,7 @@ The memory core must keep working when Workspace, CORTEX, or a cloud model is
 unavailable. Report external lookup or write failures separately from local memory
 status. A CORTEX outage is not an empty result or proof that no relevant fact exists.
 
-## CORTEX connectors — required, not implemented
+## CORTEX connectors — implemented locally, upstream access pending
 
 Provide two separately authorized capabilities over CORTEX's supported API/MCP
 boundary. Never mount, copy, or directly edit its database or credential files.
@@ -99,8 +100,8 @@ or a restoration of the historical VM.
 
 The contribution protocol does not require a new server batch API: stable
 per-record identities and verified individual write receipts may implement it.
-Do not claim planned server-side writer attribution or other missing guarantees
-from client-supplied labels or a locally assembled summary.
+The server stores its authenticated writer separately from client-supplied source
+labels. A locally assembled summary still does not prove a completed contribution.
 
 ## Ongoing use
 

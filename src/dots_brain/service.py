@@ -3,15 +3,61 @@
 from __future__ import annotations
 
 import json
+import uuid
+from dataclasses import replace
 
+from .activity import AuditLog
 from .auth import Policy
 from .errors import InputError
 from .store import Store
 
 
 class MemoryService:
-    def __init__(self, store: Store, semantic=None):
-        self.store, self.semantic = store, semantic
+    def __init__(self, store: Store, semantic=None, cortex=None):
+        self.store, self.semantic, self.cortex = store, semantic, cortex
+        self.audit = AuditLog(store)
+        self.cortex_error = None
+
+    def mutate(self, function, *, policy: Policy, audit_project: str, action: str, **arguments):
+        """Record an intent before mutation and a receipt after its transaction.
+
+        A crash between commits leaves an unmatched intent for audit review. Memory
+        retries retain their own source identity and revision conflict protection.
+        No memory content or arbitrary exception text enters the audit.
+        """
+        observer = replace(policy, scopes=policy.scopes | {"audit:write"})
+        event_id = str(uuid.uuid4())
+        self.audit.observed(
+            observer,
+            project=audit_project,
+            kind="intent",
+            client_event_id=event_id,
+            action={"tool": action},
+        )
+        try:
+            result = function(**arguments)
+        except Exception as exc:
+            self.audit.observed(
+                observer,
+                project=audit_project,
+                kind="receipt",
+                client_event_id=event_id + ":receipt",
+                intent_event_id=event_id,
+                details={
+                    "status": "failed",
+                    "error_code": getattr(exc, "code", "operation_failed"),
+                },
+            )
+            raise
+        self.audit.observed(
+            observer,
+            project=audit_project,
+            kind="receipt",
+            client_event_id=event_id + ":receipt",
+            intent_event_id=event_id,
+            details={"status": "completed", "result": result},
+        )
+        return result
 
     def search(
         self, query: str, *, policy: Policy, project: str | None = None, limit: int = 10
@@ -77,5 +123,11 @@ class MemoryService:
             if self.semantic is None
             else self.semantic.status(projects=policy.projects),
             "remote_oauth": "available_when_configured",
-            "event_automation": "not_implemented",
+            "audit": {
+                "state": "available",
+                "coverage": "memory_mutations_and_submitted_events",
+                "provider_wide_capture": "unverified",
+            },
+            "cortex": "configured_not_verified" if self.cortex else "not_configured",
+            "cortex_error": self.cortex_error,
         }

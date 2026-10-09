@@ -1,93 +1,50 @@
 # Roadmap
 
-## First alpha — implemented
+## Implemented source milestones
 
-- Source-aware memory storage, full-text and local semantic retrieval, and deletion.
-- Six MCP tools, scoped loopback HTTP, stdio, and a bridge to the shared service.
-- Local setup, diagnostics, agent instructions, and reproducible MIT-licensed builds.
+- Local memory, revisions, full-text/semantic search, MCP and scoped local clients.
+- Lifecycle, explicit reinstall, OAuth PKCE, refresh and revocation.
+- Candidate schema v2, authenticated authorship, project identities and suppression.
+- Sanitized audit, explicit coverage gaps and bounded resumable snapshot collectors.
+- Scoped CORTEX context and selected publication with uncertain-write reconciliation.
+- Offline migration, verified backups and guarded restore/cutover.
 
-See the capability matrix and verification evidence for the exact supported scope.
+See [capabilities](capabilities.md) and [verification](verification.md) for evidence.
+These changes do not certify actual bot access or the production appliance.
 
-## Local automation alpha — implemented
+## Next acceptance: canonical appliance and clients
 
-- One-command bootstrap, shared background startup, and recovery on local reconnect.
-- Claude Code, Cursor, Codex, and generic MCP configuration adapters.
-- Verified generated bridges, private credential reuse, and preserved client settings.
-- Synthetic stress tests, responsive reads during blocked writes, and faster backlog indexing.
+1. Deploy the reviewed [appliance plan](appliance-deployment.md) under its owner
+   approval. Verify its identified disk, supervision, restart and recovery with
+   synthetic data. Complete the off-host backup/restore boundary.
+2. Provision dedicated CORTEX access over a supported authenticated boundary;
+   verify both original references and one authorized selected write/receipt.
+3. Expose only the required MCP/OAuth paths for cloud clients. Tailscale remains
+   the administration/private-client path; shell reachability does not prove a
+   cloud MCP backend can reach it. Verify the actual provider callback registration.
+4. Connect Botter and Grok separately. Each writes a synthetic note the other reads
+   at the same ID/revision; test project denial, revocation and explicit cleanup.
+5. Each bot submits its available knowledge with stable identities and uncertainty
+   labels, verifies receipts, then demonstrates relevant recall in a later session.
+6. Establish the available capture mechanisms honestly and enable twice-daily
+   Codex review of audit gaps, unexpected writes and affected resources.
 
-## Lifecycle and OAuth alpha — implemented
+## Capture and durability gaps
 
-- Retained-data uninstall, individual client disconnection, and explicit reinstall.
-- English installation, usage, upgrade, troubleshooting, and removal guides.
-- VM-local OAuth using the official MCP SDK, with agent-operated project approval.
-- PKCE, resource binding, hashed bearer tokens, rotating refresh, and revocation.
-- Official OAuth client verification against a live local HTTP memory service.
+Grok's inspected JSONL files may be stale snapshots; persistent live collection
+is unverified. Botter's enterprise hooks are unverified for the actual account.
+Neither model instructions nor MCP availability guarantee every action is captured.
+Preserve gaps instead of treating missing observations as safe activity.
 
-## Appliance and remote connection milestone
+A backup can contain revoked credentials and forgotten content. Recovery revokes
+credentials and reconciles surviving deletion barriers. If the original store is
+lost, a trustworthy current deletion history is still required. Restoring an old
+backup after new facts/audit/CORTEX operations requires reconciliation; cutover
+refuses canonical divergence rather than silently discarding newer history.
 
-- Deploy one canonical instance on the selected owner-operated Linux appliance.
-- Verify persistence, resource limits, supervision, backup, restore, and host-loss handling.
-- Establish a stable authenticated HTTPS endpoint using the authorized infrastructure.
-- Verify Botter and Grok Bot's actual read, write, restart, and revocation paths.
-- Verify the OAuth flow in actual web providers and isolate credential operations
-  where the host allows it.
+## Optional later work
 
-The [appliance contract](appliance-contract.md) is the current target. Historical
-Dot VM recovery is independent and does not block a fresh, clearly identified
-instance or the bots' initial knowledge contributions.
-
-## CORTEX connectors and bot contributions — required next delivery
-
-- Add separate scoped CORTEX read and selected write capabilities with original
-  references, durable receipts, no implicit permission expansion, and safe handling
-  of uncertain writes. Keep local memory available during CORTEX outages.
-- Support initial contributions of the knowledge each bot can actually access,
-  with stable identities, self-report/source distinctions, conflict visibility,
-  and resumable verification. Do not present this as complete history import.
-- Install and verify each bot's routine of context lookup, sourced new writes,
-  and corrections across sessions. A connected client is not proof of actual use.
-- Treat any cloud extraction helper as optional follow-up; no model API is needed
-  for initial direct contributions or ordinary explicit memory writes.
-
-## Shared-client data boundaries — next proposed migration
-
-The unreleased code requires observed revisions for deletion and validates the
-store/credential/endpoint before local resume. It still uses schema version 1.
-Before treating projects as independent write namespaces, prepare and test an
-explicit offline schema migration with these constraints:
-
-- Include the project in source identity and new deletion suppression keys.
-- Retain existing v1 suppression hashes unchanged as global legacy tombstones;
-  their original projects cannot be recovered from the hashes. Never drop them
-  to make an import succeed.
-- Record a server-derived writer principal per new revision and deletion. Keep
-  source metadata client-declared. Both authorized bots may update the same record
-  within one project; writer attribution does not grant exclusive ownership.
-- Preserve identical retries as no-ops without changing the original writer.
-  Mark historical authorship as unknown rather than inventing a principal.
-- Require stopped clients and services, a private verified pre-migration backup,
-  one atomic migration, and rejection by older binaries, including direct stdio.
-  Merely changing SQLite's version number does not stop an already running old
-  server from using its old SQL.
-- Test preservation of history, indexes, credentials and OAuth grants; legacy
-  versus scoped suppression; failure rollback; repeated migration; and old-binary
-  rejection. Returning to the old backup after new writes or deletions requires
-  explicit reconciliation and must not be presented as lossless rollback.
-
-This migration is not implemented or approved for a live store. Preserve it as the
-upgrade path for any recovered v1 store; a fresh appliance store does not require
-recovering the old VM first. Shared-writer fixes still precede personal bot imports.
-The first cross-client acceptance
-milestone is one bot saving a synthetic note and the other retrieving the same
-record/revision from the identified store, followed by credential revocation and
-authorized cleanup. Automatic conversation capture is a later milestone.
-
-## Product milestone
-
-- Extend the initial multilingual smoke test to a fixed bilingual evaluation set.
-- Add provider-specific capture adapters without changing the memory core.
-- Add tested native plugin views, onboarding, and MCP Events.
-- Verify clean installation, upgrades, export, recovery, and multi-client access.
-
-Development starts now. Production readiness requires completing the relevant
-verification milestones, not merely assigning a release number.
+- Fixed bilingual quality/capacity evaluation and comparison with EmbeddingGemma.
+- Additional provider adapters with verified public-message visibility and live sources.
+- Budgeted Cerebras extraction proposals/triage, never canonical authority.
+- Native client views and MCP Events, without moving the canonical store.

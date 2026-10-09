@@ -7,6 +7,39 @@ exercised separately that day. Its historical paths were absent in owner-relayed
 checks on 2026-10-09; see [current deployment status](vm-deployment.md).
 Dependencies are recorded in `uv.lock`.
 
+## Appliance candidate 0.4.0-alpha.1 — 2026-10-09
+
+The candidate adds schema v2, token-window passages, sanitized audit/capture,
+scoped CORTEX integration and guarded recovery. All fixtures contain synthetic
+content and disposable credentials; CORTEX upstream responses are simulated in
+integration tests. Actual MCP messages use the official SDK/ASGI transport.
+
+Independent code, test-quality and stress reviewers exercised:
+
+- Migration rollback, preserved revisions/auth, project and principal boundaries.
+- Real model retrieval, long-tail/title passages, stale vectors and deletion.
+- Collector concurrency, rotation, missing/oversized input, lost ACK and interrupted
+  pass journals; unknown assistant visibility never becomes imported text.
+- CORTEX project/scope enforcement, exact source revisions, concurrent single-send,
+  durable uncertainty and exact-source reconciliation without blind resubmission.
+- Recovery with audited late deletion, original audit suffix IDs/hash chain,
+  canonical divergence rejection, revoked local/OAuth state, interrupted cutover,
+  UUID-bound retry and prevention of committed-choice downgrade after another failure.
+
+On macOS/Python 3.11.14 the full suite at the first candidate checkpoint reported
+122 passed, 2 skipped and 9 environment failures (8 Linux-only managed-process
+checks and 1 socket denied by the sandbox). Subsequent focused recovery/OAuth
+regressions passed. The separately enabled real-model suite passed all 6 tests
+using the pinned local artifacts, with network model access disabled. This is a
+retrieval smoke/regression test, not an appliance performance measurement.
+
+Lint, formatting, documentation links and wheel/sdist build passed locally.
+The final candidate still requires its exact Linux CI result before deployment;
+record that result here after CI completes. No production appliance, CORTEX service
+credential, public OAuth route, bot account or review automation was changed by
+these tests. The systemd template is a reviewed deployment artifact, not a running
+service. See [the deployment plan](appliance-deployment.md).
+
 ## Unreleased shared-client safety checks — 2026-10-09
 
 On macOS with Python 3.11.14, the locally executable suite passed 75 tests. Eight

@@ -4,15 +4,17 @@
 
 Dots Brain is an open-source memory service for an OpenAI Dot and other MCP-compatible assistants. It stores useful context with its sources, retrieves relevant memories, and lets connected assistants continue each other's work. The selected deployment target is an owner-operated Linux appliance, with local storage and local embeddings. Botter and Grok Bot will share this external memory and contribute their existing knowledge after connection. The core requires no paid model API.
 
-**Status: OAuth alpha (`0.3.0-alpha.2`).** An agent can start the shared service, configure supported local clients, authorize OAuth clients on the VM, and remove the integration while preserving memories. Local installation with CPU embeddings was verified on one user-confirmed shared Work/Dot VM on October 5, 2026. On October 9, owner-relayed checks found the historical installation paths absent from the currently accessible environment; a retained running instance is not verified. See the [deployment status](docs/vm-deployment.md). Public ingress, automatic web-account setup, conversation capture, and native ChatGPT views remain planned. See the [capability matrix](docs/capabilities.md).
+**Status: appliance candidate (`0.4.0-alpha.1`, unreleased).** The source now includes project-isolated memory, authenticated writer attribution, local passage retrieval, sanitized action audit, resumable snapshot collection, selected CORTEX operations, and deletion-aware recovery. The last published release is `0.3.0-alpha.2`. The new appliance instance, actual Botter/Grok connections, and public OAuth route are not deployed or verified. See the [capability matrix](docs/capabilities.md).
+
+The former Work/Dot VM installation was verified on October 5, 2026. On October 9, owner-relayed checks found its historical paths absent. The new appliance will be a fresh instance, not a recovered old database; see [deployment history](docs/vm-deployment.md).
 
 Tell your agent: "Install Dots Brain on my memory host and connect my supported
 AI tools. Follow the repository's setup skill and verify the connections."
 
 The [appliance and connector contract](docs/appliance-contract.md) defines the
 selected host, required CORTEX integration, initial bot contributions, and ongoing
-memory use. These are delivery requirements; appliance deployment, CORTEX
-connectors, and actual bot onboarding are not implemented or verified by this alpha.
+memory use. Local connector code is implemented; appliance deployment, upstream CORTEX access,
+and actual bot onboarding still require runtime verification.
 
 ## What works today
 
@@ -26,8 +28,12 @@ connectors, and actual bot onboarding are not implemented or verified by this al
 - Client disconnection and repeatable service removal that preserves memories.
 - VM-local OAuth with PKCE, scoped owner approval, refresh, and revocation.
 
-Provider capture adapters, autonomous web setup, native ChatGPT views, and
-event-driven automations are on the [roadmap](docs/roadmap.md).
+- Sanitized append-only audit with intent/receipt matching and explicit coverage gaps.
+- Bounded JSONL snapshot collection with checkpointed retries and incomplete-pass receipts.
+- Separately scoped CORTEX context and publication of an exact memory revision.
+- Explicit schema migration, validated backups, and guarded restore cutover.
+
+See [activity and connectors](docs/activity.md) and the [appliance deployment plan](docs/appliance-deployment.md). Provider-wide capture, native views, and named-bot activation remain on the [roadmap](docs/roadmap.md).
 
 An MCP connection gives an assistant access to memory. It does **not** automatically grant access to that assistant's conversations or account history.
 

@@ -17,13 +17,15 @@ import anyio
 from .errors import InputError
 from .store import Store, validate_text
 
-SCOPES = frozenset({"memory:read", "memory:write", "memory:forget"})
+MEMORY_SCOPES = frozenset({"memory:read", "memory:write", "memory:forget"})
+SCOPES = MEMORY_SCOPES | {"audit:read", "audit:write", "cortex:read", "cortex:write"}
 
 
 @dataclass(frozen=True)
 class Policy:
     scopes: frozenset[str] = SCOPES
     projects: tuple[str, ...] | None = None
+    principal: str = "local-owner:stdio"
 
     def require(self, scope: str) -> None:
         if scope not in self.scopes:
@@ -54,7 +56,7 @@ def issue_client(
 ) -> dict:
     validate_text(name, "name", 200)
     if not scopes or not set(scopes) <= SCOPES:
-        raise InputError("Choose memory:read, memory:write, or memory:forget scopes.")
+        raise InputError("Choose explicitly supported memory, audit, or CORTEX scopes.")
     if not 1 <= days <= 365:
         raise InputError("Credential lifetime must be between 1 and 365 days.")
     if projects is not None:
@@ -107,7 +109,8 @@ def authenticate(store: Store, token: str) -> Policy | None:
         return None
     with store.connection() as db:
         row = db.execute(
-            "SELECT scopes,projects FROM clients WHERE token_hash=? AND revoked=0 AND expires_at>?",
+            "SELECT id,scopes,projects FROM clients "
+            "WHERE token_hash=? AND revoked=0 AND expires_at>?",
             (hashlib.sha256(token.encode()).hexdigest(), time.time()),
         ).fetchone()
     if row is None:
@@ -115,6 +118,7 @@ def authenticate(store: Store, token: str) -> Policy | None:
     return Policy(
         frozenset(json.loads(row["scopes"])),
         None if row["projects"] is None else tuple(json.loads(row["projects"])),
+        f"local-client:{row['id']}",
     )
 
 

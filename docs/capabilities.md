@@ -1,38 +1,28 @@
 # Capability matrix
 
-This file describes implementation and verification, not a marketing promise.
+This describes the unreleased `0.4.0-alpha.1` candidate. Local protocol tests are
+not evidence that an actual bot, public route, or appliance service is connected.
 
-| Capability | State |
-| --- | --- |
-| Source-aware local memory store | Implemented; local tests pass |
-| Full-text retrieval | Implemented; local tests pass |
-| Bounded context | Implemented; character budget tested |
-| Local semantic retrieval | Implemented; synthetic Czech-to-English model test passes |
-| Six memory MCP tools | Implemented; SDK HTTP and stdio tests pass |
-| Agent setup and diagnostics | Implemented for the local host |
-| Installed service on a shared Work/Dot VM | Historically verified on 2026-10-05; installation paths absent from the accessible environment in owner-relayed 2026-10-09 checks; see [deployment evidence](vm-deployment.md) |
-| Agent shell access to the existing MCP service | Historically verified; current retained instance unavailable for verification; source helper is unreleased; native application tool activation is separate |
-| Repeatable background startup and recovery on local client reconnect | Implemented; process and crash-recovery tests pass |
-| Claude Code, Cursor, Codex, and generic MCP configuration adapters | Implemented; actual bridge calls tested; Claude Code connection checked |
-| Scoped credentials, project boundaries, expiry, revocation | Implemented; tests pass |
-| Client disconnection and whole-instance disabling with data retention | Implemented; lifecycle, credential isolation between profiles, and configuration preservation tested |
-| Automatic removal of package/source files or personal data | Not implemented; installation-specific program removal is documented |
-| Stdio bridge to an existing HTTP instance | Implemented; subprocess-to-live-HTTP test passes |
-| Autonomous remote client registration | Planned |
-| VM-local OAuth discovery, registration, PKCE, refresh, and revocation | Implemented; official OAuth client verified over live local HTTP; named web clients unverified |
-| Agent-operated OAuth authorization without token output | Implemented; requires identifying the exact initiated flow and selecting project access |
-| Canonical memory on the owner-operated appliance | Selected target; Dots Brain deployment and restart/restore not verified |
-| CORTEX read and selected write connectors | Required; not implemented; see [connector contract](appliance-contract.md) |
-| Initial Botter/Grok knowledge contributions | Required; resumable contribution protocol and actual bot imports not verified |
-| Routine memory use by both bots across sessions | Required; operating instructions and actual use not verified |
-| Verified public VM ingress or tunnel | Not verified |
-| Strong credential isolation | Not verified |
-| Storage/HTTP load and local embedding load | Synthetic stress runs passed; see [evidence](stress-tests.md) |
-| Continuous conversation capture | Planned per provider |
-| Automated backup, restore, or database migration rollback | Planned |
-| Native ChatGPT views and MCP Events | Planned |
-| Dot VM persistence and cost guarantees | Not verified |
+| Capability | Implemented evidence | Remaining boundary |
+| --- | --- | --- |
+| Project-scoped memory, revisions, deletion, authenticated writer | SQLite and actual MCP SDK tests | Existing v1 stores need offline migration |
+| Full-text and bounded context | Tests for scoped retrieval and budgets | Character budgets are not token budgets |
+| Local semantic passages | Pinned ONNX model; token-window, title, stale/deletion and real-model tests | Appliance capacity and larger bilingual evaluation |
+| MCP stdio, loopback HTTP, local bridge/adapters | SDK, synthetic credentials, supported Linux process tests | Actual Botter/Grok client activation |
+| OAuth registration, PKCE, refresh, revocation | Official SDK flow and scoped handler tests | Actual provider callbacks, public HTTPS and consent |
+| Sanitized action audit | Append-only rows, server mutation intent/receipt, client reports, gaps and pagination | Full provider audit cannot be inferred from submitted events |
+| Bounded JSONL snapshot collector | ACK retry, partial lines, rotation, oversized records, missing sources, crash journal | Live provider logs and persistent collectors unverified |
+| Transcript import | User text with stable file-record identity; tool metadata only | Ambiguous assistant text excluded; no transcript timestamps/IDs invented |
+| CORTEX context and selected writes | Project mapping, source revision, scope checks, durable receipts and uncertain-write tests | Dedicated authorized upstream endpoint and live behavior |
+| Schema v1→v2 migration | Offline backup, transactional rollback, preserved history/credentials and legacy barriers | No migration performed on personal data |
+| Backup and recovery | SQLite backup with validation; disabled restore; latest deletions, revoked auth and divergence-safe cutover | Scheduled off-host backups and host-loss recovery |
+| Appliance supervision | Reviewed service template and deployment procedure | Not installed or started |
+| Initial bot contributions and later recall | Stable record/revision API and receipt protocol available | Both bots must actually connect, seed, and verify later-session use |
+| Twice-daily Codex audit analysis | Required procedure documented | Automation created after reachable appliance audit is verified |
+| Cerebras helper | Optional architecture proposal | No API key, call, charge or runtime dependency |
+| Native ChatGPT views, MCP Events | Planned | No client extension shipped |
 
-No named provider is production-certified until tested in that provider's actual
-client. A test using the MCP SDK establishes protocol behavior, not support in
-all AI products. Missing features must remain explicit in installer output.
+The old Work/Dot VM was historically verified on 2026-10-05. Its installation paths
+were absent in the owner's 2026-10-09 checks. See [historical evidence](vm-deployment.md).
+The selected new host is `openclaw-appliance`; a fresh instance is not recovery of
+that old database. Credential files are private to their OS owner, not an isolated vault.

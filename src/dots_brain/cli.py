@@ -11,6 +11,7 @@ import sys
 from pathlib import Path
 
 from . import __version__
+from .auth import SCOPES
 from .errors import BrainError
 from .store import Store
 
@@ -26,6 +27,40 @@ def parser() -> argparse.ArgumentParser:
     root.add_argument("--data-dir", type=Path, default=default_directory())
     commands = root.add_subparsers(dest="command", required=True)
     commands.add_parser("setup", help="Initialize or reuse the local memory database.")
+    migration = commands.add_parser("migrate", help="Plan or apply the offline v1 to v2 migration.")
+    migration.add_argument("--apply", action="store_true")
+    migration.add_argument("--writers-stopped", action="store_true")
+    migration.add_argument("--backup", type=Path)
+    backup = commands.add_parser("backup", help="Write a consistent private SQLite backup.")
+    backup.add_argument("--output", type=Path, required=True)
+    restore = commands.add_parser("restore", help="Restore into a new disabled directory.")
+    restore.add_argument("--backup", type=Path, required=True)
+    restore.add_argument("--target", type=Path, required=True)
+    activate = commands.add_parser(
+        "activate-restore", help="Freeze the old store and activate a reviewed restored copy."
+    )
+    activate.add_argument("--target", type=Path, required=True)
+    activate.add_argument("--writers-stopped", action="store_true")
+    cortex = commands.add_parser("cortex", help="Configure a dedicated CORTEX MCP connection.")
+    cortex.add_argument("--endpoint", required=True)
+    cortex.add_argument("--token-file", type=Path, required=True)
+    cortex.add_argument("--project-map", action="append", required=True)
+    audit = commands.add_parser("audit", help="Inspect sanitized audit events on the memory host.")
+    audit.add_argument("action", choices=["report", "events"])
+    audit.add_argument("--project")
+    audit.add_argument("--since")
+    audit.add_argument("--until")
+    audit.add_argument("--after-id", type=int)
+    audit.add_argument("--limit", type=int, default=100)
+    capture = commands.add_parser(
+        "capture", help="Collect one bounded pass from provider JSONL snapshots."
+    )
+    capture.add_argument("--kind", choices=["audit", "transcript"], required=True)
+    capture.add_argument("--path", type=Path, action="append", required=True)
+    capture.add_argument("--cursor", type=Path, required=True)
+    capture.add_argument("--credential-file", type=Path, required=True)
+    capture.add_argument("--project", required=True)
+    capture.add_argument("--account", required=True)
     commands.add_parser(
         "preflight", help="Inspect host capabilities without changing configuration."
     )
@@ -74,9 +109,7 @@ def parser() -> argparse.ArgumentParser:
     projects.add_argument("--project", action="append")
     projects.add_argument("--all-projects", action="store_true")
     approve.add_argument("--allow-forget", action="store_true")
-    approve.add_argument(
-        "--scope", action="append", choices=["memory:read", "memory:write", "memory:forget"]
-    )
+    approve.add_argument("--scope", action="append", choices=sorted(SCOPES))
     deny = oauth_actions.add_parser("deny")
     deny.add_argument("request_id")
     revoke_oauth = oauth_actions.add_parser("revoke")
@@ -102,9 +135,7 @@ def parser() -> argparse.ArgumentParser:
     actions = client.add_subparsers(dest="client_action", required=True)
     create = actions.add_parser("create")
     create.add_argument("--name", required=True)
-    create.add_argument(
-        "--scope", action="append", choices=["memory:read", "memory:write", "memory:forget"]
-    )
+    create.add_argument("--scope", action="append", choices=sorted(SCOPES))
     create.add_argument("--project", action="append")
     create.add_argument("--days", type=int, default=30)
     create.add_argument("--credential-file", required=True, type=Path)
@@ -117,6 +148,58 @@ def parser() -> argparse.ArgumentParser:
 
 def run(args) -> dict | None:
     store = Store(args.data_dir)
+    if args.command in {"migrate", "backup", "restore", "activate-restore", "cortex"}:
+        from .operations import (
+            activate_restore,
+            backup_store,
+            configure_cortex,
+            migrate,
+            restore_store,
+        )
+
+        if args.command == "migrate":
+            return migrate(
+                store, apply=args.apply, writers_stopped=args.writers_stopped, backup=args.backup
+            )
+        if args.command == "backup":
+            return backup_store(store, args.output)
+        if args.command == "restore":
+            return restore_store(args.backup, Store(args.target), latest_deletions=store)
+        if args.command == "activate-restore":
+            return activate_restore(store, Store(args.target), writers_stopped=args.writers_stopped)
+        return configure_cortex(
+            store, endpoint=args.endpoint, token_file=args.token_file, projects=args.project_map
+        )
+    if args.command == "capture":
+        from .capture_delivery import collect_remote
+
+        return asyncio.run(
+            collect_remote(
+                paths=args.path,
+                cursor=args.cursor,
+                credential=args.credential_file,
+                project=args.project,
+                account=args.account,
+                kind=args.kind,
+            )
+        )
+    if args.command == "audit":
+        from .activity import AuditLog
+        from .auth import Policy
+
+        audit = AuditLog(store)
+        arguments = dict(project=args.project, since=args.since, until=args.until, limit=args.limit)
+        if args.action == "report":
+            return audit.report(Policy(), **arguments)
+        rows = audit.events(Policy(), **arguments, after_id=args.after_id)
+        return {
+            "events": rows,
+            "next_after_id": rows[-1]["id"] if rows else args.after_id,
+            "has_more": bool(
+                rows
+                and audit.events(Policy(), **(arguments | {"limit": 1}), after_id=rows[-1]["id"])
+            ),
+        }
     if args.command == "oauth":
         from .local import locked
         from .oauth import OAuthStore, configuration, configure, revoke_all
@@ -207,7 +290,7 @@ def run(args) -> dict | None:
             "write": "disabled" if disabled else "available",
             "semantic": "not_enabled",
             "remote_connection": "not_verified",
-            "capture": "not_implemented",
+            "capture": "opt_in_snapshot_collector",
         }
     if args.command == "doctor":
         from .oauth import configuration
@@ -240,6 +323,7 @@ def run(args) -> dict | None:
             verify_connection(args.credential_file, write=args.write, project=args.project)
         )
     if args.command == "serve":
+        from .integration_tools import load_cortex
         from .runtime import ensure_enabled
         from .server import create_http_app, create_server
         from .service import MemoryService
@@ -252,6 +336,10 @@ def run(args) -> dict | None:
 
             semantic = SemanticIndex(store)
         service = MemoryService(store, semantic)
+        try:
+            service.cortex = load_cortex(store)
+        except BrainError:
+            service.cortex_error = "invalid_configuration"
         server = create_server(service, http=args.transport == "http", port=args.port)
         if args.transport == "http":
             import uvicorn

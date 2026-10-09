@@ -110,8 +110,10 @@ full-text search, and `memory_status` reports the semantic backlog.
 
 The initial model is Apache-2.0 licensed, with approximately 241 MiB of downloaded
 artifacts. See [verification](verification.md) for measured memory use. Long records
-use overlapping text chunks and a mean embedding; chunk-level citations and large
-corpus performance are not established. No inference API is used as a fallback.
+use overlapping 96-token windows with an 80-token stride, within the model
+128-token input limit. Title and content passages have separate vectors; results
+include the matched field and offsets. Large-corpus capacity remains unmeasured
+on the appliance. No inference API is used as a fallback.
 
 ## Export, deletion, and recovery
 
@@ -124,8 +126,7 @@ retains a hash of source identity to block accidental reimport. It does not eras
 copies held by other assistants, old exports, or host backups. SQLite secure deletion
 is enabled, but physical media erasure is not guaranteed.
 
-Stop the service before taking a filesystem-level database backup and preserve
-SQLite's journal state. Close connected clients too, because a bridge can restart
-a stopped service; also stop separately supervised processes. A supported online
-backup/restore command and deletion-aware
-restore policy are future work. A backup on the same disk cannot survive loss of that disk.
+Use `backup --output <new-private-file>` for a validated SQLite snapshot including
+WAL. Use `restore` followed by explicit offline `activate-restore` as documented in
+[upgrading and recovery](upgrading.md). A backup on the same disk cannot survive
+loss of that disk. Scheduled off-host backups remain a deployment requirement.

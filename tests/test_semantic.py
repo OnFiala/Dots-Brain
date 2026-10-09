@@ -25,6 +25,7 @@ def index(tmp_path):
     store.initialize()
     result = SemanticIndex.__new__(SemanticIndex)
     result.store, result.np = store, np
+    result._chunks = lambda text: [(0, len(text))]
     result._embed = lambda text: np.array([1.0, 0.0], dtype="<f4")
     return result
 
@@ -65,6 +66,39 @@ def test_forget_during_embedding_does_not_resurrect_memory(index):
     index._embed = embed
     assert index.index()["indexed"] == 0
     assert index.store.status()["memories"] == 0
+
+
+def test_search_returns_the_matching_tail_passage(index):
+    index._chunks = lambda text: (
+        [(0, 700), (700, len(text))] if len(text) > 700 else [(0, len(text))]
+    )
+    index._embed = lambda text: index.np.array(
+        [0.0, 1.0] if "peanuts" in text else [1.0, 0.0], dtype="<f4"
+    )
+    memory = save(index, content="Ordinary discussion. " * 60 + "Avoid peanuts.")
+    index.index()
+    hit = index.search("peanuts")[0]
+    assert hit["id"] == memory["id"] and "peanuts" in hit["excerpt"]
+    assert hit["passage"]["start_char"] == 700
+
+
+def test_title_passage_revision_and_forget_remove_derived_chunks(index):
+    index._embed = lambda text: index.np.array(
+        [0.0, 1.0] if "allergy" in text else [1.0, 0.0], dtype="<f4"
+    )
+    memory = save(index, title="Food allergy", content="A related detail.")
+    index.index()
+    hit = index.search("allergy")[0]
+    assert hit["passage"] == {"field": "title", "start_char": 0, "end_char": 12}
+    assert hit["excerpt"] == "Food allergy" and "content" not in hit
+    save(index, title="Changed", content="A related detail.", expected_revision=1)
+    assert index.search("allergy") == []
+    index.index()
+    with index.store.connection() as db:
+        assert {row[0] for row in db.execute("SELECT revision FROM semantic_chunks")} == {2}
+    index.store.forget(memory["id"], expected_revision=2)
+    with index.store.connection() as db:
+        assert db.execute("SELECT COUNT(*) FROM semantic_chunks").fetchone()[0] == 0
 
 
 @pytest.mark.skipif(

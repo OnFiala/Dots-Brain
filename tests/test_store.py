@@ -4,7 +4,7 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 
 from dots_brain.errors import ConflictError, InputError, NotFoundError, SuppressedError
-from dots_brain.store import Store
+from dots_brain.store import Store, source_key
 
 
 @pytest.fixture
@@ -175,3 +175,59 @@ def test_schema_and_database_permissions(store):
         db.execute("PRAGMA user_version=99")
     with pytest.raises(Exception, match="Unsupported database version"):
         store.initialize()
+
+
+def test_source_identity_and_deletion_suppression_are_project_scoped(store):
+    alpha = remember(store, project="alpha", writer_principal="local-client:alpha")
+    beta = remember(store, project="beta", writer_principal="local-client:beta")
+    assert alpha["id"] != beta["id"]
+    assert store.forget(alpha["id"], expected_revision=1, writer_principal="local-client:alpha")[
+        "deleted"
+    ]
+    assert store.get(beta["id"])["project"] == "beta"
+    with pytest.raises(SuppressedError):
+        remember(store, project="alpha")
+
+
+def test_legacy_global_tombstones_still_block_all_projects(store):
+    key = source_key("test", "owner", "decision-1")
+    with store.connection(write=True) as db:
+        db.execute("INSERT INTO suppressions VALUES (?,?)", (key, "2026-01-01T00:00:00+00:00"))
+    with pytest.raises(SuppressedError):
+        remember(store, project="alpha")
+    with pytest.raises(SuppressedError):
+        remember(store, project="beta")
+
+
+def test_writer_attribution_and_replay_are_idempotent(store):
+    initial = remember(store, writer_principal="local-client:writer-a")
+    updated = remember(
+        store,
+        content="Updated by another writer.",
+        expected_revision=1,
+        writer_principal="oauth-grant:writer-b",
+    )
+    replay = remember(store, writer_principal="local-client:writer-c")
+    assert replay == {
+        "id": initial["id"],
+        "revision": updated["revision"],
+        "replayed_revision": 1,
+        "changed": False,
+    }
+    with store.connection() as db:
+        writers = db.execute(
+            "SELECT revision,writer_principal FROM revisions WHERE memory_id=? ORDER BY revision",
+            (initial["id"],),
+        ).fetchall()
+    assert [tuple(row) for row in writers] == [
+        (1, "local-client:writer-a"),
+        (2, "oauth-grant:writer-b"),
+    ]
+    assert store.forget(
+        initial["id"], expected_revision=2, writer_principal="oauth-grant:writer-b"
+    )["deleted"]
+    with store.connection() as db:
+        deleted = db.execute(
+            "SELECT deleted_revision,deleted_by FROM scoped_suppressions"
+        ).fetchone()
+    assert tuple(deleted) == (2, "oauth-grant:writer-b")
