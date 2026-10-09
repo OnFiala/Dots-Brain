@@ -69,17 +69,18 @@ def run(records: int, workers: int, http_calls: int) -> dict:
 
         def conflict(number):
             try:
-                store.remember(
+                return store.remember(
                     **{**conflict_source, "content": f"Contending update {number}"},
                     expected_revision=1,
                 )
-                return "updated"
             except ConflictError:
-                return "conflict"
+                return None
 
         with ThreadPoolExecutor(max_workers=workers) as pool:
             conflicts = list(pool.map(conflict, range(workers)))
-        assert conflicts.count("updated") == 1
+        winners = [record for record in conflicts if record is not None]
+        assert len(winners) == 1
+        winner = winners[0]
 
         searches = []
         for project in range(4):
@@ -160,6 +161,8 @@ def run(records: int, workers: int, http_calls: int) -> dict:
             down(store)
 
         for record, _ in writes[: min(records, 100)]:
+            if record["id"] == winner["id"]:
+                record = winner  # Clean up the revision written by this fixture's winning update.
             store.forget(record["id"], expected_revision=record["revision"])
         for payload in payloads[: min(records, 100)]:
             try:
@@ -181,7 +184,7 @@ def run(records: int, workers: int, http_calls: int) -> dict:
             "idempotent_retries": summary([v for _, v in retries]),
             "project_search": summary(searches),
             "http_write_read_pairs": summary(http_samples),
-            "conflict_winners": conflicts.count("updated"),
+            "conflict_winners": len(winners),
             "service_peak_rss_kib": rss,
             "harness_peak_rss_kib": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
             "elapsed_seconds": round(time.monotonic() - started, 2),

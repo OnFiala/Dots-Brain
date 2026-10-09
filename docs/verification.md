@@ -22,6 +22,14 @@ This is local source evidence: Linux restart/reconnect, the retained VM, actual
 Botter/Grok clients, and real embedding inference were not revalidated here.
 The existing Linux suite must pass on the candidate before a release is approved.
 
+Linux CI then passed all 85 default tests on Python 3.11 and 3.12 for commit
+`1bc3604`, with only the real-model test skipped. That run includes Linux managed
+restart/reconnect, synthetic vector deletion, lint, formatting, documentation and
+package builds. See [the exact CI run](https://github.com/OnFiala/Dots-Brain/actions/runs/37954727661).
+The bounded stress harness now also has a regression test to keep its winning
+update's revision for synthetic cleanup. These checks do not establish the state
+of the retained VM or either actual bot.
+
 ## OAuth validation follow-up: 0.3.0-alpha.2
 
 The follow-up adds two issuer-validation cases, bringing the suite to 66 tests
