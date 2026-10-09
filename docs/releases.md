@@ -15,10 +15,11 @@ and assets are immutable by project policy: fix an error in a new version.
      --title 'Dots Brain v0.1.0-alpha.2' --notes-file /path/to/release-notes.md
    ```
 
-4. Run the versioned release workflow from `main`:
+4. Run the reviewed release workflow from the commit-bearing branch (`main` after
+   merge, or the release branch while preparing the draft):
 
    ```sh
-   gh workflow run release.yml --ref main -f tag=v0.1.0-alpha.2
+   gh workflow run release.yml --ref <reviewed-branch> -f tag=v0.4.0-alpha.1
    ```
 
    It resolves the tag to an immutable commit, verifies both Python versions,
@@ -34,6 +35,10 @@ and assets are immutable by project policy: fix an error in a new version.
    ```sh
    gh release edit v0.1.0-alpha.2 --draft=false
    ```
+
+Workflow Actions are pinned to full commit hashes. Update them deliberately and
+validate the exact workflow used for the release; a moving major-version tag does
+not identify immutable build code.
 
 Keep alpha and beta versions marked as prereleases. The installer ZIP is a
 source package with an onboarding skill; publishing it does not register or

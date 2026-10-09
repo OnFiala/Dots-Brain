@@ -1,0 +1,52 @@
+{
+  "state": "passed",
+  "python": "3.12.3",
+  "sqlite": "3.45.1",
+  "cpu_count": 8,
+  "records": 2000,
+  "workers": 8,
+  "writes": {
+    "count": 2000,
+    "p50_ms": 8.89,
+    "p95_ms": 134.53,
+    "p99_ms": 736.71,
+    "max_ms": 1636.92
+  },
+  "idempotent_retries": {
+    "count": 2000,
+    "p50_ms": 4.6,
+    "p95_ms": 70.81,
+    "p99_ms": 233.53,
+    "max_ms": 1557.02
+  },
+  "project_search": {
+    "count": 4,
+    "p50_ms": 7.63,
+    "p95_ms": 21.22,
+    "p99_ms": 21.22,
+    "max_ms": 21.22
+  },
+  "http_write_read_pairs": {
+    "count": 200,
+    "p50_ms": 556.01,
+    "p95_ms": 640.95,
+    "p99_ms": 662.07,
+    "max_ms": 681.55
+  },
+  "conflict_winners": 1,
+  "service_peak_rss_kib": 66592,
+  "harness_peak_rss_kib": 77020,
+  "elapsed_seconds": 32.43,
+  "semantic": "not_exercised",
+  "checks": [
+    "retry_deduplication",
+    "conflict_atomicity",
+    "project_isolation",
+    "http_read_write",
+    "revocation",
+    "restart_persistence",
+    "deletion_suppression",
+    "sqlite_integrity",
+    "foreign_keys"
+  ]
+}

@@ -3,8 +3,9 @@
 This describes the unreleased `0.4.0-alpha.1` candidate. The appliance and public
 HTTPS/OAuth route passed synthetic acceptance on 2026-10-09. Both bots' actual chat
 read/write connections and bidirectional cross-bot reads are verified. Owner cleanup
-removed the two synthetic facts and preserved both live grants. Both bots then
-contributed 45 real records, corroborated by safe writer/audit metadata.
+removed the two synthetic facts and preserved both live grants. Both bots initially
+contributed 45 real records; one subsequent Botter record brought the observed
+total to 46. Safe writer/audit metadata corroborates the writes.
 
 | Capability | Implemented evidence | Remaining boundary |
 | --- | --- | --- |
@@ -16,12 +17,12 @@ contributed 45 real records, corroborated by safe writer/audit metadata.
 | Sanitized action audit | Append-only rows, intent/receipt, client reports, gaps, pagination; live deletion ID/revision verified | Historical delete targets remain absent; submitted events do not establish full provider audit |
 | Bounded JSONL snapshot collector | ACK retry, partial lines, rotation, oversized records, missing sources, crash journal | Live provider logs and persistent collectors unverified |
 | Transcript import | User text with stable file-record identity; tool metadata only | Ambiguous assistant text excluded; no transcript timestamps/IDs invented |
-| CORTEX context and selected writes | Project mapping, source revision, scope checks, durable receipts and uncertain-write tests | Dedicated authorized upstream endpoint and live behavior |
+| CORTEX context and selected writes | One-to-one project mapping, source revision, scope checks, durable receipts and injected receipt-failure tests | Dedicated authorized upstream endpoint and live behavior |
 | Schema v1→v2 migration | Offline backup, transactional rollback, preserved history/credentials and legacy barriers | No migration performed on personal data |
 | Backup and recovery | SQLite backup with validation; disabled restore; latest deletions, revoked auth and divergence-safe cutover | Scheduled off-host backups and host-loss recovery |
 | Appliance supervision | Installed active/enabled systemd service, loopback listener, verified restart and retained IDs | Actual machine reboot and long-run capacity untested |
 | Initial bot contributions and later recall | 37 Botter + 8 Grok records, writer/receipt corroboration and client readbacks/query checks | Later-session recall; reported knowledge is not independently fact-checked |
-| Twice-daily Codex audit analysis | Active 09:00/21:00 heartbeat, manual baseline and durable review helper; first scheduled attempt observed | First attempt could not resolve the tailnet host in its restricted execution context; no cursor advancement. Backend model identity and full provider capture unverified |
+| Twice-daily Codex audit analysis | Active 09:00/21:00 heartbeat, manual baseline and durable review helper; first scheduled attempt observed | First attempt could not resolve the tailnet host in its restricted execution context; no cursor advancement in that scheduled run. A later manual full review advanced through ID 162; restricted unattended transport remains blocked. Backend model identity and full provider capture unverified |
 | Cerebras helper | Optional architecture proposal | No API key, call, charge or runtime dependency |
 | Native ChatGPT views, MCP Events | Planned | No client extension shipped |
 

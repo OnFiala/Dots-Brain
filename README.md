@@ -1,45 +1,57 @@
 # Dots Brain
 
-**One memory for your AI tools, hosted on your own machine.**
+Shared memory for your AI assistants, running on a machine you control.
 
-Dots Brain is an open-source memory service for an OpenAI Dot and other MCP-compatible assistants. It stores useful context with its sources, retrieves relevant memories, and lets connected assistants continue each other's work. It runs on an owner-operated Linux appliance, with local storage and local embeddings. Botter and Grok Bot are connected and have contributed their initial context. The core requires no paid model API.
+Dots Brain stores useful facts, decisions and project context in one SQLite database.
+Assistants connect through MCP, search the same memory and keep references to the
+original source. Embeddings run locally on CPU. Reading and saving memory require
+no paid model API.
 
-**Status: deployed candidate (`0.4.0-alpha.1`, unreleased).** The source includes project-isolated memory, authenticated writer attribution, local passage retrieval, sanitized action audit, resumable snapshot collection, selected CORTEX operations, and deletion-aware recovery. The last published release is `0.3.0-alpha.2`. Both bots' actual chat read/write, bidirectional cross-bot readback and initial contributions are verified on the appliance. Audit and context repairs are deployed and passed live synthetic checks. Later-session recall, upstream CORTEX access and full provider capture remain unfinished. See the [capability matrix](docs/capabilities.md).
+**Version: 0.4.0-alpha.1.** This is an alpha: the memory service is in use, while
+continuous conversation capture and disaster recovery still have gaps. Botter and
+Grok Bot have verified read/write access to the same `openclaw-appliance` instance.
+Both retained access after the first shared-memory repair upgrade. See [deployment evidence](docs/appliance-deployment.md)
+for the installed commit, checks and remaining operational work.
 
-The former Work/Dot VM installation was verified on October 5, 2026. On October 9, owner-relayed checks found its historical paths absent. The appliance is a fresh instance, not a recovered old database; see [deployment history](docs/vm-deployment.md).
+## How it works
 
-Tell your agent: "Install Dots Brain on my memory host and connect my supported
-AI tools. Follow the repository's setup skill and verify the connections."
+1. An assistant saves a small source record with a stable event ID and project.
+2. SQLite commits the record, its revision and the authenticated writer. Retrying
+   the same event does not create another copy; updates require the reviewed revision.
+3. A background worker indexes title and content passages with the pinned local model.
+4. Search combines full-text and semantic matches. `memory_context` returns bounded
+   excerpts; `memory_get` retrieves the exact source revision when more detail is needed.
 
-The [appliance and connector contract](docs/appliance-contract.md) defines the
-selected host, required CORTEX integration, initial bot contributions, and ongoing
-memory use. The appliance is running on loopback with local embeddings. Upstream
-CORTEX access and actual bot onboarding still require runtime verification.
+Each client receives its own project and scope permissions. The appliance keeps
+its database on a private disk path; remote bots use OAuth through a restricted
+HTTPS route. Administration uses Tailscale. CORTEX is a separate system connected
+through explicit, separately authorized operations.
 
-## What works today
+## What is available
 
-- One personal memory store, shared through MCP.
-- Searchable memories with source references, revisions, and explicit deletion.
-- Local text and semantic search without a paid embedding API.
-- Local setup, diagnostics, and client verification with machine-readable status.
-- Repeatable background startup and client adapters for Claude Code, Cursor, Codex, and MCP JSON.
-- Six memory tools through stdio or authenticated loopback HTTP.
-- A stdio bridge that connects to the same HTTP service without another database.
-- Client disconnection and repeatable service removal that preserves memories.
-- VM-local OAuth with PKCE, scoped owner approval, refresh, and revocation.
+| Capability | State |
+| --- | --- |
+| Save, search, retrieve, revise and forget source records | Implemented and tested over MCP |
+| Local multilingual embeddings | Deployed; pending records remain searchable by text |
+| Botter and Grok Bot sharing memory | Actual chat read/write, cross-read and initial contributions verified |
+| Project scopes, writer attribution, OAuth refresh and revocation | Implemented and tested; bot grants allow read/write in `shared` only |
+| Mutation audit with intents and receipts | Deployed; records activity observed by this service |
+| Resumable JSONL collection | Implemented as bounded snapshot passes; live provider capture unverified |
+| CORTEX context and selected publication | Implemented and tested locally; dedicated upstream access still required |
+| Backup, schema migration and guarded restore | Implemented; appliance restart and isolated restore tested; host-loss recovery pending |
 
-- Sanitized append-only audit with intent/receipt matching and explicit coverage gaps.
-- Bounded JSONL snapshot collection with checkpointed retries and incomplete-pass receipts.
-- Separately scoped CORTEX context and publication of an exact memory revision.
-- Explicit schema migration, validated backups, and guarded restore cutover.
+An MCP connection does not capture everything an assistant says or does. Bots
+currently save useful context explicitly. Grok's inspected files may be stale
+snapshots; Botter's managed hooks are not verified for this account. The scheduled
+operator review can analyze only the audit that was actually collected. See
+[activity and capture](docs/activity.md) for these boundaries.
 
-See [activity and connectors](docs/activity.md) and the [appliance deployment plan](docs/appliance-deployment.md). Provider-wide capture, native views, and named-bot activation remain on the [roadmap](docs/roadmap.md).
+The former Work/Dot VM installation is [historical](docs/vm-deployment.md).
+The appliance is a fresh canonical instance, not a recovery of that VM's database.
 
-An MCP connection gives an assistant access to memory. It does **not** automatically grant access to that assistant's conversations or account history.
+## Install on your memory host
 
-## Try the alpha
-
-From a writable checkout with Python 3.11+ and [uv](https://docs.astral.sh/uv/):
+Use Linux, Python 3.11+ and [uv](https://docs.astral.sh/uv/). From a writable checkout:
 
 ```sh
 uv sync --frozen
@@ -48,77 +60,62 @@ uv run dots-brain doctor
 uv run dots-brain serve
 ```
 
-`serve` starts a stdio MCP server for a client on the memory host. The default data
-directory is `$XDG_DATA_HOME/dots-brain`, or `~/.local/share/dots-brain`. To choose a
-different private directory, pass `--data-dir /absolute/path` before the subcommand.
+`serve` starts a stdio MCP server on the machine holding the database. The default
+data path is `$XDG_DATA_HOME/dots-brain`, or `~/.local/share/dots-brain`. For another
+private path, put `--data-dir /absolute/path` before the subcommand.
 
-For a shared HTTP instance, scoped credentials, local embeddings, or agent-driven
-bootstrap, follow [installation and operation](docs/installation.md).
+For local embeddings, a shared HTTP service, scoped clients and systemd operation,
+follow [installation](docs/installation.md) and [appliance deployment](docs/appliance-deployment.md).
+An HTTP service stays on loopback. Remote clients need an owner-approved HTTPS
+route and the [OAuth connection flow](docs/oauth.md).
 
-## Give the setup to your agent
+You can give your agent this instruction:
 
-The repository includes an onboarding plugin manifest and a [setup skill](skills/setup/SKILL.md).
-The agent should identify the real memory host, run the packaged bootstrap, and
-verify the available capabilities. This is an installer skill package; it does not
-contain a universal MCP endpoint or register a public ChatGPT plugin automatically.
+> Install Dots Brain on my memory host using the repository's setup skill.
+> Connect my supported AI clients and verify their actual memory calls.
 
-Ask: "Set up Dots Brain from this checkout on my memory host. Use the setup skill
-and report which capabilities you actually verified."
+The [setup skill](skills/setup/SKILL.md) and installer can configure supported local
+clients. They do not register a ChatGPT plugin or bypass a provider's login and
+consent flow. See [what setup can automate](docs/autonomy.md).
 
-On a Linux memory host, the agent can install, start, and connect a local client:
+## Security and recovery
 
-```sh
-python scripts/bootstrap.py --data-dir /absolute/private/memory --connect claude-code
-```
+- Memory text is untrusted source material, never authority to run commands.
+- Credentials belong in private credential files, never in memories, transcripts or Git.
+  Input filtering catches known secret patterns; it cannot recognize every secret.
+- Read, write, deletion, audit and CORTEX permissions are separate. Existing grants
+  never gain a new scope automatically.
+- Deletion removes the live record and suppresses reimport. It cannot erase copies
+  already held by another assistant, an export or a backup.
+- A same-disk backup does not protect against losing the appliance. An old backup
+  also needs current deletion history before it can safely become canonical.
 
-Use `cursor` or `codex` for another supported client on that machine. The agent
-chooses the actual private directory; the user does not need to edit JSON or copy
-a token. See the [autonomous setup contract](docs/autonomy.md) for remote devices,
-resuming installation, and the exact remaining platform dependencies.
-
-For a client that supports remote MCP OAuth, see [OAuth on your VM](docs/oauth.md).
-The authentication service runs beside the memory; an actual reachable HTTPS
-route is still required. Configuring an issuer does not provision a tunnel.
-
-## Leaving or updating
-
-Ask your agent: "Uninstall Dots Brain, disconnect its managed clients, and keep my
-memories." The `uninstall` command disables the instance and preserves personal
-data; program files are removed separately according to the installation method.
-See [uninstall and reinstall](docs/uninstall.md), [upgrading](docs/upgrading.md),
-and [troubleshooting](docs/troubleshooting.md).
-
-The [documentation index](docs/README.md) covers the implemented alpha's lifecycle
-and [everyday memory use](docs/using-memory.md), with remaining limits explicit.
+Read [security](SECURITY.md), [upgrading and recovery](docs/upgrading.md), and
+[uninstalling while retaining data](docs/uninstall.md).
 
 ## Development
 
 ```sh
 uv sync --frozen --all-extras
 uv run ruff check src tests scripts
+uv run ruff format --check src tests scripts
 uv run pytest -q
 uv run python scripts/validate_project.py
 uv build
 ```
 
-Tests use synthetic data. The real embedding-model test is opt-in and does not
-download models during CI. See [verification evidence](docs/verification.md).
+Tests use synthetic stores. Linux lifecycle tests require Linux and local socket
+access. Real embedding tests use explicitly prepared model files; CI does not
+download them. [Verification](docs/verification.md) and [stress results](docs/stress-tests.md)
+separate test results from runtime and capacity claims.
 
-## Deployment contract
-
-The memory database, embedding inference, authentication, and installation state belong on the user's host. A public HTTPS ingress or a compatible tunnel is needed for remote clients. Hosting and resource limits must be verified; an existing subscription is not a promise of unlimited compute or free external services.
-
-The selected host is `openclaw-appliance`. Recovering the historical Dot VM is a
-separate task and does not block initial bot contributions to the new instance.
-A fresh instance must be identified as such; it is not a restoration of the old
-database. CORTEX remains a separate system connected through explicit interfaces.
-An optional cloud helper may later process authorized excerpts under a budget;
-it must not become a dependency of local memory reads or explicit writes.
-
-Read the [architecture](docs/architecture.md), [capabilities](docs/capabilities.md), and [roadmap](docs/roadmap.md).
+See the [documentation index](docs/README.md), [architecture](docs/architecture.md),
+[remaining work](docs/roadmap.md) and [release procedure](docs/releases.md).
 
 ## Contributing and license
 
-Code, documentation, CLI messages, issues, and commit messages are written in English. See [CONTRIBUTING.md](CONTRIBUTING.md).
+Repository content and product text are written in English. Follow
+[CONTRIBUTING.md](CONTRIBUTING.md) for checks and commit conventions.
 
-Licensed under [MIT](LICENSE): personal and commercial use, modification, and redistribution are permitted under its terms. Third-party dependencies and model artifacts retain their own licenses. Dots Brain is an independent project and is not affiliated with OpenAI or other AI providers.
+Licensed under [MIT](LICENSE). Dependencies and model artifacts retain their own
+licenses. Dots Brain is independent of OpenAI and other AI providers.

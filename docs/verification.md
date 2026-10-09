@@ -303,12 +303,38 @@ I avoid?"). The process took 2.51 seconds and reached 669,360 KiB peak RSS, abou
 654 MiB. This includes Python, libraries, model loading, indexing, and the query.
 
 This is a smoke test, not a latency benchmark, a capacity guarantee, or an evaluation
-against another memory system. A larger bilingual evaluation and an actual Dot VM
-resource test are still required. Model artifacts are excluded from the repository.
+against another memory system. A representative bilingual evaluation is still required. Later isolated appliance
+measurements are in [stress evidence](stress-tests.md). Model artifacts are excluded
+from the repository.
 
 ## Not yet verified
 
-Public ingress and public OAuth deployment, Dot VM lifecycle, host billing/quotas,
-actual web-provider clients,
-automatic conversation capture, native ChatGPT views, and MCP Events. Successful
-local MCP calls do not establish these capabilities.
+Dedicated upstream CORTEX access, complete live conversation/action capture,
+later-session recall, appliance reboot and host-loss recovery remain unverified.
+Native ChatGPT views and MCP Events are planned. Public ingress, public OAuth and
+both actual bots have separate successful evidence above.
+
+## Overnight completion review (2026-10-09)
+
+Independent senior review found three CORTEX connector defects: receipt persistence
+failures escaped the uncertain-write contract, reconciliation dropped the original
+event acknowledgement, and project maps could collapse separate local projects.
+The fixes retain the committed sending barrier on storage failure, preserve both
+receipt identifiers, and require a nonempty one-to-one mapping. Six regression
+cases fail against the preceding source; all seven new cases and the related
+connector/MCP suite pass (20 tests). A duplicate-local-project case already passed.
+These are local source checks; the appliance connector is not configured upstream.
+
+README, installation, autonomy, documentation index and changelog were reconciled
+with actual appliance/bot evidence. Installer automation remains distinct from
+owner-provisioned public ingress.
+
+The appliance storage/HTTP and real-model stress runs passed with disposable data;
+[workloads, latency tails and raw outputs](stress-tests.md) are retained. A separate
+`pip-audit` check of the frozen semantic runtime dependencies inspected 50 packages
+and reported zero known vulnerabilities, with no skipped packages. That result
+does not establish the absence of undisclosed vulnerabilities.
+
+Workflow Actions are now pinned to official resolved commit hashes; the release
+identity validator rejects moving Action refs. The security review of the preceding
+source found this release supply-chain gap; no observed compromise was reported.

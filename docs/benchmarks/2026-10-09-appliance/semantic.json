@@ -1,0 +1,18 @@
+{
+  "state": "passed",
+  "model": "qdrant/paraphrase-multilingual-MiniLM-L12-v2-onnx-Q@faf4aa4225822f3bc6376869cb1164e8e3feedd0:token-windows-v2",
+  "records": 200,
+  "workers": 4,
+  "queries": {
+    "count": 48,
+    "p50_ms": 787.89,
+    "p95_ms": 991.65,
+    "p99_ms": 1009.1,
+    "max_ms": 1009.1
+  },
+  "synthetic_recall_at_3": 1.0,
+  "indexing_including_startup_seconds": 14.13,
+  "service_peak_rss_kib": 986996,
+  "elapsed_seconds": 22.87,
+  "limits": "Six synthetic bilingual queries; not a representative relevance benchmark."
+}

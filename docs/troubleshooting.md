@@ -25,7 +25,7 @@ private memory export into an issue or conversation.
 | A laptop cannot reach `127.0.0.1` on the VM | Loopback means the current machine. Public HTTPS ingress, secure credential delivery, and web OAuth are not automated in this release. Do not create a second memory as a workaround. |
 | Semantic search is unavailable | Install the semantic extra and run `model prepare`, then start with `--semantic`. Only explicit model preparation downloads weights; there is no paid API fallback. |
 | Newly saved text is not in semantic results yet | Indexing is asynchronous. Check the semantic backlog with `memory_status`; full-text retrieval remains available. |
-| The VM stopped or was replaced | This alpha provides reconnect recovery, not guaranteed boot supervision or persistent VM storage. Check the actual platform lifecycle and your external recovery copy. |
+| The VM stopped or was replaced | The local launcher provides reconnect recovery. The appliance adds systemd supervision, but replacement-host recovery still needs an external backup and deletion history. Check the actual host and data path. |
 
 `service.log` and `service.json` reside in the private data directory. Logs can
 contain local paths or diagnostic details; inspect and redact before sharing.

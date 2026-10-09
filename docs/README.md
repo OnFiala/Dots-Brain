@@ -1,7 +1,7 @@
 # Documentation
 
-Dots Brain shares explicitly saved memories between AI clients. This is a local
-automation alpha, not a complete conversation archive or a universal web connector.
+Dots Brain shares explicitly saved memories between AI clients. It is an alpha with verified appliance and bot connections; complete provider
+conversation capture remains unverified.
 Start with the [project README](../README.md) and [verified capabilities](capabilities.md).
 
 | Your task | Guide |
@@ -18,17 +18,18 @@ Start with the [project README](../README.md) and [verified capabilities](capabi
 | Understand storage, trust, and planned integrations | [Architecture](architecture.md) |
 | Review the selected appliance, CORTEX, and bot contribution requirements | [Appliance contract](appliance-contract.md) |
 | Operate audit, snapshot capture, and CORTEX scopes | [Activity and connectors](activity.md) |
-| Prepare the appliance service and acceptance | [Deployment plan](appliance-deployment.md) |
+| Prepare the appliance service and acceptance | [Deployment and acceptance](appliance-deployment.md) |
 | Review tests and measured load | [Verification](verification.md), [stress tests](stress-tests.md) |
 | Review the historical shared-VM installation | [VM deployment evidence](vm-deployment.md) |
 | See planned functionality | [Roadmap](roadmap.md) |
 | Develop or publish a version | [Contributing](../CONTRIBUTING.md), [releases](releases.md), [changelog](../CHANGELOG.md) |
 
 These guides cover the implemented alpha's local lifecycle and its known limits.
-Public ingress, automatic web-account setup, provider-wide conversation capture,
-an isolated credential vault, scheduled off-host backups, and appliance restart
-acceptance remain unverified. Bounded snapshot collection and guarded restore are
-implemented in the candidate; they do not prove continuous capture or host-loss recovery.
+Public ingress and both named bot connections are verified on the appliance.
+Automatic web-account setup, provider-wide conversation capture, an isolated
+credential vault, scheduled off-host backups and appliance reboot acceptance
+remain unfinished. Bounded snapshot collection and guarded restore do not prove
+continuous capture or host-loss recovery.
 
 Run `dots-brain --help` and `dots-brain <command> --help` for the command's complete
 argument list. In a source checkout use `.venv/bin/dots-brain` on Linux. Put

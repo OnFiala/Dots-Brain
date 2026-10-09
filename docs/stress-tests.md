@@ -1,5 +1,36 @@
 # Stress-test evidence
 
+## Appliance acceptance — 2026-10-09
+
+These isolated synthetic runs used the installed `7417e7b` source on
+`openclaw-appliance`, Python 3.12.3 and SQLite 3.45.1. Each transient job was
+limited to one CPU, 1.5 GiB RAM and 300 seconds. It used its own temporary store
+and credential. The live service stayed active with the same PID; the harnesses
+did not open its database.
+
+| Workload | Result |
+| --- | --- |
+| 2,000 writes, eight workers; write p95 / p99 | 134.53 / 736.71 ms |
+| 2,000 identical retries; duplicate records | Zero |
+| 200 HTTP write/read pairs; p95 / p99 | 640.95 / 662.07 ms |
+| Storage run elapsed; service peak RSS | 32.43 s; 66,592 KiB |
+| 200 records, four query workers, 48 bilingual queries | 48/48 expected facts in top three |
+| Semantic startup and indexing | 14.13 s |
+| Semantic query p95 / maximum | 991.65 / 1,009.10 ms |
+| Semantic service peak RSS | 986,996 KiB (about 964 MiB) |
+
+Retry deduplication, one-winner conflicting writes, project isolation, revocation,
+restart persistence, deletion suppression, integrity and foreign-key checks passed.
+Raw results: [storage/HTTP](benchmarks/2026-10-09-appliance/storage-http.json) and
+[semantics](benchmarks/2026-10-09-appliance/semantic.json).
+
+The six repeated bilingual prompts are a retrieval smoke test. These measurements
+do not establish live traffic latency, representative recall or large-corpus
+capacity. SQLite still serializes writers; the longest synthetic write took
+1.64 seconds. CPU quotas and concurrent host work affect these results.
+
+## Earlier development measurements — 2026-10-02
+
 These tests ran on 2026-10-02 in a managed Linux development workspace. The host
 exposed five CPU IDs with a cgroup quota of four CPU cores and a 16 GiB memory
 limit. It has not been verified as the user's Dot VM. Measurements are individual

@@ -10,16 +10,16 @@ Workspace and OAuth containers remain separate services, with their original
 tunnel routes preserved. Tailscale Serve returned an empty configuration during
 the initial internal acceptance.
 
-The installed source is `2c8823b1f97cac2cd1fbd117164a0e8e026c9097`, including the
-reviewed public OAuth fixes, bounded ingress and omitted-DCR-scope compatibility.
+The observed installed source is `7417e7bd5528be1e85025fe6d1aa337e30dca4ff`,
+including the OAuth provenance, deletion-target and useful-context repairs below.
 Source archive SHA-256:
-`575a2d1aa3277d9fb5bd096a1590068a109914cc65bee2d02e51a9979ae8ef47`.
-Previous `a28d25f` and initial `bd7e938` deployments remain
+`a33274319e91203db3c97c1a31a7c01059c9397e0baa1259c3c473eb41b483da`.
+Previous `2c8823b`, `a28d25f` and initial `bd7e938` deployments remain
 available as rollback releases. Dependencies were installed
 with the committed lockfile and `uv 0.10.3`; serving uses offline local inference.
 See [live verification and its limits](verification.md).
 
-## Concrete first deployment
+## Current installation
 
 | Item | Installed value |
 | --- | --- |
@@ -36,8 +36,9 @@ See [live verification and its limits](verification.md).
 
 The unit is active and enabled for boot. A controlled service restart retained
 the test IDs/revisions. A machine reboot and power-loss recovery have not been
-performed. Data directories are 0700 and the SQLite file is 0600. Acceptance left
-zero live memories and revoked its synthetic client credentials.
+performed. Data directories are 0700 and the SQLite file is 0600. Initial synthetic acceptance left zero live memories and revoked its test
+credentials. Subsequent bot contributions are recorded below; a read-only check
+during the overnight completion review confirmed 46 live memories/revisions (38 Botter, 8 Grok).
 
 The owner subsequently requested live Botter and Grok connections. Public route
 activation and actual account acceptance are tracked separately below.
@@ -134,7 +135,7 @@ the exact ID, project and expected revision; both subsequent reads returned not
 found. A separate metadata check confirmed neither test ID remained and both live
 bot grants were unchanged. Audit pairs 63/64 and 65/66 confirm the owner's two
 completed deletions. The private operator report preserves the exact invocation
-IDs and results; the current deletion audit does not itself contain the object ID.
+IDs and results; the deletion audit at that time did not itself contain the object ID.
 No personal knowledge was imported during this acceptance.
 
 The earlier deployed `2c8823b` had two auditability limitations. DBR-ONB-001: its
@@ -239,30 +240,25 @@ leave the service stopped and the private data retained. Do not remove unrelated
 services, copy old auth grants or run a v1 binary on v2. After new writes, follow
 [guarded recovery](upgrading.md); package rollback alone is not data rollback.
 
-## Secure connections: separate next acceptance
+## Secure connections and remaining integration
 
-Administration and private clients use the existing tailnet. Keep the application
-bound to loopback. Any Tailscale Serve or Cloudflare route needs its own exact host,
-path and authentication review before activation. The tailnet's shell connection
-does not prove that either provider's remote MCP backend can reach the service.
+Administration uses the existing tailnet; the application remains on loopback.
+The approved Cloudflare route exposes only the constrained MCP/OAuth gateway.
+Both Botter and Grok have completed their actual OAuth flows and hold separate
+read/write grants for `shared`, without deletion, audit or CORTEX access. Onboarding
+stays closed between approved pairing windows. The connection evidence appears above.
 
-Grok currently reports a backend HTTP connector and no verified tailnet path.
-For it, provision a dedicated minimal HTTPS MCP/OAuth route on the approved tunnel;
-allow only the MCP route and required OAuth discovery/registration/authorization/
-token/revocation/pairing paths. Add ingress rate/body bounds without logging auth
-headers, tokens, authorization codes or pairing URLs. Do not publish the database,
-operator CLI or a general proxy. Dots uses its own issuer and scopes, not Workspace
-tokens. For this externally supervised instance, stop the unit, run `oauth configure
---issuer <verified-origin> --no-start`, then start the unit again. Likewise use
-`oauth disable --no-start` with the supervisor; omit the managed `up` lifecycle.
-Inspect actual OAuth callbacks during the real connection; do not relax
-registration based on a historical forum report.
+A configured issuer does not provision a tunnel. On this externally supervised
+installation, use `oauth configure --no-start` or `oauth disable --no-start` while
+the service is stopped, then restart its unit. Do not mix the managed `up` lifecycle
+with systemd. Keep required path, method, source, request-size and concurrency
+controls from the [ingress guide](appliance-ingress.md).
 
-Botter may support Secure MCP Tunnel, but account availability is unverified.
-Use supported plugin/OAuth setup and owner consent. Give each bot its own project
-and capability grant; start with a synthetic cross-bot shared-project test.
-Provision a separate upstream CORTEX service credential and supported MCP endpoint;
-the existing read-only Grok endpoint is not sufficient evidence of write access.
+Upstream CORTEX remains separate work: provision a dedicated service identity,
+verify its supported MCP endpoint and one-to-one project mapping, then approve
+specific client scopes before exposing it to either bot. The existing read-only
+Grok connector is not a writable service credential. No current bot grant is widened
+by deploying the connector implementation.
 
 ## Audit review and outstanding operations
 
@@ -274,14 +270,15 @@ no independent model or next-run timestamp field. The first scheduled trigger at
 `2026-10-09T19:22:13Z` ran, but its restricted shell could not resolve the canonical
 tailnet hostname. The helper reported `incomplete/CalledProcessError`; no privilege
 escalation, alternate endpoint, completion envelope or checkpoint advance occurred.
-The checkpoint remains ID 50, completed at `18:45:04Z`. Persistent thread metadata
+At that failed scheduled run the checkpoint remained ID 50, completed at
+`18:45:04Z`. The later manual review below advanced it to 162. Persistent thread metadata
 shows `gpt-6-astra`, provider `openai`, effort `xhigh`; that is configuration evidence,
 not backend execution telemetry for the scheduled inference. Network access for
 unattended review still needs an explicitly permitted path. This failure was not
 treated as a safe audit period or silently repaired by the automation.
 
-The manually exercised [review helper](activity.md#twice-daily-operator-review)
-read all 50 canonical audit events, checked payload/hash continuity and saved its
+The initial manual [review helper](activity.md#twice-daily-operator-review) run
+read all 50 then-existing canonical audit events, checked payload/hash continuity and saved its
 private operator checkpoint. A resumed scan verified the same anchor and no new
 events. Three reviewers accepted its repaired replay/state boundaries and 20
 targeted regression tests passed. This is canonical live audit access, not a
@@ -316,3 +313,18 @@ Primary references checked during design:
 [MiniLM model](https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2),
 [EmbeddingGemma](https://ai.google.dev/gemma/docs/embeddinggemma),
 [Cerebras structured outputs](https://inference-docs.cerebras.ai/capabilities/structured-outputs).
+
+### Overnight operator audit
+
+On 2026-10-09, the operator reviewed all 112 new audit events (IDs 51–162),
+including actor/project pairing, mutation results, synthetic cleanup and the
+initial contributions. Every intent had a completed receipt; none was unresolved.
+The local checkpoint advanced to 162 only after complete analysis. Known incomplete
+provider coverage remains recorded. This was a manual run with an approved network
+operation, not a successful unattended execution: the restricted default context
+still failed to reach the fixed SSH origin. That availability gap remains active.
+
+During that review, core PID 1327391 and gateway PID 1317846 were unchanged and active;
+onboarding was closed. The host reported about 5.5 GiB available RAM and 190 GiB
+free on the data filesystem. These are point-in-time observations, not capacity or
+uptime guarantees.

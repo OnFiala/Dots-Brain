@@ -1,34 +1,41 @@
 # Changelog
 
-## Unreleased — 0.4.0-alpha.1 candidate
+## 0.4.0-alpha.1 — 2026-10-09
 
-- Migrate explicitly to schema v2: project-scoped identities and deletion barriers,
-  server-derived revision authorship, retained unknown legacy authorship and global
-  legacy suppression hashes. Migration requires stopped writers and a verified backup.
-- Index title/content token windows independently and return matching passages;
-  reject credential-like memory input instead of silently truncating it.
-- Add separately scoped sanitized action audit, mutation intent/receipt tracking,
-  coverage gaps, and resumable bounded provider JSONL snapshot collection.
-- Add project-mapped CORTEX reads and selected source-referenced publication with
-  durable uncertain-write handling. No full database mirroring or automatic promotion.
-- Add validated online backups, disabled staged restores, credential revocation,
-  final deletion reconciliation, and refusal to discard newer canonical state.
-- Prepare an isolated systemd appliance deployment; actual deployment, bot OAuth,
-  full capture, off-host recovery and twice-daily operator review remain pending.
+- Add schema v2 with project-scoped source identities, server-authenticated revision
+  authorship and deletion barriers. Upgrade explicitly with stopped writers and a
+  verified backup; preserve unknown legacy authorship.
+- Index title and content passages separately. Return useful body context when a
+  semantic match lands on a short title, while preserving the ranked revision and
+  caller's character budget.
+- Reject known credential patterns from memory input. Add sanitized append-only
+  action audit, mutation intents and receipts, exact deletion targets, and bounded
+  resumable JSONL snapshot collection with coverage gaps.
+- Add one-to-one CORTEX project mapping, bounded context and selected publication
+  of an exact source revision. Preserve acknowledgement IDs during reconciliation;
+  report failed receipt persistence as uncertain and prevent blind replay.
+- Add validated SQLite backups, disabled staged restores, credential revocation,
+  deletion reconciliation and cutover guards against losing newer canonical state.
+- Preserve OAuth pairing provenance through code exchange without changing legacy
+  table layouts or widening existing grants. Support clients that omit registration
+  scopes and subsequently request read/write; exact owner approval is still required.
+- Deploy an isolated Linux systemd service, offline CPU model and constrained HTTPS
+  ingress. Verify actual Botter/Grok OAuth read/write, cross-bot reads, initial
+  contributions and retained access after an upgrade.
+- Require the reviewed revision when deleting. Keep deletion retries idempotent and
+  reject stale deletes atomically. Custom clients must refresh tool discovery.
+- Validate the existing store, credential and saved loopback endpoint before local
+  resume. Add a schema-discovering MCP shell client without creating another database.
+- Add the twice-daily operator review helper with complete-range analysis and durable
+  checkpoints. Manual review is verified; unattended network access remains blocked
+  in the observed restricted execution context.
 
+- Pin CI/release Actions to full commits and validate those pins before release.
+  Record bounded appliance storage, HTTP and real-model stress measurements.
 
-- Require a positive `expected_revision` for MCP and store deletion. Reject stale
-  deletes atomically, keep completed-delete retries idempotent, and update probe
-  cleanup to use its originally written revision. Custom deletion clients must
-  refresh tool discovery and supply the revision they reviewed.
-- Validate an existing store, its client credential, and its saved loopback endpoint
-  before automatic local resume from the stdio bridge or shell helper. Reject a
-  missing or mismatched installation without implicitly creating another database.
-- Add an official-SDK shell client for an existing MCP connection, with schema
-  discovery, JSON input, scoped calls, and recovery of an enabled local service.
-- Verify an installed instance on the user-confirmed shared Work/Dot VM with
-  local CPU embeddings. Public ingress and native web-client activation remain
-  unverified.
+Live CORTEX upstream access, full provider capture, off-host recovery and real
+appliance reboot acceptance remain open. See [capabilities](docs/capabilities.md)
+for implementation and runtime evidence separately.
 
 ## 0.3.0-alpha.2 — 2026-10-04
 

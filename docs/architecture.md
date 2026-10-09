@@ -10,8 +10,8 @@ The owner-selected host is now `openclaw-appliance`, an owner-operated Linux
 appliance. Dots Brain owns the bots' shared external memory; it is not limited to
 a search projection over Agent Workspace. Required CORTEX connectors and the
 initial contribution protocol are specified in the
-[appliance contract](appliance-contract.md). This is the selected target, not an
-assertion of deployed integration.
+[appliance contract](appliance-contract.md). The appliance memory and two bot connections are deployed. Dedicated upstream
+CORTEX access remains unconfigured.
 
 ## Data flow
 
@@ -98,9 +98,10 @@ or to a separate hosting product.
 
 ## Evidence and open conditions
 
-The implementation is supported by local and CI evidence. The selected appliance's
-Dots Brain deployment still needs process supervision, restart, backup/restore,
-model capacity, ingress, credential isolation, and actual client evidence.
+Local and CI checks cover the source. Appliance evidence separately confirms
+systemd supervision, service restart, backup/isolated restore, public OAuth and
+both bot connections. A real host reboot, off-host recovery, sustained semantic
+capacity, provider-wide capture and dedicated CORTEX access remain unverified.
 Backups on the same disk do not protect against losing the appliance. Historical
 Dot VM evidence remains in the [deployment record](vm-deployment.md).
 

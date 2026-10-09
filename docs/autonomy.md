@@ -59,7 +59,8 @@ remote revocation, and the separate program-removal step.
 `--config` selects the actual file on the current device. New provider adapters
 belong in the adapter registry and reuse the same verification path. An unknown
 provider returns a concrete blocked result without creating another database.
-Automatic capture and history import are separate features and remain unimplemented.
+Live capture is a separate integration. Bounded JSONL snapshot import is implemented;
+continuous provider coverage remains unverified. See [activity](activity.md).
 
 ## Remote devices and web clients
 
@@ -76,12 +77,12 @@ agent authorizes the exact request from a flow it initiated using `oauth approve
 it does not receive bearer tokens. See [the OAuth workflow](oauth.md). This does
 not implement provider account setup or grant the agent browser/device access.
 
-The current release does not provide public ingress. `preflight`
-reports the host's supported network-policy snapshot and whether TCP destinations
-are configured. The inspected managed development VM allows HTTP/HTTPS through
-its proxy and has no configured TCP destinations, VPN, or systemd runtime.
-This does not establish support for Cloudflare Tunnel, Tailscale, a public URL,
-or durable service supervision. The installer never changes platform policy.
+The installer does not provision public ingress. The current appliance has an
+owner-approved Cloudflare route, systemd supervision and two verified OAuth bot
+connections; see [deployment](appliance-deployment.md). These are deployment
+steps, not capabilities available automatically on every host. `preflight`
+reports the current host's supported network-policy snapshot; the installer
+never changes platform policy.
 
 A complete web onboarding path requires the platform to supply a stable public
 route or a permitted tunnel transport, plus a supported client registration and
@@ -98,5 +99,5 @@ current conversation loaded the new configuration. An application may need to
 reload or show its own first-use permission prompt.
 
 Private credential files are readable by their OS owner. Strong secret isolation
-still requires a platform or OS boundary. There is no paid API, hosted database,
-external authentication service, or operator-run relay in this implementation.
+still requires a platform or OS boundary. The core has no paid API or hosted database dependency. Its OAuth issuer runs
+with the memory service; the appliance uses Cloudflare for HTTPS ingress.

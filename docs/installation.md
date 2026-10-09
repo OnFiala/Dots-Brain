@@ -4,8 +4,8 @@ This alpha runs on Python 3.11+ on a supported local host. The current internal
 deployment is Linux/Python 3.12.3 on `openclaw-appliance`; see its
 [installation and acceptance](appliance-deployment.md). The earlier shared
 Work/Dot VM is [historical evidence](vm-deployment.md), not the current service.
-These checks do not certify every host or individual AI client. Machine reboot
-recovery and public ingress remain unverified.
+These checks do not certify every host or individual AI client. The public route and both named bots are verified. A real appliance reboot and
+host-loss recovery remain unverified.
 
 ## Source installation
 
@@ -52,10 +52,10 @@ dots-brain --data-dir /absolute/path/to/personal-memory up
 The default listener is `http://127.0.0.1:8765/mcp`; startup selects an available
 port if the default is occupied on first installation. The JSON result contains
 the actual endpoint. Every request requires a credential.
-It is loopback-only and is not a public HTTPS deployment. Keep it behind the
-current local boundary until a supported HTTPS ingress is available. The
-[VM-local OAuth service](oauth.md) is optional and tested over local HTTP;
-public deployment and specific web-provider setup remain unverified.
+This command creates a loopback service. It does not provision public ingress.
+The appliance uses a separately configured restricted HTTPS route with
+[OAuth](oauth.md); both Botter and Grok Bot have verified actual chat access.
+Follow the [ingress guide](appliance-ingress.md) when deploying a remote route.
 
 ## Scoped client connection
 
