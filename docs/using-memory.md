@@ -60,7 +60,9 @@ remaining total budget. At most one third of this space goes to the title.
 Search rankings and `memory_search` passage output remain unchanged. A concurrent
 deletion skips the result; an update may return the ranked historical revision,
 identified in the context header. Use `memory_get` for full detail or latest-state
-verification. The appliance still awaits this repair's deployment.
+verification. The appliance has this repair and passed a live synthetic MCP and
+local-model check; actual-bot post-upgrade confirmation is tracked in
+[deployment evidence](appliance-deployment.md).
 
 Forgetting removes live text, revisions, and derived indexes, and retains a source
 identity hash to prevent accidental reimport. It does not erase another tool's

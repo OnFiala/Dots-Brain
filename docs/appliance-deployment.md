@@ -24,7 +24,7 @@ See [live verification and its limits](verification.md).
 | Item | Installed value |
 | --- | --- |
 | Service identity | Dedicated non-login `dots-brain` OS user/group |
-| Immutable code | `/opt/dots-brain/releases/2c8823b1f97cac2cd1fbd117164a0e8e026c9097` with locked `.venv`, root-owned |
+| Immutable code | `/opt/dots-brain/releases/7417e7bd5528be1e85025fe6d1aa337e30dca4ff` with locked `.venv`, root-owned |
 | Selected code | `/opt/dots-brain/current` symlink to the verified release |
 | Canonical data | `/var/lib/dots-brain`, owned by service user, directory 0700 |
 | Backups | `/var/backups/dots-brain`, private; off-host destination still to provision |
@@ -137,16 +137,15 @@ completed deletions. The private operator report preserves the exact invocation
 IDs and results; the current deletion audit does not itself contain the object ID.
 No personal knowledge was imported during this acceptance.
 
-The deployed `2c8823b` still has two auditability limitations. DBR-ONB-001: its
+The earlier deployed `2c8823b` had two auditability limitations. DBR-ONB-001: its
 grants do not retain the consumed pairing request ID; current bot attribution is
 correlated through unique clients/grants, revision writers and server audit.
 DBR-CLEAN-001: deletion audit lacks the memory ID and observed revision; the private
 operator report supplies that association for this acceptance only.
 
-Both have source repairs: additive OAuth provenance tables and allowlisted deletion
-targets in intents/receipts. These repairs are tested but not deployed. Upgrading
-requires the documented stop, backup and same-issuer configuration step; it does
-not backfill old grants or rewrite existing append-only audit history.
+Both now have deployed repairs: additive OAuth provenance tables and allowlisted
+deletion targets in intents/receipts. The upgrade below used stop, backup and
+same-issuer configuration. It did not backfill old grants or rewrite audit history.
 
 ### Initial knowledge contributions
 
@@ -163,15 +162,47 @@ completeness of their personal knowledge. Source text and topic identifiers rema
 outside this repository.
 
 Botter reported title-only output for one `memory_context` result. A synthetic
-regression reproduced that behavior; source repair DBR-CTX-001 supplies a bounded
-title/body excerpt from the same revision without changing search ranking. It is
-not yet deployed. Until then, clients should use `memory_get` when a retrieved
-excerpt lacks the needed details.
+regression reproduced that behavior; repair DBR-CTX-001 supplies a bounded
+title/body excerpt from the same revision without changing search ranking. It
+passed the live synthetic check below. Clients should still use `memory_get` when
+a bounded excerpt lacks the needed details.
 
 Grok reports storing the lookup/save rule in its own persistent agent memory;
 Botter reports only a current-chat instruction. Neither is a verified provider
 hook or later-session acceptance. Live CORTEX and full provider capture remain
 unverified.
+
+### Repair deployment and preserved live data
+
+Release `7417e7b` passed **169 tests, one model-dependent skip** on Linux Python
+3.11 and 3.12 ([CI 37987652299](https://github.com/OnFiala/Dots-Brain/actions/runs/37987652299)).
+The exact source archive SHA-256 was
+`a33274319e91203db3c97c1a31a7c01059c9397e0baa1259c3c473eb41b483da`.
+Dependencies were prepared offline in the new root-owned immutable release.
+
+The stopped baseline contained 46 revision-1 records: Botter had added one after
+its initial batch, so 38 belonged to Botter and 8 to Grok. The private backup
+`/var/backups/dots-brain/pre-repair-7417e7b.sqlite3` passed integrity and foreign-key
+checks. Same-issuer OAuth configuration added the companion tables. Only Dots Brain
+restarted at **2026-10-09 20:36:40 UTC**; the ingress PID remained unchanged and
+onboarding stayed closed. All record/revision/digest/writer metadata and the full
+existing grant metadata matched the stopped baseline. Legacy provenance is null.
+
+A separate synthetic project then exercised the actual HTTP MCP service and local
+embedding model. An exact title match returned both title and body in bounded
+context. MCP deletion recorded the exact ID/revision in intent/receipt 161/162.
+The probe record was removed and its private credential revoked; all 46 original
+records still matched the baseline. No personal text was read. An independent
+reviewer verified matching critical source hashes, service identity/PID, listener
+shape and private directory modes; private backup/report checks were performed by
+the deploying operator because the reviewer did not elevate through that boundary.
+
+Both bots then confirmed actual-chat post-upgrade status: 46 memories/revisions,
+semantic ready, 46 indexed and zero pending. Their existing OAuth connections
+remained usable. Botter repeated the originally affected query and confirmed a
+useful body excerpt from the expected revision-1 source. Grok confirmed status and
+retention of its eight records; a separate post-upgrade context result was not
+reported. No new pairing was needed.
 
 ### Repeatable installation procedure (owner approval required)
 

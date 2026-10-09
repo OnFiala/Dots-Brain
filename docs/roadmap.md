@@ -26,12 +26,13 @@ bidirectional cross-bot reads; their synthetic facts were removed by owner clean
    Tailscale remains the administration/private-client path.
 4. Both separate bot connections, each write/readback, bidirectional cross-read and
    owner cleanup are verified. Project denial and isolated revocation passed
-   synthetic acceptance. Deploy the tested repairs for original pairing IDs and
-   deletion targets (DBR-ONB-001 and DBR-CLEAN-001), using the explicit OAuth
-   provenance upgrade and preserving legacy unknowns.
+   synthetic acceptance. The pairing provenance and deletion target repairs
+   (DBR-ONB-001 and DBR-CLEAN-001) are deployed; legacy unknowns remain explicit.
 5. Initial contributions are verified: 37 Botter and 8 Grok records with stable
-   identities, client readbacks and server write receipts. Deploy the tested
-   title/body context repair, then demonstrate relevant recall in a later session.
+   identities, client readbacks and server write receipts. The title/body context
+   repair passed live acceptance and Botter's affected-query check. Both bots
+   confirmed their retained access and index state; demonstrate relevant recall
+   in a later session.
 6. Establish the available live capture mechanisms and verify the first scheduled
    run of the registered twice-daily Codex audit review. Its manual baseline passed;
    it cannot infer complete provider activity from submitted audit events.

@@ -196,7 +196,9 @@ code, PKCE material or callback is added to the grant report.
 Legacy grants and flows created during a rollback have `null` where the origin
 was not recorded. The code does not invent their history. Existing installations
 need the explicit [OAuth provenance extension](upgrading.md#oauth-provenance-extension-within-schema-v2).
-This source repair has not yet been deployed to the live appliance.
+The live appliance has this extension; its original bot grants retain null
+historical provenance. Existing client and scope metadata was preserved during
+the upgrade. See [deployment evidence](appliance-deployment.md).
 
 
 ## Externally supervised installations

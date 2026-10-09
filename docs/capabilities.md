@@ -9,11 +9,11 @@ contributed 45 real records, corroborated by safe writer/audit metadata.
 | Capability | Implemented evidence | Remaining boundary |
 | --- | --- | --- |
 | Project-scoped memory, revisions, deletion, authenticated writer | SQLite and actual MCP SDK tests | Existing v1 stores need offline migration |
-| Full-text and bounded context | Scoped retrieval/budget tests; both bots report Czech hybrid queries; title/body fallback tested in source | Deploy title-only context repair; character budgets are not token budgets |
+| Full-text and bounded context | Scoped retrieval/budget tests; bot Czech queries; live local-model/MCP fallback and Botter's affected query verified | Character budgets are not token budgets; retrieval is not exhaustive |
 | Local semantic passages | Pinned ONNX model; token-window, title, stale/deletion and real-model tests | Appliance capacity and larger bilingual evaluation |
 | MCP stdio, loopback HTTP, local bridge/adapters | SDK, supported Linux process tests; both bots' actual chat status/write/read and bidirectional cross-read | Later-session recall and sustained client use |
-| OAuth registration, PKCE, refresh, revocation | SDK, scoped tests, public acceptance, separate real bot grants; tested source repair retains original pairing identity | Deploy provenance extension; legacy history remains unknown |
-| Sanitized action audit | Append-only rows, intent/receipt, client reports, gaps, pagination; tested source repair adds deletion ID/revision | Deploy deletion target repair; submitted events do not establish full provider audit |
+| OAuth registration, PKCE, refresh, revocation | SDK, scoped tests, public acceptance, separate real bot grants; deployed provenance extension preserves existing auth | Legacy pairing history remains unknown |
+| Sanitized action audit | Append-only rows, intent/receipt, client reports, gaps, pagination; live deletion ID/revision verified | Historical delete targets remain absent; submitted events do not establish full provider audit |
 | Bounded JSONL snapshot collector | ACK retry, partial lines, rotation, oversized records, missing sources, crash journal | Live provider logs and persistent collectors unverified |
 | Transcript import | User text with stable file-record identity; tool metadata only | Ambiguous assistant text excluded; no transcript timestamps/IDs invented |
 | CORTEX context and selected writes | Project mapping, source revision, scope checks, durable receipts and uncertain-write tests | Dedicated authorized upstream endpoint and live behavior |

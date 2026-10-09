@@ -102,8 +102,8 @@ DBR-CLEAN-001 adds only `memory_id` and `expected_revision` to deletion intent a
 receipt targets, including rejected stale revisions. DBR-ONB-001 preserves the
 original pairing request ID/time in grant metadata using three additive companion
 tables; core OAuth table layouts remain compatible with the retained schema-v2
-release. Missing legacy provenance remains unknown. These changes are not yet
-deployed; installed code remains `2c8823b`.
+release. Missing legacy provenance remains unknown. These changes were subsequently
+deployed in `7417e7b` as described below.
 
 The focused local OAuth, MCP, recovery and privacy/capture suites passed **57 tests**
 with the Linux-only background OAuth test and unchanged stdio test excluded.
@@ -111,8 +111,8 @@ Regressions cover exact request identity, narrowed grants, restart/refresh/revoc
 concurrent single-code exchange, legacy token/code preservation, retryable schema
 upgrade, failed-DDL rollback, failed code/grant metadata writes with exact retry,
 cascading removal, and deletion targets without memory content. Independent senior,
-test-quality and stress reviewers inspected the repair. No live database upgrade
-or production failure injection was performed.
+test-quality and stress reviewers inspected the repair. No production failure
+injection was performed; the subsequent database upgrade is recorded below.
 
 The audit/provenance source at `f5e5143` also passed Linux Python 3.11/3.12
 [CI run 37987120571](https://github.com/OnFiala/Dots-Brain/actions/runs/37987120571).
@@ -132,7 +132,20 @@ Source repair DBR-CTX-001 retains a bounded title/body excerpt from the exact ra
 revision. Six focused semantic tests passed: short/long title with 256/6000-character
 budgets, project canary isolation, update/delete races, and existing matching-tail
 and title-passage behavior. These use deterministic synthetic embeddings, not a new
-real-model quality benchmark. The context repair is not yet deployed.
+real-model quality benchmark.
+
+The exact combined candidate `7417e7b` passed **169 tests, one skip** on Linux
+Python 3.11/3.12 ([CI 37987652299](https://github.com/OnFiala/Dots-Brain/actions/runs/37987652299)).
+Its appliance upgrade validated a fresh backup and preserved all 46 records present
+at the stopped baseline (Botter added one after its initial 37), their revision
+metadata/content digests, and both bot grants. An actual local-model/HTTP MCP probe
+confirmed title/body context and exact deletion targets in audit 161/162. The
+synthetic record and credential were removed/revoked, and the original metadata
+remained unchanged. Both actual bots subsequently confirmed status with 46
+memories/revisions, 46 indexed and zero pending through their retained OAuth
+connections. Botter also confirmed its previously affected context query now
+contains a useful body excerpt from the correct revision-1 source. Grok's separate
+post-upgrade context check was not reported.
 
 Still unverified: actual appliance reboot, encrypted off-host backup/host-loss
 recovery, large-corpus/long-duration load, upstream CORTEX, and complete live provider
