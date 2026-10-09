@@ -123,12 +123,26 @@ that write at 2026-10-09 20:06:19 UTC, attributes its revision to Botter's separ
 grant, and confirms completed server-observed intent/receipt IDs 61/62. Both grants
 remain limited to `shared` and `memory:read memory:write`; onboarding is closed and
 the service is active. Reads are client-reported through the owner relay; the
-server audit corroborates writes, not read calls. Grok's reverse read of Botter's
-fact is still pending. Both synthetic facts remain unchanged for that check.
+server audit corroborates writes, not read calls. Grok then confirmed the reverse
+read of Botter's exact revision-1 fact and status showing two memories/revisions,
+both indexed with no pending work. This completes bidirectional client acceptance;
+it does not establish semantic query quality or complete provider capture.
+
+At 20:15:30 UTC, owner cleanup verified both exact synthetic identities, writers,
+contents and current revision 1 before deleting either. Each audited deletion used
+the exact ID, project and expected revision; both subsequent reads returned not
+found. A separate metadata check confirmed neither test ID remained and both live
+bot grants were unchanged. Audit pairs 63/64 and 65/66 confirm the owner's two
+completed deletions. The private operator report preserves the exact invocation
+IDs and results; the current deletion audit does not itself contain the object ID.
+No personal knowledge was imported during this acceptance.
 
 Review follow-up DBR-ONB-001: grants do not retain the consumed pairing request ID.
 Current Grok attribution is correlated by its unique client/grant, revision writer
 and server audit. Persisting request-to-grant provenance remains a separate repair.
+Review follow-up DBR-CLEAN-001: include the deletion memory ID and observed revision
+in durable audit metadata. The current operator report supplies that association
+for this acceptance only.
 
 ### Repeatable installation procedure (owner approval required)
 

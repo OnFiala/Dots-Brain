@@ -11,8 +11,8 @@
 
 See [capabilities](capabilities.md) and [verification](verification.md) for evidence.
 The owner-approved internal appliance deployment passed synthetic acceptance on
-2026-10-09. Both bots subsequently verified actual chat read/write access;
-Grok's reverse read of Botter's synthetic fact and external integrations remain.
+2026-10-09. Both bots subsequently verified actual chat read/write access and
+bidirectional cross-bot reads; their synthetic facts were removed by owner cleanup.
 
 ## Next acceptance: canonical appliance and clients
 
@@ -24,9 +24,10 @@ Grok's reverse read of Botter's synthetic fact and external integrations remain.
 3. The constrained public MCP/OAuth route and both actual OAuth callbacks are
    verified. Keep onboarding closed between owner-approved pairing sessions;
    Tailscale remains the administration/private-client path.
-4. Complete Grok's reverse read of Botter's synthetic fact, then owner cleanup.
-   Both separate bot connections, each write/readback and Botter's cross-read are
-   verified. Project denial and isolated revocation passed synthetic acceptance.
+4. Both separate bot connections, each write/readback, bidirectional cross-read and
+   owner cleanup are verified. Project denial and isolated revocation passed
+   synthetic acceptance. Preserve consumed pairing IDs and deletion target IDs in
+   durable metadata (DBR-ONB-001 and DBR-CLEAN-001).
 5. Each bot submits its available knowledge with stable identities and uncertainty
    labels, verifies receipts, then demonstrates relevant recall in a later session.
 6. Establish the available live capture mechanisms and verify the first scheduled

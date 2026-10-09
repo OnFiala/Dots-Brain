@@ -89,8 +89,12 @@ one Linux-only process test excluded, all 27 OAuth tests on the appliance, and
 After its deployment, a fresh ChatGPT client completed owner-approved OAuth.
 Botter subsequently reported actual chat status, readback of Grok's fact, its own
 synthetic write and readback. The distinct Botter revision writer and completed
-audit pair 61/62 corroborate its write at 20:06:19 UTC. Grok's reverse read of the
-Botter fact remains pending. The two synthetic facts are retained for that check.
+audit pair 61/62 corroborate its write at 20:06:19 UTC. Grok then confirmed the
+reverse read of Botter's exact revision-1 fact; status reported two indexed memories
+and no pending work. Owner cleanup at 20:15:30 UTC removed only these two observed
+revision-1 facts and confirmed both absent, with audit pairs 63/64 and 65/66.
+Both live grants remained unchanged. The private invocation report carries exact
+deletion IDs because the existing audit receipts do not include them.
 
 Still unverified: actual appliance reboot, encrypted off-host backup/host-loss
 recovery, large-corpus/long-duration load, upstream CORTEX, and complete live provider

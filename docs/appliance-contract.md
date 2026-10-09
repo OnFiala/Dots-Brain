@@ -9,8 +9,9 @@ in their ordinary work. Recovering the historical Dot VM is not a prerequisite.
 This document defines the delivery contract. The unreleased candidate implements
 scoped connectors and per-record write receipts. Owner-approved internal deployment
 passed synthetic acceptance that day. Both bots subsequently verified actual chat
-read/write calls; reverse cross-bot acceptance and upstream CORTEX access remain
-pending. See [deployment evidence](verification.md).
+read/write calls and bidirectional cross-bot readback. Initial knowledge
+contributions and upstream CORTEX access remain pending. See
+[deployment evidence](verification.md).
 
 Keep one canonical Dots Brain instance on the appliance, with persistent private
 storage, local embeddings, and its own supervised process. The development

@@ -178,8 +178,9 @@ read/write, which correctly failed with `invalid_scope`. The omitted-scope defau
 above fixes that registration contract. After deployment, a fresh ChatGPT
 registration completed owner-approved OAuth. Botter then reported actual chat
 status, readback of Grok's fact, and its own synthetic write/readback, corroborated
-by the separate writer and server audit. Grok's reverse read remains pending.
-See [deployment evidence](appliance-deployment.md).
+by the separate writer and server audit. Grok subsequently confirmed the reverse
+read, completing bidirectional client acceptance. Owner cleanup removed both
+synthetic facts while preserving the grants. See [deployment evidence](appliance-deployment.md).
 
 The OAuth tables are additive to the existing memory schema. See
 [upgrading](upgrading.md), [uninstall](uninstall.md), and [troubleshooting](troubleshooting.md).
