@@ -1,4 +1,4 @@
-# Appliance deployment — internal candidate running
+# Appliance deployment — internal OAuth candidate running
 
 ## Observed boundary (2026-10-09)
 
@@ -8,10 +8,11 @@ Python 3.12.3. Its only listener is `127.0.0.1:8787`. Existing Agent Workspace,
 OAuth and tunnel containers remain separate services; this deployment added no
 public route. Tailscale Serve returned an empty configuration during acceptance.
 
-The installed source is `bd7e938e0d3bd8e4682b609aa7bdf85ccfd7ec99`, including the
-reviewed `582059b` code. Source archive SHA-256:
-`63620868664f00f395325a40bcb6b55d0965f97a1b301f829dfc07a085fa49bd`.
-Installation manifest time: `2026-10-09T18:20:29.347999Z`. Dependencies were installed
+The installed source is `a28d25f21a7911dd5c38f78fb0f59c04b19747bd`, including the
+reviewed public OAuth fixes and bounded ingress. Source archive SHA-256:
+`47763505d6567dc3fef7accac4d716da686e2c170acefbb7f04dcc99f4ed5410`.
+The initial `bd7e938` deployment (manifest `2026-10-09T18:20:29.347999Z`) remains
+available as a rollback release. Dependencies were installed
 with the committed lockfile and `uv 0.10.3`; serving uses offline local inference.
 See [live verification and its limits](verification.md).
 
@@ -20,7 +21,7 @@ See [live verification and its limits](verification.md).
 | Item | Installed value |
 | --- | --- |
 | Service identity | Dedicated non-login `dots-brain` OS user/group |
-| Immutable code | `/opt/dots-brain/releases/bd7e938e0d3bd8e4682b609aa7bdf85ccfd7ec99` with locked `.venv`, root-owned |
+| Immutable code | `/opt/dots-brain/releases/a28d25f21a7911dd5c38f78fb0f59c04b19747bd` with locked `.venv`, root-owned |
 | Selected code | `/opt/dots-brain/current` symlink to the verified release |
 | Canonical data | `/var/lib/dots-brain`, owned by service user, directory 0700 |
 | Backups | `/var/backups/dots-brain`, private; off-host destination still to provision |
@@ -35,8 +36,36 @@ the test IDs/revisions. A machine reboot and power-loss recovery have not been
 performed. Data directories are 0700 and the SQLite file is 0600. Acceptance left
 zero live memories and revoked its synthetic client credentials.
 
-Future production changes retain their owner approval boundary. Approval of this
-internal deployment does not activate public ingress or connect personal accounts.
+The owner subsequently requested live Botter and Grok connections. Public route
+activation and actual account acceptance are tracked separately below.
+
+### OAuth and gateway preparation
+
+Release `a28d25f` passed 159 tests with one real-model test skipped on the appliance,
+running against disposable fixtures as `nobody`. Its Linux CI passed Python 3.11
+and 3.12: [run 37978402383](https://github.com/OnFiala/Dots-Brain/actions/runs/37978402383).
+The full macOS run is not a passing runtime gate: eight tests hit the Linux-only
+daemon guard or sandbox socket restriction. The focused 24 OAuth tests passed there.
+
+Before selecting the new release, a consistent private backup was written to
+`/var/backups/dots-brain/pre-public-a28d25f.sqlite3` (0600). Only Dots Brain was
+restarted. OAuth is configured for `https://dots-brain.ofops.co`, while the external
+route has not yet been published or verified. The dedicated gateway is active on
+`172.17.0.1:8788`; its [configuration and rollback](appliance-ingress.md) are separate
+from the host's existing nginx service. A narrowly scoped Docker firewall exception
+was necessary; the first connection correctly timed out before it was added.
+
+Actual connector-namespace acceptance passed: discovery issuer/resource, anonymous
+401, incorrect Host 404, unlisted paths and pairing suffix 404, oversized bodies 413,
+unsupported method 403, two S256 owner-approved OAuth flows, real MCP status/write,
+cross-client shared ID/revision, foreign-project denial, no deletion capability,
+isolated revocation and registration burst 429. Direct access from the host rather
+than the allowed connector namespace returned 403. The synthetic fact was deleted,
+both test grants were revoked and `doctor` reported zero memories and revisions.
+This establishes the internal gateway path, not either named bot's connection.
+
+Public DNS/TLS, actual bot callbacks, each bot's shared-memory proof and automatic
+expiry of the ten-minute onboarding window remain separate pending checks.
 
 ### Repeatable installation procedure (owner approval required)
 

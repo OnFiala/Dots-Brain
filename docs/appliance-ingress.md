@@ -25,6 +25,17 @@ ACL is not isolation between those processes. Verify these addresses before
 installation and after container replacement. Changed addresses fail closed;
 do not broaden the ACL to a LAN, tailnet, or all Docker containers to repair it.
 
+The host firewall also defaults to denying traffic from Docker. The single required
+exception is scoped to this interface, source, destination and port:
+
+```sh
+sudo ufw allow in on docker0 from 172.17.0.2 to 172.17.0.1 port 8788 proto tcp \
+  comment 'Dots Brain tunnel gateway'
+```
+
+Do not disable the firewall or open `8788` on other interfaces. Roll back with the
+same command prefixed `ufw delete allow` instead of `ufw allow`.
+
 ## Dedicated gateway
 
 - `deploy/nginx/dots-brain.conf` is a standalone nginx configuration for this host.
