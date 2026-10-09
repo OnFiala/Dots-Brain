@@ -5,6 +5,12 @@ its source, and ask another connected assistant to retrieve it. Both must point
 to the same instance and have access to the same project. Saving is explicit:
 connecting MCP does not import past conversations or continuously capture new ones.
 
+The selected rollout starts with each bot contributing what it currently knows,
+then using the shared appliance memory in ordinary work. See the
+[initial contribution and CORTEX contract](appliance-contract.md). Such a
+contribution must preserve uncertainties and sources; it is not proof of access
+to complete conversation history. CORTEX connectors are required but not yet shipped.
+
 For example, tell a connected assistant: "Remember that this project's deployment
 target is my VM. Save the source of this decision under project `demo`." Then ask
 another connected assistant: "Check shared memory for the deployment target of

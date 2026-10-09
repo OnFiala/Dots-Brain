@@ -1,5 +1,10 @@
 # Shared Work/Dot VM deployment
 
+**Historical deployment record.** The owner has since selected an external memory
+on `openclaw-appliance`, initially populated by the bots' own contributions. See
+the [current target contract](appliance-contract.md). Recovery of this historical
+instance remains separate and does not block that rollout.
+
 On 2026-10-05 the owner confirmed that Work and their Dot use the same managed
 Linux VM. A retained instance was then installed there. The released server is
 `0.3.0-alpha.2`, commit `263c38617aa17ae1ebaea84c8938065c131cfae1`.
@@ -25,15 +30,15 @@ checks cannot distinguish VM replacement, an unattached original disk, or remova
 they do not establish that the original memories were erased. Recover the original
 task environment or storage before treating a new empty installation as a restore.
 
-The intended deployment still keeps memory, embeddings, authentication, and runtime
-on the bot's VM without additional operating costs. The platform must establish
+The original deployment contract kept memory, embeddings, authentication, and runtime
+on the bot's VM without additional operating costs. That path required establishing
 which files survive environment replacement, how those files can be recovered,
 how the service resumes, and which supported public route reaches it. Current
 [Work Cloud documentation](https://learn.chatgpt.com/docs/enterprise/chatgpt-work-cloud-security#where-cloud-tasks-run)
 describes environments that can be reused or replaced while preserving eligible
 state; it does not identify this installation directory as durable or document
 its recovery. That general documentation is not proof of what happened to this
-particular instance. No alternative memory host has been selected.
+particular instance. The appliance target above supersedes this host requirement.
 
 ## Historical installation and evidence: 2026-10-05
 

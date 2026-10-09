@@ -19,6 +19,23 @@ not automatically the user's Dot VM, and the current machine is not automaticall
 the user's laptop. Reuse an existing data directory and connection. Never create
 a second independent memory on another device to make its client appear connected.
 
+For the selected owner rollout, the canonical target is `openclaw-appliance`;
+Botter and Grok Bot are remote clients. Follow the
+[appliance contract](../../docs/appliance-contract.md). A fresh appliance instance
+and bot-submitted initial knowledge do not require restoring the historical Dot VM.
+Do not describe that fresh instance as a restored database. Host selection does
+not itself verify deployment, CORTEX connectors, or bot activation.
+Apply the current task's existing authorization to installation, routing, client
+registration, and credential/scoping changes; selecting a host alone is not an
+instruction to perform those operations.
+
+The shipped bootstrap configures the core Dots service, not CORTEX connectors or
+the complete initial-contribution workflow. Inspect the discovered schemas and
+capability status. Individual explicit writes remain usable within their scope,
+but do not claim unavailable writer attribution, contribution receipts, CORTEX
+operations, or named-bot activation. Report those missing capabilities directly;
+do not substitute an unverified cross-system copy or invented command.
+
 Use a writable checkout of the requested release. Do not edit installed plugin
 caches. Python 3.11+ and `uv` are required for the source bootstrap. Use the user's
 existing installation where available. Follow the host's supported package

@@ -16,8 +16,9 @@ Start with the [project README](../README.md) and [verified capabilities](capabi
 | Update an existing installation | [Upgrading](upgrading.md) |
 | Diagnose a failed connection or setup | [Troubleshooting](troubleshooting.md) |
 | Understand storage, trust, and planned integrations | [Architecture](architecture.md) |
+| Review the selected appliance, CORTEX, and bot contribution requirements | [Appliance contract](appliance-contract.md) |
 | Review tests and measured load | [Verification](verification.md), [stress tests](stress-tests.md) |
-| Review the actual shared-VM installation | [VM deployment evidence](vm-deployment.md) |
+| Review the historical shared-VM installation | [VM deployment evidence](vm-deployment.md) |
 | See planned functionality | [Roadmap](roadmap.md) |
 | Develop or publish a version | [Contributing](../CONTRIBUTING.md), [releases](releases.md), [changelog](../CHANGELOG.md) |
 

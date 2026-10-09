@@ -6,6 +6,13 @@ Provide one personal memory service for a Dot and other AI tools, with a small
 maintainable implementation and agent-driven setup. The canonical store,
 authentication, indexes, and embedding inference run on the user's host.
 
+The owner-selected host is now `openclaw-appliance`, an owner-operated Linux
+appliance. Dots Brain owns the bots' shared external memory; it is not limited to
+a search projection over Agent Workspace. Required CORTEX connectors and the
+initial contribution protocol are specified in the
+[appliance contract](appliance-contract.md). This is the selected target, not an
+assertion of deployed integration.
+
 ## Data flow
 
 ```mermaid
@@ -59,16 +66,17 @@ server to ChatGPT to trigger user-requested automations. Neither feature provide
 universal conversation history access. Event delivery must tolerate duplicates,
 reordering, retries, expired subscriptions, and loops.
 
-Sites can host MCP and manage OAuth, but it is a separate runtime from the Dot VM.
-Using it for the core changes the current hosting contract. No such migration is
-implicit in plugin installation.
+Native client features are optional clients of the appliance-hosted service.
+Installing a client plugin does not move the canonical store to that client's VM
+or to a separate hosting product.
 
 ## Evidence and open conditions
 
-The design is supported by public protocol and platform documentation. The
-specific Dot VM's durable storage, process supervision, model capacity, ingress,
-credential isolation, and costs still need runtime evidence. Backups on the same
-disk do not protect against losing the VM.
+The implementation is supported by local and CI evidence. The selected appliance's
+Dots Brain deployment still needs process supervision, restart, backup/restore,
+model capacity, ingress, credential isolation, and actual client evidence.
+Backups on the same disk do not protect against losing the appliance. Historical
+Dot VM evidence remains in the [deployment record](vm-deployment.md).
 
 - [MCP specification](https://modelcontextprotocol.io/specification/latest)
 - [OpenAI Plugin Extensions](https://developers.openai.com/plugins/build/extensions)

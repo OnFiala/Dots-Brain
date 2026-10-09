@@ -23,13 +23,31 @@ See the capability matrix and verification evidence for the exact supported scop
 - PKCE, resource binding, hashed bearer tokens, rotating refresh, and revocation.
 - Official OAuth client verification against a live local HTTP memory service.
 
-## VM and remote connection milestone
+## Appliance and remote connection milestone
 
-- Verify the target Dot VM's persistence, resource limits, and process lifecycle.
-- Establish a stable authenticated HTTPS endpoint without additional fees.
-- Verify one actual external client's read, write, restart, and revocation path.
+- Deploy one canonical instance on the selected owner-operated Linux appliance.
+- Verify persistence, resource limits, supervision, backup, restore, and host-loss handling.
+- Establish a stable authenticated HTTPS endpoint using the authorized infrastructure.
+- Verify Botter and Grok Bot's actual read, write, restart, and revocation paths.
 - Verify the OAuth flow in actual web providers and isolate credential operations
   where the host allows it.
+
+The [appliance contract](appliance-contract.md) is the current target. Historical
+Dot VM recovery is independent and does not block a fresh, clearly identified
+instance or the bots' initial knowledge contributions.
+
+## CORTEX connectors and bot contributions — required next delivery
+
+- Add separate scoped CORTEX read and selected write capabilities with original
+  references, durable receipts, no implicit permission expansion, and safe handling
+  of uncertain writes. Keep local memory available during CORTEX outages.
+- Support initial contributions of the knowledge each bot can actually access,
+  with stable identities, self-report/source distinctions, conflict visibility,
+  and resumable verification. Do not present this as complete history import.
+- Install and verify each bot's routine of context lookup, sourced new writes,
+  and corrections across sessions. A connected client is not proof of actual use.
+- Treat any cloud extraction helper as optional follow-up; no model API is needed
+  for initial direct contributions or ordinary explicit memory writes.
 
 ## Shared-client data boundaries — next proposed migration
 
@@ -56,8 +74,10 @@ explicit offline schema migration with these constraints:
   rejection. Returning to the old backup after new writes or deletions requires
   explicit reconciliation and must not be presented as lossless rollback.
 
-This migration is not implemented or approved for a live store. First rebind the
-actual VM installation and its recovery path. The first cross-client acceptance
+This migration is not implemented or approved for a live store. Preserve it as the
+upgrade path for any recovered v1 store; a fresh appliance store does not require
+recovering the old VM first. Shared-writer fixes still precede personal bot imports.
+The first cross-client acceptance
 milestone is one bot saving a synthetic note and the other retrieving the same
 record/revision from the identified store, followed by credential revocation and
 authorized cleanup. Automatic conversation capture is a later milestone.

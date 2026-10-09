@@ -21,6 +21,10 @@ This file describes implementation and verification, not a marketing promise.
 | Autonomous remote client registration | Planned |
 | VM-local OAuth discovery, registration, PKCE, refresh, and revocation | Implemented; official OAuth client verified over live local HTTP; named web clients unverified |
 | Agent-operated OAuth authorization without token output | Implemented; requires identifying the exact initiated flow and selecting project access |
+| Canonical memory on the owner-operated appliance | Selected target; Dots Brain deployment and restart/restore not verified |
+| CORTEX read and selected write connectors | Required; not implemented; see [connector contract](appliance-contract.md) |
+| Initial Botter/Grok knowledge contributions | Required; resumable contribution protocol and actual bot imports not verified |
+| Routine memory use by both bots across sessions | Required; operating instructions and actual use not verified |
 | Verified public VM ingress or tunnel | Not verified |
 | Strong credential isolation | Not verified |
 | Storage/HTTP load and local embedding load | Synthetic stress runs passed; see [evidence](stress-tests.md) |

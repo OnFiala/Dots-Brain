@@ -2,12 +2,17 @@
 
 **One memory for your AI tools, hosted on your own machine.**
 
-Dots Brain is an open-source memory service for an OpenAI Dot and other MCP-compatible assistants. It stores useful context with its sources, retrieves relevant memories, and lets connected assistants continue each other's work. The target deployment is your Dot's VM, with local storage and local embeddings and no paid model API.
+Dots Brain is an open-source memory service for an OpenAI Dot and other MCP-compatible assistants. It stores useful context with its sources, retrieves relevant memories, and lets connected assistants continue each other's work. The selected deployment target is an owner-operated Linux appliance, with local storage and local embeddings. Botter and Grok Bot will share this external memory and contribute their existing knowledge after connection. The core requires no paid model API.
 
 **Status: OAuth alpha (`0.3.0-alpha.2`).** An agent can start the shared service, configure supported local clients, authorize OAuth clients on the VM, and remove the integration while preserving memories. Local installation with CPU embeddings was verified on one user-confirmed shared Work/Dot VM on October 5, 2026. On October 9, owner-relayed checks found the historical installation paths absent from the currently accessible environment; a retained running instance is not verified. See the [deployment status](docs/vm-deployment.md). Public ingress, automatic web-account setup, conversation capture, and native ChatGPT views remain planned. See the [capability matrix](docs/capabilities.md).
 
 Tell your agent: "Install Dots Brain on my memory host and connect my supported
 AI tools. Follow the repository's setup skill and verify the connections."
+
+The [appliance and connector contract](docs/appliance-contract.md) defines the
+selected host, required CORTEX integration, initial bot contributions, and ongoing
+memory use. These are delivery requirements; appliance deployment, CORTEX
+connectors, and actual bot onboarding are not implemented or verified by this alpha.
 
 ## What works today
 
@@ -97,7 +102,12 @@ download models during CI. See [verification evidence](docs/verification.md).
 
 The memory database, embedding inference, authentication, and installation state belong on the user's host. A public HTTPS ingress or a compatible tunnel is needed for remote clients. Hosting and resource limits must be verified; an existing subscription is not a promise of unlimited compute or free external services.
 
-ChatGPT Sites is a separate hosting option under investigation, not the default deployment. No data is silently moved there.
+The selected host is `openclaw-appliance`. Recovering the historical Dot VM is a
+separate task and does not block initial bot contributions to the new instance.
+A fresh instance must be identified as such; it is not a restoration of the old
+database. CORTEX remains a separate system connected through explicit interfaces.
+An optional cloud helper may later process authorized excerpts under a budget;
+it must not become a dependency of local memory reads or explicit writes.
 
 Read the [architecture](docs/architecture.md), [capabilities](docs/capabilities.md), and [roadmap](docs/roadmap.md).
 
