@@ -69,7 +69,7 @@ def test_http_protocol_scopes_project_boundaries_and_revocation(tmp_path):
                         assert not result.isError, result
                         memory_id = result.structuredContent["id"]
                         forbidden = await session.call_tool(
-                            "memory_forget", {"memory_id": memory_id}
+                            "memory_forget", {"memory_id": memory_id, "expected_revision": 1}
                         )
                         assert forbidden.isError
                 http.headers["Authorization"] = "Bearer " + reader_token
@@ -87,6 +87,86 @@ def test_http_protocol_scopes_project_boundaries_and_revocation(tmp_path):
                 http.headers["Authorization"] = "Bearer " + token
                 response = await http.post("http://127.0.0.1:8765/mcp", json={})
                 assert response.status_code == 401
+
+    asyncio.run(exercise())
+
+
+def test_two_http_clients_share_revisions_and_delete_only_the_observed_revision(tmp_path):
+    store = Store(tmp_path / "memory")
+    store.initialize()
+    tokens = []
+    for name in ("writer", "deleter"):
+        path = tmp_path / f"{name}.json"
+        issue_client(
+            store,
+            name=name,
+            scopes=["memory:read", "memory:write", "memory:forget"],
+            projects=["shared"],
+            days=1,
+            output=path,
+            url="http://127.0.0.1:8765/mcp",
+        )
+        tokens.append(json.loads(path.read_text())["token"])
+    server = create_server(MemoryService(store), http=True)
+    app = BearerAuth(server.streamable_http_app(), store)
+
+    async def exercise():
+        async with server.session_manager.run():
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app)) as http:
+
+                async def call(client, tool, arguments):
+                    http.headers["Authorization"] = "Bearer " + tokens[client]
+                    async with streamable_http_client(
+                        "http://127.0.0.1:8765/mcp",
+                        http_client=http,
+                    ) as (read, write, _):
+                        async with ClientSession(read, write) as session:
+                            await session.initialize()
+                            return await session.call_tool(tool, arguments)
+
+                event = dict(
+                    content="The first shared note",
+                    source="test",
+                    account="owner",
+                    event_id="shared-note",
+                    project="shared",
+                )
+                saved = await call(0, "memory_remember", event)
+                assert not saved.isError
+                memory_id = saved.structuredContent["id"]
+                observed = await call(1, "memory_get", {"memory_id": memory_id})
+                assert observed.structuredContent["content"] == event["content"]
+                updated = await call(
+                    0,
+                    "memory_remember",
+                    event
+                    | {
+                        "content": "A new decision after the other client read",
+                        "expected_revision": 1,
+                    },
+                )
+                assert updated.structuredContent["revision"] == 2
+                for arguments in (
+                    {"memory_id": memory_id},
+                    {"memory_id": memory_id, "expected_revision": 1},
+                    {"memory_id": memory_id, "expected_revision": True},
+                    {"memory_id": memory_id, "expected_revision": "2"},
+                ):
+                    rejected = await call(1, "memory_forget", arguments)
+                    assert rejected.isError
+                    assert store.get(memory_id)["revision"] == 2
+                current = await call(1, "memory_get", {"memory_id": memory_id})
+                arguments = {
+                    "memory_id": memory_id,
+                    "expected_revision": current.structuredContent["revision"],
+                }
+                removed = await call(1, "memory_forget", arguments)
+                assert removed.structuredContent["deleted"] is True
+                retry = await call(1, "memory_forget", arguments)
+                assert retry.structuredContent["deleted"] is False
+                reimport = await call(0, "memory_remember", event)
+                assert reimport.isError
+                assert store.status()["memories"] == 0
 
     asyncio.run(exercise())
 

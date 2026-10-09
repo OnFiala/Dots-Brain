@@ -30,8 +30,11 @@ is introduced. Tool results can contain private memories: do not publish them.
 
 On the canonical host only, add `--local-data-dir /existing/memory` to start a
 stopped enabled service before connecting. This option requires an already
-initialized store and respects whole-instance uninstall. It does not enable VM
-boot supervision. For a remote client, omit the local data directory.
+initialized store, a credential valid for that store, and a credential endpoint
+matching its saved loopback service address. A missing service state or mismatch
+fails before startup; fix the installation or connection explicitly. The stdio
+bridge applies the same checks. This respects whole-instance uninstall and does
+not enable VM boot supervision. For a remote client, omit the local data directory.
 
 The agent may install a private wrapper containing these paths and document the
 canonical instance in its workspace instructions. A wrapper contains no token.

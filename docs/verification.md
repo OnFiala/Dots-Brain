@@ -6,6 +6,22 @@ this VM. Earlier tests used disposable instances; an actual retained installatio
 has now been exercised separately. See [deployment evidence](vm-deployment.md).
 Dependencies are recorded in `uv.lock`.
 
+## Unreleased shared-client safety checks — 2026-10-09
+
+On macOS with Python 3.11.14, the locally executable suite passed 75 tests. Eight
+Linux-managed-process tests were explicitly excluded; two synthetic vector tests
+were skipped because NumPy was absent, and the opt-in real-model test was skipped.
+The new checks cover stale/invalid deletion revisions through SQLite and real
+MCP SDK HTTP messages, two authenticated clients sharing revisions, and rejection
+of missing/mismatched local resume targets before startup. An existing live
+loopback HTTP process plus subprocess stdio bridge test also passed. All data and
+credentials were disposable fixtures.
+
+Lint, formatting, documentation validation and offline wheel/sdist builds passed.
+This is local source evidence: Linux restart/reconnect, the retained VM, actual
+Botter/Grok clients, and real embedding inference were not revalidated here.
+The existing Linux suite must pass on the candidate before a release is approved.
+
 ## OAuth validation follow-up: 0.3.0-alpha.2
 
 The follow-up adds two issuer-validation cases, bringing the suite to 66 tests

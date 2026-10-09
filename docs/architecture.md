@@ -21,6 +21,10 @@ Identical retries must not duplicate memories. Conflicting versions must not
 silently replace history. Source text and provenance are authoritative; search
 indexes are derived. Forgetting removes text and derived representations and
 retains a minimal suppression record to prevent accidental reimport.
+Deletion compares the caller's observed revision inside the same write transaction
+as removal. A concurrent update requires the caller to review the new revision
+and deletion intent. Source metadata is client-declared; authenticated writer
+attribution and project-scoped source identities remain planned.
 
 Search combines full-text and local semantic retrieval. Results include source
 references and revisions. Context is bounded; an entire archive does not belong

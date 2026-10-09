@@ -4,6 +4,20 @@ Keep the same canonical data directory. Read the target release's changelog and
 use its immutable GitHub tag; do not treat a moving development branch as a release.
 An agent can do these steps within an already authorized installation request.
 
+The unreleased shared-client safety changes keep SQLite schema version 1 but
+require `expected_revision` for `memory_forget` and `Store.forget`. Refresh MCP
+tool discovery and update custom deletion callers to pass the revision they
+actually reviewed. Missing or stale revisions fail without deletion. Bundled
+verification helpers pass their original probe revision. An older server still
+has its older deletion behavior; updating a client alone does not add protection.
+Update the source shell helper together with its matching package, because the
+new helper imports the package's local connection validation.
+
+Automatic local resume now requires existing managed service state and a matching
+local credential. It cannot initialize an absent store or start a different store
+for a connection. Use explicit setup/connect commands to repair configuration;
+do not work around a mismatch by creating another database.
+
 1. Record the installed version, actual interpreter, data directory, connected
    client paths, and whether semantic search is enabled. Do not print credentials.
 2. Review user changes in the checkout before updating it. Never reset or overwrite

@@ -230,13 +230,11 @@ def run(args) -> dict | None:
             "event_automation": "not_implemented",
         }
     if args.command in ("bridge", "verify"):
-        from .bridge import run_bridge, verify_connection
+        from .bridge import resume_local_connection, run_bridge, verify_connection
 
         if args.command == "bridge":
             if args.local_data_dir is not None:
-                from .runtime import up
-
-                up(Store(args.local_data_dir))
+                resume_local_connection(args.credential_file, args.local_data_dir)
             return asyncio.run(run_bridge(args.credential_file))
         return asyncio.run(
             verify_connection(args.credential_file, write=args.write, project=args.project)

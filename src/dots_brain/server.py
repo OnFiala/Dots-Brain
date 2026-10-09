@@ -6,11 +6,12 @@ import asyncio
 import contextlib
 import logging
 from functools import partial
-from typing import Any
+from typing import Annotated, Any
 
 import anyio
 from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
+from pydantic import Field
 
 from .auth import Policy
 from .errors import InputError
@@ -207,10 +208,19 @@ def create_server(service: MemoryService, *, http: bool = False, port: int = 876
             readOnlyHint=False, destructiveHint=True, idempotentHint=True, openWorldHint=False
         )
     )
-    async def memory_forget(memory_id: str) -> dict[str, Any]:
-        """Delete a memory and its revisions, and suppress reimport. Requires user intent."""
+    async def memory_forget(
+        memory_id: str, expected_revision: Annotated[int, Field(strict=True, ge=1)]
+    ) -> dict[str, Any]:
+        """Delete only the observed revision; suppress reimport. Requires explicit user intent.
+
+        Read with memory_get first. On conflict, review the new content and user intent;
+        never retry deletion automatically with a newer revision.
+        """
         return await write_call(
-            service.store.forget, memory_id, projects=policy("memory:forget").projects
+            service.store.forget,
+            memory_id,
+            expected_revision=expected_revision,
+            projects=policy("memory:forget").projects,
         )
 
     @server.tool(annotations=read)

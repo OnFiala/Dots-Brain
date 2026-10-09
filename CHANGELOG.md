@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Require a positive `expected_revision` for MCP and store deletion. Reject stale
+  deletes atomically, keep completed-delete retries idempotent, and update probe
+  cleanup to use its originally written revision. Custom deletion clients must
+  refresh tool discovery and supply the revision they reviewed.
+- Validate an existing store, its client credential, and its saved loopback endpoint
+  before automatic local resume from the stdio bridge or shell helper. Reject a
+  missing or mismatched installation without implicitly creating another database.
 - Add an official-SDK shell client for an existing MCP connection, with schema
   discovery, JSON input, scoped calls, and recovery of an enabled local service.
 - Verify an installed instance on the user-confirmed shared Work/Dot VM with

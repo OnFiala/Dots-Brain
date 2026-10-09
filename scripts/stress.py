@@ -160,7 +160,7 @@ def run(records: int, workers: int, http_calls: int) -> dict:
             down(store)
 
         for record, _ in writes[: min(records, 100)]:
-            store.forget(record["id"])
+            store.forget(record["id"], expected_revision=record["revision"])
         for payload in payloads[: min(records, 100)]:
             try:
                 store.remember(**payload)

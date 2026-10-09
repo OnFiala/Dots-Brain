@@ -89,3 +89,29 @@ def test_bounded_context_and_private_export(tmp_path):
     assert result.returncode == 0
     assert Path(output).stat().st_mode & 0o777 == 0o600
     assert json.loads(output.read_text())["source"] == "test"
+
+
+def test_bridge_with_wrong_local_directory_cannot_initialize_it(tmp_path):
+    missing = tmp_path / "must-not-create"
+    credential = tmp_path / "client.json"
+    credential.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "token": "private-test-value",
+                "url": "http://127.0.0.1:8765/mcp",
+            }
+        )
+    )
+    result = cli(
+        missing,
+        "bridge",
+        "--credential-file",
+        str(credential),
+        "--local-data-dir",
+        str(missing),
+    )
+    assert result.returncode == 1
+    assert "not initialized" in result.stderr
+    assert not missing.exists()
+    assert "private-test-value" not in result.stdout + result.stderr

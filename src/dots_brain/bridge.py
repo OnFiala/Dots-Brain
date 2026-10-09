@@ -11,8 +11,34 @@ from mcp.client.streamable_http import streamable_http_client
 from mcp.server.lowlevel import Server
 from mcp.server.stdio import stdio_server
 
-from .auth import read_connection
+from .auth import authenticate, read_connection
 from .errors import InputError
+
+
+def resume_local_connection(path: Path, directory: Path) -> None:
+    """Resume only an existing service matched by its local credential and endpoint."""
+    from .local import read_json
+    from .runtime import ensure_enabled, state_path, up
+    from .store import Store
+
+    store = Store(directory)
+    ensure_enabled(store)
+    store.status()  # Validate the existing store without initializing a new one.
+    connection = read_connection(path)
+    if authenticate(store, connection["token"]) is None:
+        raise InputError("The connection credential is not valid for this local store.")
+    if not state_path(store).is_file():
+        raise InputError("No managed service state exists; configure the local service explicitly.")
+    state = read_json(state_path(store))
+    port = state.get("port")
+    if (
+        type(port) is not int
+        or not 1 <= port <= 65535
+        or state.get("url") != f"http://127.0.0.1:{port}/mcp"
+        or connection["url"] != state["url"]
+    ):
+        raise InputError("The connection endpoint does not match the existing local service.")
+    up(store)
 
 
 @asynccontextmanager
@@ -81,9 +107,17 @@ async def verify_session(session, *, write=False, project="default", cleanup_sto
                 record = cleanup_store.get(memory_id)
                 if record["event_id"] != event_id or record["source"] != "dots-brain-probe":
                     raise InputError("Probe identity mismatch; no memory was removed.")
-                cleanup_store.forget(memory_id)
+                cleanup_store.forget(
+                    memory_id, expected_revision=saved.structuredContent["revision"]
+                )
             else:
-                removed = await session.call_tool("memory_forget", {"memory_id": memory_id})
+                removed = await session.call_tool(
+                    "memory_forget",
+                    {
+                        "memory_id": memory_id,
+                        "expected_revision": saved.structuredContent["revision"],
+                    },
+                )
                 if removed.isError:
                     raise InputError("The synthetic connection probe could not be removed.")
     return {

@@ -3,7 +3,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
-from dots_brain.errors import ConflictError, NotFoundError, SuppressedError
+from dots_brain.errors import ConflictError, InputError, NotFoundError, SuppressedError
 from dots_brain.store import Store
 
 
@@ -51,7 +51,9 @@ def test_project_boundaries_apply_before_search_and_to_all_reads(store):
     assert store.search("design", projects=()) == []
     with pytest.raises(NotFoundError):
         store.get(private["id"], projects=("beta",))
-    assert store.forget(private["id"], projects=("beta",))["deleted"] is False
+    assert (
+        store.forget(private["id"], expected_revision=999, projects=("beta",))["deleted"] is False
+    )
     assert store.status(projects=("beta",))["memories"] == 1
     assert len(list(store.export(projects=("beta",)))) == 1
 
@@ -67,8 +69,8 @@ def test_explicit_revision_can_restore_earlier_content(store):
 def test_forget_removes_revisions_search_and_prevents_reimport(store):
     record = remember(store)
     remember(store, content="Changed private content", expected_revision=1)
-    assert store.forget(record["id"])["deleted"] is True
-    assert store.forget(record["id"])["deleted"] is False
+    assert store.forget(record["id"], expected_revision=2)["deleted"] is True
+    assert store.forget(record["id"], expected_revision=2)["deleted"] is False
     with pytest.raises(NotFoundError):
         store.get(record["id"], revision=1)
     assert store.search("SQLite private") == []
@@ -76,6 +78,28 @@ def test_forget_removes_revisions_search_and_prevents_reimport(store):
     with pytest.raises(SuppressedError):
         remember(store)
     assert store.status()["memories"] == 0
+
+
+def test_stale_forget_preserves_the_new_revision_and_allows_current_delete(store):
+    first = remember(store)
+    remember(store, content="A newer decision from another client", expected_revision=1)
+    with pytest.raises(ConflictError, match="current expected_revision"):
+        store.forget(first["id"], expected_revision=first["revision"])
+    assert store.get(first["id"])["revision"] == 2
+    assert store.get(first["id"], revision=1)["content"].startswith("Use SQLite")
+    assert store.search("newer")[0]["id"] == first["id"]
+    assert store.forget(first["id"], expected_revision=2)["deleted"] is True
+    assert store.forget(first["id"], expected_revision=2)["deleted"] is False
+    with pytest.raises(SuppressedError):
+        remember(store)
+
+
+@pytest.mark.parametrize("revision", [None, True, False, 0, -1, 1.5, "1"])
+def test_forget_rejects_invalid_revision_without_removing_memory(store, revision):
+    record = remember(store)
+    with pytest.raises(InputError, match="positive integer"):
+        store.forget(record["id"], expected_revision=revision)
+    assert store.get(record["id"])["revision"] == 1
 
 
 def test_concurrent_retries_create_one_record(store):

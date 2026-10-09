@@ -6,9 +6,7 @@ import json
 import sys
 from pathlib import Path
 
-from dots_brain.bridge import connect
-from dots_brain.runtime import up
-from dots_brain.store import Store
+from dots_brain.bridge import connect, resume_local_connection
 
 
 async def request(credential: Path, tool: str | None, arguments: dict) -> tuple[dict, int]:
@@ -40,9 +38,7 @@ def main() -> int:
             if not isinstance(arguments, dict):
                 raise ValueError("Arguments must be an object.")
         if args.local_data_dir is not None:
-            store = Store(args.local_data_dir)
-            store.status()  # Never initialize another canonical memory implicitly.
-            up(store)
+            resume_local_connection(args.credential_file, args.local_data_dir)
         result, status = asyncio.run(
             asyncio.wait_for(request(args.credential_file, args.tool, arguments), timeout=45)
         )

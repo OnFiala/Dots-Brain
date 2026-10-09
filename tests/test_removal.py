@@ -64,7 +64,7 @@ def test_complete_lifecycle_keeps_memories_and_blocks_restart_until_explicit_res
             content="Keep this memory.", source="test", account="a", event_id="1"
         )
         deleted = store.remember(content="Forget this.", source="test", account="a", event_id="2")
-        store.forget(deleted["id"])
+        store.forget(deleted["id"], expected_revision=deleted["revision"])
         config_doc = read_json(config)
         entry = config_doc["mcpServers"]["dots-brain"]
         token = read_connection(Path(entry["args"][4]))["token"]

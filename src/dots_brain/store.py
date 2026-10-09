@@ -294,16 +294,32 @@ class Store:
             ).fetchall()
         return [self._record(row) for row in rows]
 
-    def forget(self, memory_id: str, *, projects: tuple[str, ...] | None = None) -> dict:
+    def forget(
+        self,
+        memory_id: str,
+        *,
+        expected_revision: int,
+        projects: tuple[str, ...] | None = None,
+    ) -> dict:
+        if (
+            isinstance(expected_revision, bool)
+            or not isinstance(expected_revision, int)
+            or expected_revision < 1
+        ):
+            raise InputError("expected_revision must be a positive integer.")
         clause, args = self._filter(projects)
         with self.connection(write=True) as db:
             row = db.execute(
-                "SELECT m.source_key FROM memories m WHERE m.id=?" + clause,
+                "SELECT m.source_key,m.revision FROM memories m WHERE m.id=?" + clause,
                 [memory_id, *args],
             ).fetchone()
             if row is None:
                 return {"deleted": False}
-            db.execute("INSERT OR IGNORE INTO suppressions VALUES (?,?)", (row[0], now()))
+            if row["revision"] != expected_revision:
+                raise ConflictError("Content changed; supply the current expected_revision.")
+            db.execute(
+                "INSERT OR IGNORE INTO suppressions VALUES (?,?)", (row["source_key"], now())
+            )
             db.execute("DELETE FROM memory_fts WHERE memory_id=?", (memory_id,))
             db.execute("DELETE FROM memories WHERE id=?", (memory_id,))
         return {"deleted": True, "reimport_suppressed": True}

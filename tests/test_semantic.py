@@ -50,7 +50,7 @@ def test_semantic_excludes_stale_revisions_and_unauthorized_projects(index):
     assert index.search("fact") == []
     assert index.index()["indexed"] == 1
     assert index.search("fact")[0]["revision"] == 2
-    index.store.forget(memory["id"])
+    index.store.forget(memory["id"], expected_revision=2)
     assert index.search("fact") == []
 
 
@@ -59,7 +59,7 @@ def test_forget_during_embedding_does_not_resurrect_memory(index):
     original = index._embed
 
     def embed(text):
-        index.store.forget(memory["id"])
+        index.store.forget(memory["id"], expected_revision=memory["revision"])
         return original(text)
 
     index._embed = embed
