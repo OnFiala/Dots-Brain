@@ -1,9 +1,10 @@
 # Verification evidence
 
 Environment: managed Linux workspace, Python 3.12.14, SQLite through the Python
-standard library. On 2026-10-05 the user confirmed that Work and their Dot share
-this VM. Earlier tests used disposable instances; an actual retained installation
-has now been exercised separately. See [deployment evidence](vm-deployment.md).
+standard library. On 2026-10-05 the user confirmed that Work and their Dot shared
+this VM. Earlier tests used disposable instances; a retained installation was
+exercised separately that day. Its historical paths were absent in owner-relayed
+checks on 2026-10-09; see [current deployment status](vm-deployment.md).
 Dependencies are recorded in `uv.lock`.
 
 ## Unreleased shared-client safety checks — 2026-10-09
@@ -26,9 +27,11 @@ Linux CI then passed all 85 default tests on Python 3.11 and 3.12 for commit
 `1bc3604`, with only the real-model test skipped. That run includes Linux managed
 restart/reconnect, synthetic vector deletion, lint, formatting, documentation and
 package builds. See [the exact CI run](https://github.com/OnFiala/Dots-Brain/actions/runs/37954727661).
-The bounded stress harness now also has a regression test to keep its winning
-update's revision for synthetic cleanup. These checks do not establish the state
-of the retained VM or either actual bot.
+The bounded stress harness also gained a regression test to keep its winning
+update's revision for synthetic cleanup. Commit `0a76fd4` then passed 86 default
+tests on each Python version, with the real-model test skipped; see
+[the follow-up CI run](https://github.com/OnFiala/Dots-Brain/actions/runs/37955075130).
+These checks do not establish the state of the retained VM or either actual bot.
 
 ## OAuth validation follow-up: 0.3.0-alpha.2
 

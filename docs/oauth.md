@@ -140,5 +140,23 @@ entries may still need removal through that client's supported controls.
 - Continuous capture, history import, native ChatGPT views, VM persistence, and
   automatic tunnel provisioning remain separate capabilities.
 
+### Grok Bot compatibility investigation: 2026-10-09
+
+Disposable local handler probes accepted public-client registration without a
+client secret for the HTTPS Cursor callback and `http://localhost:8787/callback`
+(`201`). Adding `cursor://anysphere.cursor-mcp/oauth/callback` to the same list
+rejected the whole registration (`400 invalid_redirect_uri`). S256 authorization
+reached owner pairing; `plain` returned `invalid_request` through the callback.
+These probes used synthetic data and did not connect a real Grok Bot client.
+
+A [September Cursor support report](https://forum.cursor.com/t/grok-bot-custom-mcp-oauth-fails-before-sign-in-redirect-uri-not-allowed/171877)
+describes that three-callback registration and a planned change. The current
+client's callback list remains unverified. Do not relax callback validation based
+only on that historical report. During an authorized real connection, inspect
+sanitized registration metadata for `redirect_uris` and
+`token_endpoint_auth_method`; inspect the authorization request for
+`code_challenge_method`. The latter is not a registration field. Do not record
+secrets, authorization codes, tokens, or pairing URLs.
+
 The OAuth tables are additive to the existing memory schema. See
 [upgrading](upgrading.md), [uninstall](uninstall.md), and [troubleshooting](troubleshooting.md).
