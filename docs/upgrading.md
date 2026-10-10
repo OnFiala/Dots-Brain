@@ -26,9 +26,11 @@ stores need this migration. `setup`, `serve` and OAuth configuration do not add
 missing tables. `doctor` reports `migration_required` until migration completes.
 
 Stop the old process with its original supervisor and interpreter. Keep that
-interpreter and the installation configuration for rollback. Managed-daemon
-upgrade is still under recheck; do not infer a deployment approval from these
-database migration tests.
+interpreter and the installation configuration for rollback. The new `down` recognizes the exact managed command from 0.3.0-alpha.2 and
+0.4.0-alpha.1 using PID start time, data path and port. It never adopts a different
+release during `up`: stop it explicitly, migrate, then start. Startup replaces only
+the old installation probe with a read-only credential; ordinary client scope
+changes still require explicit replacement.
 
 Use the new interpreter for these commands, with all writers stopped. Choose a
 new backup filename in an existing private directory:

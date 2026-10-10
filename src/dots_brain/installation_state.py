@@ -4,6 +4,7 @@ Only an ordinary uninstall is resumable. Recovery transitions retain their
 identity and require an explicit cutover or cancellation.
 """
 
+from contextlib import contextmanager
 from datetime import UTC, datetime
 
 from .errors import StateError
@@ -42,11 +43,23 @@ def mark_uninstalled(store) -> None:
         write_marker(store, reason="uninstalled")
 
 
-def resume_uninstalled(store) -> None:
-    state = read_marker(store)
-    if not state:
-        return
-    if state.get("version") != 1 or state.get("reason") != "uninstalled":
+@contextmanager
+def resume_uninstalled(store, *, requested: bool):
+    """Restore the original disable barrier if an explicitly requested startup fails."""
+    state = read_marker(store) if requested else {}
+    legacy = (
+        state.get("version") == 1
+        and state.get("disabled") is True
+        and set(state) <= {"version", "disabled", "uninstalled_at"}
+    )
+    if state and not (legacy or state.get("version") == 1 and state.get("reason") == "uninstalled"):
         raise StateError("Recovery requires activate-restore; up --resume cannot bypass it.")
-    marker_path(store).unlink()
-    sync_directory(store.directory)
+    if state:
+        marker_path(store).unlink()
+        sync_directory(store.directory)
+    try:
+        yield
+    except BaseException:
+        if state and not marker_path(store).exists():
+            write_json(marker_path(store), state)
+        raise

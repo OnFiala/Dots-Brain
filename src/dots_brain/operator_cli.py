@@ -120,33 +120,23 @@ def run_oauth(store, args):
 def doctor(store):
     """Return independent diagnoses, including an unreadable or older database."""
     from .oauth import configuration
+    from .runtime import managed_status
 
     checks = {}
     for name, probe in {
         "database": store.status,
         "oauth": lambda: {"state": "configured" if configuration(store) else "not_configured"},
-        "managed_service": lambda: (
-            read_json(store.directory / "service.json")
-            if (store.directory / "service.json").exists()
-            else {"state": "not_managed"}
-        ),
+        "managed_service": lambda: managed_status(store),
     }.items():
         try:
             value = probe()
-            # Never echo raw installation state, which can contain arbitrary local fields.
-            if name == "managed_service":
-                value = {
-                    "state": "readable"
-                    if (store.directory / "service.json").exists()
-                    else "not_managed"
-                }
             checks[name] = value
         except (BrainError, OSError, ValueError, sqlite3.Error) as exc:
             checks[name] = {"state": "error", "error": safe_error(exc)}
     blocked = any(value.get("state") == "error" for value in checks.values())
     return {
         "state": "diagnosis_completed",
-        "healthy": not blocked,
+        "healthy": not blocked and not (store.directory / "disabled.json").exists(),
         "version": __version__,
         "sqlite_version": sqlite3.sqlite_version,
         "service_disabled": (store.directory / "disabled.json").exists(),

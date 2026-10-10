@@ -13,15 +13,14 @@ import subprocess
 import sys
 import threading
 import time
-import uuid
 from pathlib import Path
 
 from . import __version__
 from .auth import authenticate, issue_client, read_connection, revoke_client
 from .bridge import verify_connection
-from .errors import InputError, StoreDisabledError
+from .errors import InputError, StateError, StoreDisabledError
 from .installation_state import resume_uninstalled
-from .local import locked, read_json, write_json
+from .local import lock_status, locked, read_json, write_json
 from .store import Store
 
 
@@ -109,39 +108,46 @@ def boot_identity() -> str | None:
 
 
 def owns_process(store: Store, state: dict) -> bool:
-    """Prove that a state file names this store's managed Python process."""
-    if not active(state):
+    """Match PID start time and the exact managed command before signaling it.
+
+    Historical state lacks boot/executable fields. Its recognized release and
+    original command still bind it to this installation; up requires explicit
+    down before replacing a different release.
+    """
+    if not active(state) or type(state.get("port")) is not int:
         return False
-    expected_directory = str(store.directory.resolve())
-    claimed_executable = state.get("executable")
-    if not isinstance(claimed_executable, str) or not os.path.isabs(claimed_executable):
-        return False
+    directory = str(store.directory)
     try:
-        # A newer virtual environment must still be able to stop a process
-        # started by the previous environment.  The state value is safe only
-        # after it agrees with the live process and the installation identity.
-        expected_executable = str(Path(claimed_executable).resolve(strict=True))
+        arguments = Path(f"/proc/{state['pid']}/cmdline").read_bytes().split(b"\0")
+        arguments = [value.decode("utf-8", "surrogateescape") for value in arguments if value]
+        executable = os.readlink(f"/proc/{state['pid']}/exe").removesuffix(" (deleted)")
     except OSError:
         return False
-    if state.get("data_dir") != expected_directory or state.get("boot_id") != boot_identity():
+    expected = [
+        "-m",
+        "dots_brain.cli",
+        "--data-dir",
+        directory,
+        "serve",
+        "--transport",
+        "http",
+        "--port",
+        str(state["port"]),
+    ]
+    if arguments[1:10] != expected or type(state.get("semantic")) is not bool:
         return False
-    try:
-        command = Path(f"/proc/{state['pid']}/cmdline").read_bytes().split(b"\0")
-        executable = str(Path(f"/proc/{state['pid']}/exe").resolve())
-    except OSError:
+    tail = arguments[10:]
+    if len(tail) >= 2 and tail[0] == "--listen-fd" and tail[1].isdigit():
+        tail = tail[2:]
+    if tail != (["--semantic"] if state["semantic"] else []):
         return False
-    arguments = [item.decode("utf-8", "surrogateescape") for item in command if item]
-    try:
-        directory_argument = arguments.index("--data-dir")
-    except ValueError:
-        return False
+    identity_fields = {"data_dir", "executable", "boot_id"}
+    if not identity_fields.intersection(state):
+        return state.get("version") in {"0.3.0a2", "0.4.0a1"}
     return (
-        executable == expected_executable
-        and len(arguments) >= 6
-        and arguments[1:3] == ["-m", "dots_brain.cli"]
-        and directory_argument + 1 < len(arguments)
-        and arguments[directory_argument + 1] == expected_directory
-        and "serve" in arguments
+        state.get("data_dir") == directory
+        and state.get("boot_id") == boot_identity()
+        and state.get("executable") == executable
     )
 
 
@@ -151,16 +157,14 @@ def load_state(store: Store) -> dict:
         return {}
     try:
         value = read_json(path)
-        if not isinstance(value.get("pid", 0), int) or isinstance(value.get("pid"), bool):
-            raise InputError("Managed service state has an invalid pid.")
+        if type(value.get("pid")) is not int or not isinstance(value.get("process_start"), str):
+            raise ValueError
         return value
     except (OSError, ValueError, InputError):
-        quarantine = path.with_name(path.name + ".corrupt-" + uuid.uuid4().hex)
-        try:
-            os.replace(path, quarantine)
-        except OSError as exc:
-            raise InputError("Cannot quarantine corrupt managed service state.") from exc
-        return {"_corrupt_state": str(quarantine)}
+        raise StateError(
+            "Managed service state is corrupt; it was preserved. "
+            "Identify the running process before repairing service.json."
+        ) from None
 
 
 def credential(
@@ -196,13 +200,33 @@ def credential(
         policy = authenticate(store, current["token"])
         if policy is not None:
             expected_projects = None if projects is None else tuple(sorted(set(projects)))
-            if policy.projects != expected_projects or policy.scopes != frozenset(scopes):
-                raise InputError(
-                    "Existing client permissions differ; do not silently broaden them."
+            if policy.principal != f"local-client:{current['client_id']}":
+                raise StateError("Credential identity does not match its authenticated client.")
+            same_permissions = policy.projects == expected_projects and policy.scopes == frozenset(
+                scopes
+            )
+            installation_probe = (
+                name == "installation-probe"
+                and path == store.directory / "probe.connection.json"
+                and expected_projects == ("__dots_brain_probe__",)
+                and scopes == ["memory:read"]
+                and policy.projects == expected_projects
+                and policy.scopes == frozenset({"memory:read", "memory:write", "memory:forget"})
+            )
+            if not same_permissions and not installation_probe:
+                raise StateError(
+                    "Existing client permissions differ; explicitly replace this client."
                 )
-            if current["url"] != url:
-                write_json(path, {**current, "url": url})
-            return current["client_id"]
+            if same_permissions:
+                if current["url"] != url:
+                    write_json(path, {**current, "url": url})
+                return current["client_id"]
+            # Revocation precedes removal: interruption cannot leave a wider probe usable.
+            revoke_client(store, current["client_id"])
+            path.unlink()
+            return issue_client(
+                store, name=name, scopes=scopes, projects=projects, days=365, output=path, url=url
+            )["client_id"]
         if not replace_invalid:
             raise InputError("Existing client credential is expired or invalid; it was preserved.")
         with contextlib.suppress(InputError):
@@ -267,10 +291,6 @@ def ensure_enabled(store: Store) -> None:
         )
 
 
-def resume_installation(store: Store) -> None:
-    resume_uninstalled(store)
-
-
 def daemon_environment() -> dict[str, str]:
     """Pass only locale and home state that the managed interpreter needs."""
     allowed = {"HOME", "LANG", "LC_ALL", "LC_CTYPE", "TZ"}
@@ -290,6 +310,118 @@ def schedule_reap(process: subprocess.Popen) -> None:
     threading.Thread(target=reap_process, args=(process,), daemon=True).start()
 
 
+@contextlib.contextmanager
+def reserve_listener(port: int | None, previous: dict):
+    """Keep the bound socket open until the child inherits it; never change a saved port."""
+    selected = port if port is not None else previous.get("port", 8765)
+    with socket.socket() as listener:
+        listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        listener.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        deadline = time.monotonic() + (3 if previous else 0)
+        while True:
+            try:
+                listener.bind(("127.0.0.1", selected))
+                break
+            except OSError as exc:
+                if exc.errno != errno.EADDRINUSE:
+                    raise
+                # A killed process can leave worker threads briefly releasing sockets.
+                if previous and time.monotonic() < deadline:
+                    time.sleep(0.05)
+                    continue
+                if port is not None or previous:
+                    raise InputError("The configured local port is already occupied.") from None
+                listener.bind(("127.0.0.1", 0))
+                break
+        listener.listen(128)
+        yield listener
+
+
+def start_daemon(store: Store, previous: dict, *, port, semantic, issuer) -> dict:
+    """Reserve the endpoint, start one child and return its process identity."""
+    semantic = previous.get("semantic", False) if semantic is None else semantic
+    if semantic:
+        from .semantic import verify_model_artifacts
+
+        verify_model_artifacts(store)  # Do not load a second model in the parent.
+    log_path = store.directory / "service.log"
+    if log_path.is_symlink():
+        raise InputError("Managed service log must not be a symbolic link.")
+    if log_path.exists() and log_path.stat().st_size > 1024 * 1024:
+        os.replace(log_path, log_path.with_name("service.log.1"))
+    with reserve_listener(port, previous) as listener:
+        selected_port = listener.getsockname()[1]
+        command = [
+            sys.executable,
+            "-m",
+            "dots_brain.cli",
+            "--data-dir",
+            str(store.directory),
+            "serve",
+            "--transport",
+            "http",
+            "--port",
+            str(selected_port),
+            "--listen-fd",
+            str(listener.fileno()),
+        ]
+        if semantic:
+            command.append("--semantic")
+        log_fd = os.open(log_path, os.O_CREAT | os.O_APPEND | os.O_WRONLY | os.O_NOFOLLOW, 0o600)
+        try:
+            process = subprocess.Popen(
+                command,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=log_fd,
+                start_new_session=True,
+                close_fds=True,
+                pass_fds=(listener.fileno(),),
+                cwd=store.directory,
+                env=daemon_environment(),
+            )
+            schedule_reap(process)
+        finally:
+            os.close(log_fd)
+    return {
+        "version": __version__,
+        "pid": process.pid,
+        "process_start": process_identity(process.pid),
+        "port": selected_port,
+        "semantic": semantic,
+        "url": f"http://127.0.0.1:{selected_port}/mcp",
+        "oauth_issuer": issuer,
+        "data_dir": str(store.directory.resolve()),
+        "executable": str(Path(sys.executable).resolve()),
+        "boot_id": boot_identity(),
+    }
+
+
+def verify_daemon(store: Store, state: dict) -> None:
+    """Require a real MCP read and matching process identity before recording startup."""
+    probe = store.directory / "probe.connection.json"
+    credential(
+        store,
+        name="installation-probe",
+        path=probe,
+        url=state["url"],
+        projects=["__dots_brain_probe__"],
+        write=False,
+        replace_invalid=True,
+    )
+    deadline = time.monotonic() + 15
+    while True:
+        try:
+            result = asyncio.run(asyncio.wait_for(verify_connection(probe), timeout=3))
+            if result["read"] and owns_process(store, state):
+                break
+        except Exception:
+            pass
+        if not owns_process(store, state) or time.monotonic() >= deadline:
+            raise InputError("The managed service did not pass its MCP readiness check.")
+        time.sleep(0.1)
+
+
 def up(
     store: Store, *, port: int | None = None, semantic: bool | None = None, resume: bool = False
 ) -> dict:
@@ -301,17 +433,20 @@ def up(
         )
     if port is not None and not 0 <= port <= 65535:
         raise InputError("Port must be between 0 and 65535; zero selects an available port.")
-    with locked(store.directory / "service.lock", create_parent=True):
-        if resume:
-            resume_installation(store)
+    with (
+        locked(store.directory / "service.lock", create_parent=True),
+        resume_uninstalled(store, requested=resume),
+    ):
         ensure_enabled(store)
         store.initialize()
         state = load_state(store)
-        if state.get("_corrupt_state"):
-            raise InputError(
-                "Managed service state was corrupt and has been quarantined; "
-                "inspect the running process before starting a replacement."
-            )
+        if state and (
+            type(state.get("port")) is not int
+            or not 1 <= state["port"] <= 65535
+            or type(state.get("semantic")) is not bool
+            or state.get("url") != f"http://127.0.0.1:{state['port']}/mcp"
+        ):
+            raise StateError("Managed service endpoint/options are invalid; state was preserved.")
         oauth = configuration(store)
         issuer = oauth["issuer"] if oauth else None
         managed = owns_process(store, state)
@@ -328,117 +463,10 @@ def up(
             ):
                 raise InputError("Stop the existing service before changing its runtime options.")
         else:
-            selected_port = port if port is not None else state.get("port", 8765)
-            listen_fd: int | None = None
-            with socket.socket() as reservation:
-                reservation.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-                deadline = time.monotonic() + (3 if state else 0)
-                while True:
-                    try:
-                        reservation.bind(("127.0.0.1", selected_port))
-                        break
-                    except OSError as exc:
-                        if exc.errno != errno.EADDRINUSE:
-                            raise
-                        # After SIGKILL the leader can be gone before its worker threads
-                        # finish releasing sockets. Keep the canonical port during recovery.
-                        if state and time.monotonic() < deadline:
-                            time.sleep(0.05)
-                            continue
-                        if port is not None or state:
-                            raise InputError(
-                                "The configured local port is already occupied."
-                            ) from None
-                        reservation.bind(("127.0.0.1", 0))
-                        break
-                selected_port = reservation.getsockname()[1]
-                reservation.listen(128)
-                listen_fd = os.dup(reservation.fileno())
-                os.set_inheritable(listen_fd, True)
-            try:
-                semantic = state.get("semantic", False) if semantic is None else semantic
-                if semantic:
-                    from .semantic import verify_model_artifacts
-
-                    # Validate without loading a second model instance.
-                    verify_model_artifacts(store)
-                command = [
-                    sys.executable,
-                    "-m",
-                    "dots_brain.cli",
-                    "--data-dir",
-                    str(store.directory),
-                    "serve",
-                    "--transport",
-                    "http",
-                    "--port",
-                    str(selected_port),
-                    "--listen-fd",
-                    str(listen_fd),
-                ]
-                if semantic:
-                    command.append("--semantic")
-                log_path = store.directory / "service.log"
-                if log_path.is_symlink():
-                    raise InputError("Managed service log must not be a symbolic link.")
-                if log_path.exists() and log_path.stat().st_size > 1024 * 1024:
-                    os.replace(log_path, log_path.with_name("service.log.1"))
-                log_fd = os.open(
-                    log_path, os.O_CREAT | os.O_APPEND | os.O_WRONLY | os.O_NOFOLLOW, 0o600
-                )
-                try:
-                    process = subprocess.Popen(
-                        command,
-                        stdin=subprocess.DEVNULL,
-                        stdout=subprocess.DEVNULL,
-                        stderr=log_fd,
-                        start_new_session=True,
-                        close_fds=True,
-                        pass_fds=(listen_fd,),
-                        cwd=store.directory,
-                        env=daemon_environment(),
-                    )
-                    schedule_reap(process)
-                finally:
-                    os.close(log_fd)
-            finally:
-                if listen_fd is not None:
-                    os.close(listen_fd)
-            state = {
-                "version": __version__,
-                "pid": process.pid,
-                "process_start": process_identity(process.pid),
-                "port": selected_port,
-                "semantic": semantic,
-                "url": f"http://127.0.0.1:{selected_port}/mcp",
-                "oauth_issuer": issuer,
-                "data_dir": str(store.directory.resolve()),
-                "executable": str(Path(sys.executable).resolve()),
-                "boot_id": boot_identity(),
-            }
-        started = "process" in locals()
+            state = start_daemon(store, state, port=port, semantic=semantic, issuer=issuer)
+        started = not managed
         try:
-            probe = store.directory / "probe.connection.json"
-            credential(
-                store,
-                name="installation-probe",
-                path=probe,
-                url=state["url"],
-                projects=["__dots_brain_probe__"],
-                write=False,
-                replace_invalid=True,
-            )
-            deadline = time.monotonic() + 15
-            while True:
-                try:
-                    result = asyncio.run(asyncio.wait_for(verify_connection(probe), timeout=3))
-                    if result["read"] and owns_process(store, state):
-                        break
-                except Exception:
-                    pass
-                if not owns_process(store, state) or time.monotonic() >= deadline:
-                    raise InputError("The managed service did not pass its MCP readiness check.")
-                time.sleep(0.1)
+            verify_daemon(store, state)
             if started:
                 write_json(state_path(store), state)
         except BaseException:
@@ -458,8 +486,25 @@ def up(
             "public_ingress": "not_configured",
             "oauth": "configured" if issuer else "not_configured",
             "configured_mcp_url": issuer + "/mcp" if issuer else None,
-            "capture": "not_implemented",
+            "capture": "explicit_writes_and_opt_in_snapshots",
         }
+
+
+def managed_status(store: Store) -> dict:
+    """Report only validated process metadata and observed server leases."""
+    state = load_state(store)
+    status = (
+        "not_managed"
+        if not state
+        else (
+            "running"
+            if owns_process(store, state)
+            else "foreign_process"
+            if active(state)
+            else "stopped"
+        )
+    )
+    return {"state": status, "writers": lock_status(store.directory / "writers.lock")}
 
 
 def down(store: Store) -> dict:
@@ -468,4 +513,11 @@ def down(store: Store) -> dict:
     with locked(store.directory / "service.lock"):
         if state_path(store).exists():
             stop_process(store, load_state(store))
-        return {"state": "stopped", "data_preserved": True}
+        leases = lock_status(store.directory / "writers.lock")
+        return {
+            "state": "stopped"
+            if leases["state"] in {"absent", "free"}
+            else "external_writers_remain",
+            "writers": leases,
+            "data_preserved": True,
+        }

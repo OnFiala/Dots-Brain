@@ -19,7 +19,7 @@ from .clients import (
 )
 from .errors import BrainError, InputError
 from .installation_state import mark_uninstalled
-from .local import atomic_write, locked, read_json, write_json
+from .local import atomic_write, lock_status, locked, read_json, write_json
 from .runtime import state_path, stop_process
 from .store import Store
 
@@ -27,7 +27,7 @@ from .store import Store
 def inspect_config(path: Path, provider: str) -> tuple[str, dict, str]:
     if path.is_symlink():
         raise InputError("Symbolic-link configuration was preserved.")
-    original = path.read_text() if path.exists() else ""
+    original = path.read_text(encoding="utf-8") if path.exists() else ""
     document = tomlkit.parse(original) if provider == "codex" else json.loads(original or "{}")
     section = "mcp_servers" if provider == "codex" else "mcpServers"
     if not isinstance(document, dict) or not isinstance(document.get(section, {}), dict):
@@ -54,7 +54,7 @@ def remove_entry(record: dict, *, dry_run: bool) -> dict:
             if provider == "codex"
             else json.dumps(document, ensure_ascii=False, indent=2) + "\n"
         )
-        if path.is_symlink() or path.read_text() != original:
+        if path.is_symlink() or path.read_text(encoding="utf-8") != original:
             return {**result, "state": "preserved_concurrent_change"}
         atomic_write(path, content, preserve=True)
         return {**result, "state": "removed"}
@@ -99,36 +99,43 @@ def inventory(store: Store, extra_configs: list[str]) -> tuple[dict, list[dict]]
             {"state": "registry_unreadable", "action": "Preserve and repair the registry."}
         )
 
-    candidates = [(p, target_path(p, None), False) for p in PROVIDERS if p != "mcp-json"]
+    candidates = [(p, target_path(p, None)) for p in PROVIDERS if p != "mcp-json"]
     for option in extra_configs:
         provider, separator, path = option.partition("=")
         if not separator or not path or provider not in PROVIDERS:
             raise InputError("Expected --config PROVIDER=PATH for a supported provider.")
-        candidates.append((provider, target_path(provider, Path(path)), True))
-    for provider, path, explicit in candidates:
+        candidates.append((provider, target_path(provider, Path(path))))
+    for provider, path in candidates:
         key = integration_key(provider, path)
         if key in registry["items"]:
             continue
-        connection = store.directory / "connections" / f"{provider}.json"
-        expected = bridge_entry(connection, store.directory, provider)
+        private = store.directory / "connections"
+        connections = [private / f"{provider}-{key}.json", private / f"{provider}.json"]
         try:
             _, document, section = inspect_config(path, provider)
             entry = document.get(section, {}).get("dots-brain")
-            if entry == expected:
+            connection = next(
+                (
+                    candidate
+                    for candidate in connections
+                    if entry == bridge_entry(candidate, store.directory, provider)
+                ),
+                None,
+            )
+            if connection is not None:
                 client_id = read_connection(connection)["client_id"] if connection.exists() else ""
                 registry["items"][key] = {
                     "provider": provider,
                     "config_file": str(path),
-                    "entry": expected,
+                    "entry": entry,
                     "connection_file": str(connection),
                     "client_id": client_id,
                     "local": True,
                 }
-            elif explicit and entry is not None:
+            elif entry is not None:
                 issues.append({"config_file": str(path), "state": "preserved_unowned"})
         except (OSError, ValueError, InputError):
-            if explicit:
-                issues.append({"config_file": str(path), "state": "preserved_unreadable"})
+            issues.append({"config_file": str(path), "state": "preserved_unreadable"})
     return registry, issues
 
 
@@ -175,6 +182,14 @@ def disconnect_client(
         result = remove_entry(record, dry_run=dry_run)
         if dry_run:
             return {"state": "preview", "client": result, "changes_applied": False}
+        if result["state"] not in {"removed", "already_absent"}:
+            return {
+                "state": "partial",
+                "client": result,
+                "access": "preserved",
+                "data_preserved": True,
+                "issues": issues,
+            }
         credential = managed_credential(store, record)
         unique = credential is not None and credential.name == f"{provider}-{key}.json"
         shared = any(
@@ -260,7 +275,10 @@ def uninstall(
             try:
                 if state_path(store).exists():
                     stop_process(store, read_json(state_path(store)))
-                stopped = True
+                leases = lock_status(store.directory / "writers.lock")
+                stopped = leases["state"] in {"free", "absent"}
+                if not stopped:
+                    issues.append({"state": "external_writers_remain", "writers": leases})
             except (OSError, ValueError, BrainError):
                 issues.append({"state": "managed_process_stop_failed"})
             credentials_revoked = False
@@ -280,7 +298,7 @@ def uninstall(
             for key, record in registry["items"].items():
                 result = remove_entry(record, dry_run=False)
                 results.append(result)
-                if result["state"] not in {"removed", "already_absent"} or not record["local"]:
+                if result["state"] not in {"removed", "already_absent"}:
                     remaining[key] = record
                 if not record["local"]:
                     issues.append(

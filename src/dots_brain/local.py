@@ -13,6 +13,41 @@ from pathlib import Path
 from .errors import BusyError, InputError
 
 
+def lock_status(path: Path) -> dict:
+    """Inspect a lease without creating it. Owner PIDs come from the Linux kernel."""
+    try:
+        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    except FileNotFoundError:
+        return {"state": "absent", "owners": []}
+    except OSError:
+        return {"state": "unknown", "owners": []}
+    try:
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return {"state": "free", "owners": []}
+        except BlockingIOError:
+            info = os.fstat(descriptor)
+            owners = []
+            try:
+                rows = Path("/proc/locks").read_text(encoding="ascii").splitlines()
+                for row in rows:
+                    fields = row.split()
+                    if len(fields) < 6 or fields[1] != "FLOCK":
+                        continue
+                    major, minor, inode = fields[5].split(":")
+                    if (int(major, 16), int(minor, 16), int(inode)) == (
+                        os.major(info.st_dev),
+                        os.minor(info.st_dev),
+                        info.st_ino,
+                    ) and int(fields[4]) > 0:
+                        owners.append(int(fields[4]))
+            except (OSError, ValueError):
+                pass
+            return {"state": "held", "owners": sorted(set(owners))}
+    finally:
+        os.close(descriptor)
+
+
 @contextlib.contextmanager
 def locked(path: Path, *, timeout: float = 40, shared: bool = False, create_parent: bool = False):
     if create_parent:
@@ -26,8 +61,14 @@ def locked(path: Path, *, timeout: float = 40, shared: bool = False, create_pare
                 break
             except BlockingIOError:
                 if time.monotonic() >= deadline:
+                    owners = lock_status(path)["owners"]
+                    detail = (
+                        f" by PID(s) {', '.join(map(str, owners))}"
+                        if owners
+                        else " (owner unknown)"
+                    )
                     raise BusyError(
-                        "Another process holds the installation lock; stop writers and retry."
+                        f"Lease {path.name} is held{detail}; stop its owner and retry."
                     ) from None
                 time.sleep(0.05)
         yield

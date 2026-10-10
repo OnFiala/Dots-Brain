@@ -273,3 +273,58 @@ def test_running_owner_stdio_rejects_tools_after_uninstall(tmp_path):
                 assert (await session.call_tool("memory_status", {})).isError
 
     asyncio.run(asyncio.wait_for(run(), timeout=15))
+
+
+def test_disconnect_modified_entry_preserves_live_credential_and_registry(tmp_path):
+    store = Store(tmp_path / "memory")
+    config = tmp_path / "cursor.json"
+    record, token = record_connection(store, config)
+    original_registry = (store.directory / "integrations.json").read_bytes()
+    document = read_json(config)
+    document["mcpServers"]["dots-brain"]["env"] = {"USER_SETTING": "preserve"}
+    write_json(config, document)
+    original_config = config.read_bytes()
+    result = disconnect_client(store, provider="cursor", config=config)
+    assert result["state"] == "partial" and result["access"] == "preserved"
+    assert authenticate(store, token) is not None
+    assert Path(record["connection_file"]).exists()
+    assert config.read_bytes() == original_config
+    assert (store.directory / "integrations.json").read_bytes() == original_registry
+
+
+def test_orphaned_current_credential_is_discovered_at_default_config(tmp_path):
+    store = Store(tmp_path / "memory")
+    config = Path.home() / ".cursor/mcp.json"
+    record, token = record_connection(store, config)
+    (store.directory / "integrations.json").unlink()
+    result = uninstall(store)
+    assert result["state"] == "uninstalled"
+    assert result["clients"][0]["state"] == "removed"
+    assert authenticate(store, token) is None
+    assert not Path(record["connection_file"]).exists()
+
+
+def test_default_unowned_entry_is_reported_even_without_installation(tmp_path):
+    store = Store(tmp_path / "missing")
+    config = Path.home() / ".cursor/mcp.json"
+    write_json(config, {"mcpServers": {"dots-brain": {"command": "owner-managed"}}})
+    before = config.read_bytes()
+    result = uninstall(store)
+    assert result["state"] == "partial"
+    assert result["issues"] == [{"config_file": str(config), "state": "preserved_unowned"}]
+    assert config.read_bytes() == before
+    assert not store.directory.exists()
+
+
+def test_unreadable_orphan_credential_at_default_path_cannot_report_complete(tmp_path):
+    store = Store(tmp_path / "memory")
+    config = Path.home() / ".cursor/mcp.json"
+    record, _ = record_connection(store, config)
+    (store.directory / "integrations.json").unlink()
+    credential = Path(record["connection_file"])
+    credential.write_bytes(b"\xff")
+    original = config.read_bytes()
+    result = uninstall(store)
+    assert result["state"] == "partial"
+    assert {"config_file": str(config), "state": "preserved_unreadable"} in result["issues"]
+    assert config.read_bytes() == original and credential.read_bytes() == b"\xff"

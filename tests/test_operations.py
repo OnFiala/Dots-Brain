@@ -11,8 +11,8 @@ from dots_brain.errors import (
     StoreDisabledError,
     SuppressedError,
 )
+from dots_brain.installation_state import resume_uninstalled
 from dots_brain.operations import activate_restore, backup_store, restore_store
-from dots_brain.runtime import resume_installation
 from dots_brain.store import Store
 
 
@@ -75,7 +75,8 @@ def test_restore_activation_rechecks_deletions_and_freezes_old_writers(tmp_path)
         expected_revision=1,
     )  # Public audited mutation after staging, before cutover.
     with pytest.raises((StateError, InputError), match="activate-restore"):
-        resume_installation(target)
+        with resume_uninstalled(target, requested=True):
+            pytest.fail("recovery target cannot resume")
     with pytest.raises(InputError, match="writers-stopped"):
         activate_restore(source, target, writers_stopped=False)
     assert activate_restore(source, target, writers_stopped=True)["removed_at_cutover"] == 1
@@ -89,7 +90,8 @@ def test_restore_activation_rechecks_deletions_and_freezes_old_writers(tmp_path)
     with pytest.raises(StoreDisabledError, match="disabled"):
         source.remember(**{**record, "event_id": "new"})
     with pytest.raises((StateError, InputError), match="activate-restore"):
-        resume_installation(source)
+        with resume_uninstalled(source, requested=True):
+            pytest.fail("recovery source cannot resume")
 
 
 @pytest.mark.parametrize("damage", ["version", "revision"])
@@ -275,3 +277,43 @@ def test_committed_recovery_choice_survives_failed_resume(tmp_path, monkeypatch)
     with pytest.raises(InputError, match="already replaced"):
         activate_restore(source, another, writers_stopped=True)
     assert activate_restore(source, target, writers_stopped=True)["state"] == "restored_ready"
+
+
+@pytest.mark.parametrize("missing_target", [False, True])
+@pytest.mark.parametrize("uninstalled", [False, True])
+def test_abort_pending_restore_retains_uninstall_and_handles_missing_target(
+    tmp_path, monkeypatch, missing_target, uninstalled
+):
+    import shutil
+
+    from dots_brain import operations
+    from dots_brain.installation_state import mark_uninstalled, read_marker
+
+    source, target = Store(tmp_path / "source"), Store(tmp_path / "target")
+    source.initialize()
+    backup = tmp_path / "before.sqlite3"
+    backup_store(source, backup)
+    restore_store(backup, target, latest_deletions=source)
+    sync = operations.sync_file_and_parent
+
+    def fail_after_pending(path):
+        if read_marker(source).get("cutover") == "pending":
+            raise OSError("Synthetic interruption after pending marker")
+        sync(path)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(operations, "sync_file_and_parent", fail_after_pending)
+        with pytest.raises(OSError, match="Synthetic interruption"):
+            activate_restore(source, target, writers_stopped=True)
+    assert read_marker(source)["cutover"] == "pending"
+    if uninstalled:
+        mark_uninstalled(source)
+    if missing_target:
+        shutil.rmtree(target.directory)  # Only this disposable recovery fixture.
+    result = operations.abort_restore(source, target, writers_stopped=True)
+    assert result["target"] == ("missing" if missing_target else "disabled")
+    assert result["source"] == ("disabled" if uninstalled else "enabled")
+    if uninstalled:
+        assert read_marker(source)["reason"] == "uninstalled"
+    else:
+        assert not read_marker(source)

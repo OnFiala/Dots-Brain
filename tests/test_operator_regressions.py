@@ -104,3 +104,38 @@ def test_stress_acceptance_cannot_be_optimized_away(name, monkeypatch):
     exec(code, namespace)
     with pytest.raises(RuntimeError, match="synthetic failure"):
         namespace["require"](False, "synthetic failure")
+
+
+@pytest.mark.parametrize("saved", [False, True])
+def test_bootstrap_retains_existing_port_and_validates_before_resume(
+    monkeypatch, tmp_path, capsys, saved
+):
+    bootstrap = script("bootstrap")
+    monkeypatch.setattr(bootstrap.sys, "platform", "linux")
+    monkeypatch.setattr(bootstrap.shutil, "which", lambda _: "/synthetic/uv")
+    data = tmp_path / "data"
+    from dots_brain.cli import parser
+    from dots_brain.cli import run as run_cli
+    from dots_brain.local import write_json
+    from dots_brain.store import Store
+
+    if saved:
+        Store(data).initialize()
+        write_json(data / "disabled.json", {"version": 1, "reason": "uninstalled"})
+    commands = []
+
+    def run(command, **kwargs):
+        commands.append(command)
+        if len(commands) == 2:
+            # Exercise the actual parser and setup/diagnosis, rather than assert a mock typo.
+            result = run_cli(parser().parse_args(command[3:]))
+            assert result["state"] == ("diagnosis_completed" if saved else "local_ready")
+            return SimpleNamespace(returncode=0, stdout=json.dumps(result), stderr="")
+        return SimpleNamespace(returncode=0, stdout='{"state":"synthetic"}', stderr="")
+
+    monkeypatch.setattr(bootstrap.subprocess, "run", run)
+    assert bootstrap.main(["--data-dir", str(data)]) == 0
+    assert commands[1][-1] == ("doctor" if saved else "setup")
+    assert commands[2][-2:] == ["up", "--resume"]
+    assert "--port" not in commands[2]
+    assert json.loads(capsys.readouterr().out)["service"]["state"] == "synthetic"

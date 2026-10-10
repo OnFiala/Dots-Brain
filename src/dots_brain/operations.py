@@ -226,6 +226,10 @@ def activate_restore(source: Store, target: Store, *, writers_stopped: bool) -> 
                 raise InputError(
                     "This source was already replaced; recover from its active successor."
                 )
+            if "uninstalled_at" in previous:
+                raise StateError(
+                    "This recovery was uninstalled; cancel it before resuming the source."
+                )
             if previous and not (
                 previous.get("reason") == "restore_cutover"
                 and previous.get("cutover") in {"pending", "committed"}
@@ -270,29 +274,44 @@ def activate_restore(source: Store, target: Store, *, writers_stopped: bool) -> 
 
 
 def abort_restore(source: Store, target: Store, *, writers_stopped: bool) -> dict:
-    """Cancel only an uncommitted cutover while its exact target remains disabled."""
+    """Cancel a pending cutover, retaining any independent uninstall barrier."""
     if not writers_stopped:
         raise InputError("Stop every writer and supervisor; pass --writers-stopped.")
     if source.directory == target.directory:
         raise InputError("Recovery source and target must be different installations.")
     with contextlib.ExitStack() as locks:
         for directory in sorted([source.directory, target.directory]):
+            if directory == target.directory and not directory.exists():
+                continue
             for name in ("installation.lock", "service.lock", "writers.lock"):
                 locks.enter_context(locked(directory / name, timeout=0))
-        old, new = read_marker(source), read_marker(target)
+        old = read_marker(source)
+        target_missing = not target.directory.exists()
+        new = read_marker(target) if not target_missing else {}
+        matching_target = target_missing or (
+            new.get("reason") == "restored_requires_review"
+            and old.get("recovery_id") == new.get("recovery_id")
+            and Path(new.get("deletion_source", "")).resolve() == source.directory
+        )
         if not (
             old.get("reason") == "restore_cutover"
             and old.get("cutover") == "pending"
-            and new.get("reason") == "restored_requires_review"
             and old.get("recovery_id")
-            and old.get("recovery_id") == new.get("recovery_id")
             and Path(old.get("replacement", "")).resolve() == target.directory
-            and Path(new.get("deletion_source", "")).resolve() == source.directory
+            and matching_target
         ):
             raise StateError("Only the exact uncommitted, disabled recovery can be cancelled.")
-        marker_path(source).unlink()
+        uninstalled = "uninstalled_at" in old
+        if uninstalled:
+            write_marker(source, reason="uninstalled", uninstalled_at=old["uninstalled_at"])
+        else:
+            marker_path(source).unlink()
         sync_file_and_parent(source.path)
-    return {"state": "recovery_cancelled", "source": "enabled", "target": "disabled"}
+    return {
+        "state": "recovery_cancelled",
+        "source": "disabled" if uninstalled else "enabled",
+        "target": "missing" if target_missing else "disabled",
+    }
 
 
 def configure_cortex(store: Store, *, endpoint: str, token_file: Path, projects: list[str]) -> dict:

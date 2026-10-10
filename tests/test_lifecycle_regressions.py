@@ -12,14 +12,14 @@ from dots_brain.clients import (
     integration_key,
     target_path,
 )
-from dots_brain.errors import InputError
+from dots_brain.errors import InputError, StateError
 from dots_brain.local import read_json, write_json
 from dots_brain.removal import disconnect_client, uninstall
 from dots_brain.runtime import credential, daemon_environment, preflight, schedule_reap, up
 from dots_brain.store import Store
 
 
-def test_corrupt_service_state_is_quarantined_without_starting_a_replacement(tmp_path, monkeypatch):
+def test_corrupt_service_state_is_preserved_without_starting_a_replacement(tmp_path, monkeypatch):
     store = Store(tmp_path / "memory")
     store.initialize()
     state = store.directory / "service.json"
@@ -30,10 +30,11 @@ def test_corrupt_service_state_is_quarantined_without_starting_a_replacement(tmp
         raise AssertionError("a corrupt state must not start another daemon")
 
     monkeypatch.setattr("dots_brain.runtime.subprocess.Popen", unexpected_start)
-    with pytest.raises(InputError, match="corrupt"):
+    with pytest.raises(StateError, match="corrupt"):
         up(store)
-    assert not state.exists()
-    assert list(store.directory.glob("service.json.corrupt-*"))
+    assert state.read_text() == "{broken"
+    with pytest.raises(StateError, match="corrupt"):
+        up(store)
 
 
 def test_probe_credential_can_replace_corrupt_file_with_read_only_scope(tmp_path):

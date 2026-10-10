@@ -43,7 +43,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data-dir", type=Path, required=True)
     parser.add_argument("--semantic", action="store_true")
-    parser.add_argument("--port", type=int, default=8765)
+    parser.add_argument("--port", type=int, help="Keep the saved port unless explicitly set.")
     parser.add_argument("--connect", choices=("claude-code", "cursor", "codex", "mcp-json"))
     parser.add_argument("--config", type=Path)
     args = parser.parse_args(argv)
@@ -51,7 +51,7 @@ def main(argv=None):
         parser.error("--config requires --connect")
     if args.connect == "mcp-json" and not args.config:
         parser.error("--connect mcp-json requires --config")
-    if not 0 <= args.port <= 65535:
+    if args.port is not None and not 0 <= args.port <= 65535:
         parser.error("--port must be between 0 and 65535")
     root = Path(__file__).resolve().parents[1]
     uv = shutil.which("uv")
@@ -73,10 +73,14 @@ def main(argv=None):
         step("dependencies", sync, structured=False)
         executable = root / ".venv/bin/python"
         base = [str(executable), "-m", "dots_brain.cli", "--data-dir", str(args.data_dir.resolve())]
-        setup = step("setup", base + ["setup"])
+        setup = step(
+            "setup", base + ["doctor" if (args.data_dir / "brain.sqlite3").exists() else "setup"]
+        )
         if args.semantic:
             step("model", base + ["model", "prepare"])
-        start = base + ["up", "--resume", "--port", str(args.port)]
+        start = base + ["up", "--resume"]
+        if args.port is not None:
+            start += ["--port", str(args.port)]
         if args.semantic:
             start.append("--semantic")
         service = step("service", start)

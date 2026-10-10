@@ -87,7 +87,7 @@ def configure(path: Path, *, provider: str, entry: dict, replace_entry: dict | N
     with locked(path.with_name(path.name + ".dots-brain.lock"), create_parent=True):
         if path.is_symlink():
             raise InputError("Client configuration must not be a symbolic link.")
-        original = path.read_text() if path.exists() else ""
+        original = path.read_text(encoding="utf-8") if path.exists() else ""
         document = (
             tomlkit.parse(original)
             if PROVIDERS[provider]["format"] == "toml"
@@ -114,7 +114,7 @@ def configure(path: Path, *, provider: str, entry: dict, replace_entry: dict | N
             else json.dumps(document, ensure_ascii=False, indent=2) + "\n"
         )
         # Detect an application write that occurred while this installer held its own lock.
-        if (path.read_text() if path.exists() else "") != original:
+        if (path.read_text(encoding="utf-8") if path.exists() else "") != original:
             raise InputError("The application changed its configuration; retry the connection.")
         if original:
             backup = path.with_name(path.name + ".before-dots-brain")
@@ -130,7 +130,7 @@ def preflight_configure(
     """Reject an unsafe or conflicting client file before minting a credential."""
     if path.is_symlink():
         raise InputError("Client configuration must not be a symbolic link.")
-    original = path.read_text() if path.exists() else ""
+    original = path.read_text(encoding="utf-8") if path.exists() else ""
     document = (
         tomlkit.parse(original)
         if PROVIDERS[provider]["format"] == "toml"
@@ -228,7 +228,7 @@ def _connect_client(store, *, provider, config, connection, projects):
         elif (private / f"{provider}.json").is_file() and target.is_file():
             # Preserve alpha.1 connections when their generated entry is unchanged.
             legacy = private / f"{provider}.json"
-            text = target.read_text()
+            text = target.read_text(encoding="utf-8")
             document = tomlkit.parse(text) if provider == "codex" else json.loads(text)
             section = "mcp_servers" if provider == "codex" else "mcpServers"
             if document.get(section, {}).get("dots-brain") == bridge_entry(
