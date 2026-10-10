@@ -11,6 +11,11 @@ Audit and capture scopes are separate from memory read and write scopes. An audi
 review can analyze only data that was actually collected. Keep audit exports and
 operator reports private because they can expose local paths or metadata.
 
+Sanitization detects known credential patterns; it cannot identify every secret.
+It limits text before pattern matching and reports omitted content. Oversized JSON
+keys and their values are omitted together, since a shortened key cannot safely
+identify a credential field. Memory writes reject truncation; capture reports it.
+
 Use `audit events` to page after an event ID and `audit report` for the standard
 coverage summary. New v3 audit hashes bind the event ID and `recorded_at`; v2
 history is still verified with its original, unkeyed format. A private review

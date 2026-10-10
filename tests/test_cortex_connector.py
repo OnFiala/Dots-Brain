@@ -1,5 +1,6 @@
 import asyncio
 import json
+import socketserver
 import sqlite3
 import threading
 import time
@@ -23,6 +24,23 @@ from dots_brain.cortex_connector import (
 from dots_brain.errors import InputError, NotFoundError
 from dots_brain.privacy import guard_content
 from dots_brain.store import Store
+
+
+def _monitoring_proxy():
+    """Start a disposable proxy that records every attempted request."""
+    requests = []
+
+    class Proxy(socketserver.BaseRequestHandler):
+        def handle(self):
+            requests.append(self.request.recv(8192))
+            self.request.sendall(b"HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n")
+
+    server = socketserver.ThreadingTCPServer(("127.0.0.1", 0), Proxy)
+    server.daemon_threads = True
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    host, port = server.server_address
+    return f"http://{host}:{port}", requests, server, thread
 
 
 @dataclass(frozen=True)
@@ -414,7 +432,7 @@ def test_connection_token_requires_private_owned_regular_file(tmp_path):
         _read_token(link)
 
 
-def test_real_streamable_http_transport_uses_pinned_sdk_client(tmp_path):
+def test_real_streamable_http_transport_uses_pinned_sdk_client(tmp_path, monkeypatch):
     """Exercise the concrete mcp 1.30 transport against a disposable FastMCP server."""
     import socket
 
@@ -426,6 +444,20 @@ def test_real_streamable_http_transport_uses_pinned_sdk_client(tmp_path):
     @upstream.tool()
     def cortex_brief(query: str, project_id: str):
         return {"query": query, "project_id": project_id, "cards": []}
+
+    notes = []
+
+    @upstream.tool()
+    def cortex_record_note(project_id: str, title: str, content: str, idempotency_key: str):
+        notes.append(
+            {
+                "project_id": project_id,
+                "title": title,
+                "content": content,
+                "idempotency_key": idempotency_key,
+            }
+        )
+        return {"event_id": "synthetic-note-1", "project_id": project_id}
 
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
@@ -451,6 +483,11 @@ def test_real_streamable_http_transport_uses_pinned_sdk_client(tmp_path):
             project_mapping=(("alpha", "cortex-alpha"),),
         )
     )
+    proxy, proxy_requests, proxy_server, proxy_thread = _monitoring_proxy()
+    for name in ("HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy"):
+        monkeypatch.setenv(name, proxy)
+    for name in ("NO_PROXY", "no_proxy"):
+        monkeypatch.setenv(name, "")
     try:
         assert (
             asyncio.run(
@@ -460,9 +497,33 @@ def test_real_streamable_http_transport_uses_pinned_sdk_client(tmp_path):
             )["project_id"]
             == "cortex-alpha"
         )
+        receipt = asyncio.run(
+            transport.call_tool(
+                "cortex_record_note",
+                {
+                    "project_id": "cortex-alpha",
+                    "title": "Synthetic transport write",
+                    "content": "No production data.",
+                    "idempotency_key": "synthetic-note-operation",
+                },
+            )
+        )
+        assert receipt == {"event_id": "synthetic-note-1", "project_id": "cortex-alpha"}
+        assert notes == [
+            {
+                "project_id": "cortex-alpha",
+                "title": "Synthetic transport write",
+                "content": "No production data.",
+                "idempotency_key": "synthetic-note-operation",
+            }
+        ]
+        assert proxy_requests == []
     finally:
         server.should_exit = True
         thread.join(timeout=5)
+        proxy_server.shutdown()
+        proxy_server.server_close()
+        proxy_thread.join(timeout=5)
 
 
 @pytest.mark.parametrize(

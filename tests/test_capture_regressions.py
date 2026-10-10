@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from dots_brain import capture_delivery
+from dots_brain import capture_delivery, privacy
 from dots_brain.capture import MAX_BATCH_RECORDS, JSONLCollector, normalize_audit_record
 from dots_brain.errors import InputError
 from dots_brain.privacy import guard_content, sanitize
@@ -162,3 +162,56 @@ def test_exact_credential_header_does_not_depend_on_value_entropy(header):
     redacted = sanitize(text).value
     assert "alphabeticcredentialvalue" not in redacted
     assert sanitize(redacted).value == redacted
+
+
+def test_sanitizer_bounds_text_before_redaction_and_drops_split_secret_fragment(monkeypatch):
+    observed = []
+    original = privacy._redact_text
+
+    def bounded_redactor(value):
+        observed.append(len(value))
+        return original(value)
+
+    monkeypatch.setattr(privacy, "_redact_text", bounded_redactor)
+    token = "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890"
+    result = sanitize("harmless " + token + "x" * 2_000_000, max_text=24)
+    assert max(observed) <= 24
+    assert token not in result.value
+    assert result.truncated["text_chars"] == len(token + "x" * 2_000_000)
+    assert result.truncated["boundary_fragment"] == 1
+    repeated = sanitize(result.value, max_text=24)
+    assert repeated.value == result.value
+    assert repeated.truncated == {}
+
+
+@pytest.mark.parametrize("limit", [8, 12, 24, 32])
+def test_sanitizer_drops_an_initial_split_token_and_preserves_the_marker(limit):
+    result = sanitize("ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890" * 20, max_text=limit)
+    assert result.value == "[TRUNCATED]"[:limit]
+    assert len(result.value) <= limit
+    repeated = sanitize(result.value, max_text=limit)
+    assert repeated.value == result.value
+    assert repeated.truncated == {}
+
+
+def test_sanitizer_never_inspects_unbounded_keys_or_their_values(monkeypatch):
+    redactor, sensitive_name = privacy._redact_text, privacy._is_sensitive_name
+    observed = []
+
+    def bounded_redactor(value):
+        observed.append(len(value))
+        assert len(value) <= 512
+        return redactor(value)
+
+    def bounded_sensitive_name(value):
+        assert len(value) <= 512
+        return sensitive_name(value)
+
+    monkeypatch.setattr(privacy, "_redact_text", bounded_redactor)
+    monkeypatch.setattr(privacy, "_is_sensitive_name", bounded_sensitive_name)
+    key = "x" * 2_000_000 + "_password"
+    result = sanitize({key: "synthetic-hidden-value"})
+    assert result.value == {"[TRUNCATED_KEY]": "[REDACTED]"}
+    assert result.truncated["key_chars"] == len(key)
+    assert observed
+    assert sanitize(result.value).value == result.value

@@ -227,7 +227,7 @@ def sanitize(
     def note(category: str, amount: int = 1) -> None:
         categories[category] = categories.get(category, 0) + amount
 
-    def clip(text: str, limit: int) -> str:
+    def clip(text: str, limit: int, *, already_bounded: bool = False) -> str:
         nonlocal output_bytes
         try:
             text.encode("utf-8", "strict")
@@ -235,8 +235,11 @@ def sanitize(
             truncated["invalid_text"] = truncated.get("invalid_text", 0) + 1
             return "[INVALID_TEXT]"
         if len(text) > limit:
-            truncated["text_chars"] = truncated.get("text_chars", 0) + len(text) - limit
-            text = text[:limit] + "[TRUNCATED]"
+            marker = "[TRUNCATED]"[:limit]
+            keep = limit - len(marker)
+            if not already_bounded:
+                truncated["text_chars"] = truncated.get("text_chars", 0) + len(text) - keep
+            text = text[:keep] + marker
         raw, remaining = text.encode(), max_output_bytes - output_bytes
         if len(raw) > remaining:
             truncated["output_bytes"] = (
@@ -252,6 +255,28 @@ def sanitize(
         output_bytes += len(raw)
         return text
 
+    def bound_for_redaction(text: str) -> tuple[str, bool]:
+        """Never run credential regexes over an unbounded payload.
+
+        The final non-whitespace fragment is dropped when the boundary bisects a
+        token-like value.  This prevents retaining a prefix of a credential that
+        extends past the collection limit.  A strict caller rejects the
+        resulting truncation, while capture callers retain an explicit marker.
+        """
+        if len(text) <= max_text:
+            return text, False
+        marker = "[TRUNCATED]"[:max_text]
+        keep = max_text - len(marker)
+        prefix = text[:keep]
+        if prefix and not prefix[-1].isspace() and not text[keep].isspace():
+            start = len(prefix)
+            while start and not prefix[start - 1].isspace():
+                start -= 1
+            prefix = prefix[:start]
+            truncated["boundary_fragment"] = truncated.get("boundary_fragment", 0) + 1
+        truncated["text_chars"] = truncated.get("text_chars", 0) + len(text) - len(prefix)
+        return prefix + marker, True
+
     def visit(item: Any, depth: int, key: str | None = None, *, summary: bool = False) -> Any:
         nonlocal nodes, output_bytes
         nodes += 1
@@ -265,10 +290,11 @@ def sanitize(
             note("sensitive_field")
             return "[REDACTED]"
         if isinstance(item, str):
-            clean, found = _redact_text(item)
+            bounded, was_bounded = bound_for_redaction(item)
+            clean, found = _redact_text(bounded)
             for category, amount in found.items():
                 note(category, amount)
-            return clip(clean, max_text)
+            return clip(clean, max_text, already_bounded=was_bounded)
         if item is None or isinstance(item, (bool, int)):
             output_bytes += 8
             return item
@@ -289,11 +315,18 @@ def sanitize(
                 if raw_key == "sanitization" and isinstance(child, dict):
                     output[raw_key] = visit(child, depth + 1, summary=True)
                     continue
-                clean_key, found = _redact_text(raw_key)
-                for category, amount in found.items():
-                    note(category, amount)
-                clean_key = "[REDACTED_KEY]" if clean_key != raw_key else clean_key
-                clean_key = clip(clean_key, min(max_text, 512))
+                key_limit = min(max_text, 512)
+                if len(raw_key) > key_limit:
+                    # Its sensitive suffix cannot be inspected within the budget.
+                    # Omit both the key and its value rather than trust a prefix.
+                    truncated["key_chars"] = truncated.get("key_chars", 0) + len(raw_key)
+                    clean_key, child, raw_key = "[TRUNCATED_KEY]", "[REDACTED]", None
+                else:
+                    clean_key, found = _redact_text(raw_key)
+                    for category, amount in found.items():
+                        note(category, amount)
+                    clean_key = "[REDACTED_KEY]" if clean_key != raw_key else clean_key
+                clean_key = clip(clean_key, key_limit)
                 candidate, suffix = clean_key, 2
                 while candidate in output:
                     candidate, suffix = f"{clean_key}#{suffix}", suffix + 1

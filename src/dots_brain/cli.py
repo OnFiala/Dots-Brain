@@ -167,7 +167,11 @@ def parser() -> argparse.ArgumentParser:
         "--no-start", action="store_true", help="Leave startup to an external supervisor."
     )
     for name in ("status", "pending", "grants", "clients", "purge"):
-        oauth_actions.add_parser(name)
+        action = oauth_actions.add_parser(name)
+        if name == "pending":
+            action.add_argument(
+                "--verbose", action="store_true", help="Include untrusted client-supplied names."
+            )
     onboarding = oauth_actions.add_parser(
         "onboarding", help="Bound registration and pairing to a short operator-opened window."
     )

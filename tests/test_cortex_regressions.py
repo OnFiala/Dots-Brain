@@ -1,9 +1,11 @@
 import asyncio
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
 
+from dots_brain import cortex_connector
 from dots_brain.cortex_connector import (
     CortexConnectionConfig,
     CortexConnector,
@@ -185,6 +187,47 @@ def test_context_keeps_ids_marks_partial_and_labels_upstream_data_untrusted():
     assert result["characters"] <= 256
     assert result["partial"] and result["untrusted_data"]
     assert "card-0" in result["context"] or "result-0" in result["context"]
+
+
+def test_large_context_minimization_runs_outside_event_loop_thread(monkeypatch):
+    """The actual sanitizer/JSON compaction runs in a worker, not the request task."""
+
+    worker_threads = []
+    minimize = cortex_connector._minimize_context
+
+    def observed_minimization(*args):
+        worker_threads.append(threading.get_ident())
+        return minimize(*args)
+
+    monkeypatch.setattr(cortex_connector, "_minimize_context", observed_minimization)
+
+    class LargeTransport(Transport):
+        def __init__(self):
+            super().__init__()
+            self.payload = {
+                "results": [
+                    {"object_id": str(index), "snippet": "x" * 500_000} for index in range(100)
+                ]
+            }
+
+        async def call_tool(self, name, arguments):
+            if name == "cortex_brief":
+                return {"cards": []}
+            return self.payload
+
+    async def exercise():
+        loop_thread = threading.get_ident()
+        result = await service(LargeTransport()).read_context(
+            policy=Policy(frozenset({"cortex:read"})),
+            project="alpha",
+            query="bounded",
+            max_chars=24_000,
+        )
+        assert len(worker_threads) == 1
+        assert worker_threads[0] != loop_thread
+        assert result["characters"] <= 24_000
+
+    asyncio.run(exercise())
 
 
 @pytest.mark.parametrize("source_ref", ["dots://memory/1\norigin", "dots://memory/1\x1f"])

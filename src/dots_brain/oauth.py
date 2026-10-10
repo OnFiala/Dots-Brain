@@ -482,7 +482,7 @@ class OAuthStore:
             )
         return self.issuer + "/oauth/pair/" + request_id
 
-    def pending(self) -> dict:
+    def pending(self, *, verbose: bool = False) -> dict:
         self.require_enabled()
         with self.store.connection() as db:
             rows = db.execute(
@@ -496,7 +496,11 @@ class OAuthStore:
                 {
                     "request_id": row["id"],
                     "client_id": row["client_id"],
-                    "untrusted_client_name": json.loads(row["metadata"]).get("client_name"),
+                    **(
+                        {"untrusted_client_name": json.loads(row["metadata"]).get("client_name")}
+                        if verbose
+                        else {}
+                    ),
                     "state": row["status"],
                     "redirect_origin": redirect_origin(json.loads(row["params"])["redirect_uri"]),
                     "scopes": json.loads(row["params"])["scopes"],

@@ -1,8 +1,10 @@
 import asyncio
 import json
 import socket
+import socketserver
 import subprocess
 import sys
+import threading
 import time
 
 import httpx
@@ -13,6 +15,23 @@ from mcp.client.stdio import stdio_client
 from dots_brain.auth import issue_client, revoke_client
 from dots_brain.bridge import verify_connection
 from dots_brain.store import Store
+
+
+def _monitoring_proxy():
+    """Start a disposable proxy that records every attempted request."""
+    requests = []
+
+    class Proxy(socketserver.BaseRequestHandler):
+        def handle(self):
+            requests.append(self.request.recv(8192))
+            self.request.sendall(b"HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n")
+
+    server = socketserver.ThreadingTCPServer(("127.0.0.1", 0), Proxy)
+    server.daemon_threads = True
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    host, port = server.server_address
+    return f"http://{host}:{port}", requests, server, thread
 
 
 def test_local_resume_rejects_missing_store_before_startup(tmp_path, monkeypatch):
@@ -84,7 +103,7 @@ def test_local_resume_accepts_an_existing_matching_store(tmp_path, monkeypatch):
     assert calls == [store.path]
 
 
-def test_real_http_process_and_stdio_bridge_share_one_store(tmp_path):
+def test_real_http_process_and_stdio_bridge_share_one_store(tmp_path, monkeypatch):
     store = Store(tmp_path / "memory")
     store.initialize()
     with socket.socket() as reservation:
@@ -101,6 +120,11 @@ def test_real_http_process_and_stdio_bridge_share_one_store(tmp_path):
         output=credential,
         url=endpoint,
     )
+    proxy, proxy_requests, proxy_server, proxy_thread = _monitoring_proxy()
+    for name in ("HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy"):
+        monkeypatch.setenv(name, proxy)
+    for name in ("NO_PROXY", "no_proxy"):
+        monkeypatch.setenv(name, "")
     process = subprocess.Popen(
         [
             sys.executable,
@@ -179,3 +203,7 @@ def test_real_http_process_and_stdio_bridge_share_one_store(tmp_path):
         finally:
             if process.stderr is not None:
                 process.stderr.close()
+            proxy_server.shutdown()
+            proxy_server.server_close()
+            proxy_thread.join(timeout=5)
+    assert proxy_requests == []

@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Protocol
 from urllib.parse import urlsplit
 
+import anyio
 import httpx
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
@@ -414,10 +415,9 @@ class CortexConnector:
         brief = await self._transport.call_tool("cortex_brief", arguments)
         search = await self._transport.call_tool("cortex_search", {**arguments, "limit": limit})
         raw = {"project_id": cortex_project, "brief": brief, "search": search}
-        from .privacy import sanitize
-
-        minimized = sanitize(raw, max_text=max_chars)
-        context, bounded = _bounded_json(minimized.value, max_chars)
+        minimized, context, bounded = await anyio.to_thread.run_sync(
+            _minimize_context, raw, max_chars
+        )
         return {
             "project": project,
             "cortex_project": cortex_project,
@@ -955,6 +955,15 @@ def _receipt_from_row(row: Mapping[str, object], *, replayed: bool) -> dict[str,
         "acknowledgement_only": object_id is None,
         "replayed": replayed,
     }
+
+
+def _minimize_context(raw: Mapping[str, object], maximum: int):
+    """Perform potentially expensive upstream-data minimization off the event loop."""
+    from .privacy import sanitize
+
+    minimized = sanitize(raw, max_text=maximum)
+    context, bounded = _bounded_json(minimized.value, maximum)
+    return minimized, context, bounded
 
 
 def _bounded_json(value: Mapping[str, object], maximum: int) -> tuple[str, bool]:

@@ -97,7 +97,7 @@ def run_oauth(store, args):
             seconds = args.minutes * 60 if args.onboarding_action == "open" else None
             return state.set_onboarding(open_for_seconds=seconds)
         if args.oauth_action == "pending":
-            return state.pending()
+            return state.pending(verbose=args.verbose)
         if args.oauth_action == "grants":
             return state.grants()
         if args.oauth_action == "clients":

@@ -35,6 +35,10 @@ state.
   ingress guidance.
 - Bind OAuth pairing to its initiating browser; consume approval only on POST.
   Preserve refresh scope and recover interrupted configuration changes.
+- Omit client names from default OAuth request inspection. Show them only with
+  `--verbose` as untrusted client text.
+- Bound text and JSON keys before credential matching. Minimize CORTEX context
+  outside the request thread.
 - Preserve typed MCP errors, strict input types, and confirmed mutation results
   when the later audit receipt cannot be saved.
 - Keep capture moving past terminally rejected records and detect file rotation
