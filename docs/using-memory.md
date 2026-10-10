@@ -45,12 +45,17 @@ vault and cannot prove that all sensitive material has been detected.
 
 Semantic retrieval is optional and uses the pinned local CPU model. An index run
 does not write while `disabled.json` is present. Failed embeddings remain
-visible as `failed` and receive one bounded automatic retry after 30 seconds in
-the running process. Missing or malformed derived vectors are reported as
+visible as `failed` and receive bounded retries with at least 30 seconds between
+attempts in the running process. A large backlog can delay a retry further.
+Missing or malformed derived vectors are reported as
 pending repair and are rebuilt by a bounded repair pass; source memories are
 unchanged. Each background pass uses a bounded query for new source revisions
 and checks at most four already-indexed memories for vector repair, so it does
 not validate every vector on each polling interval.
+
+The pending-source query still examines the source set when all records are
+indexed. Bounded result size is not a constant-time guarantee; see the
+[stress measurements](stress-tests.md).
 
 The fixed semantic score floor remains 0.20. The checked-in 24-fact
 Czech/English calibration corpus has 11 query forms, or 264 relevant queries.

@@ -32,7 +32,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-semantic = ["fastembed>=0.7,<1"]
+semantic = ["fastembed>=0.7,<1", "numpy>=1.26,<3", "onnxruntime>=1.17,<2"]
 
 [project.scripts]
 dots-brain = "dots_brain.cli:main"
@@ -43,6 +43,7 @@ Issues = "https://github.com/OnFiala/dots-brain/issues"
 
 [dependency-groups]
 dev = ["pytest>=8,<9", "pytest-timeout>=2.3,<3", "ruff>=0.11,<1"]
+browser = ["playwright>=1.55,<2"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

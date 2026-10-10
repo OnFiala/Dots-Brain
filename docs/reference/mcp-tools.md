@@ -18,12 +18,20 @@ untrusted input.
 
 Use the same `event_id` on a retry. Revising an existing record requires its
 `expected_revision`; forgetting also requires the reviewed revision. Source
-identity in schema v2 is project, source, account, and event ID. That makes a
+identity since schema v2 is project, source, account, and event ID. That makes a
 retry idempotent inside its project. Legacy v1 suppression hashes remain global.
 
 Limits are enforced at the server: query text is at most 2,000 characters,
 content 32,000 characters, title 300 characters, search `limit` 1–50, and
 context `max_chars` 256–24,000. The HTTP MCP body is capped at 1 MiB.
+
+Tool failures return structured error data with a stable `code`. Clients should
+use that code for control flow and treat the message as operator context. Common
+codes include `invalid_input`, `revision_conflict`, `source_suppressed`,
+`forbidden`, `not_found`, `migration_required`, `capability_unavailable`, `busy`,
+`credential_rejected`, `service_unavailable`, `timed_out`, and `internal_error`.
+An error code reports only this request's result; it does not prove or revoke an
+external client configuration.
 
 ## Optional CORTEX tools
 

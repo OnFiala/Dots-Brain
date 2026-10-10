@@ -9,15 +9,15 @@ release tag for a production upgrade. A development branch is not a release.
    client configuration paths. Do not copy credentials into the record.
 2. Stop clients and every writer, including the managed service and any external
    supervisor.
-3. Create a validated backup with the version that currently owns the store.
+3. With the old process stopped, copy the database and any committed `-wal` and
+   `-shm` files to a private backup location. Keep that full copy unchanged.
 4. For a published release, check out its tag in the existing checkout or install
    it in the environment already referenced by managed client configuration.
 5. Run the offline migration below before starting the new binary. Then start
    the supervisor, run `doctor`, reload each client and make a real MCP read.
 
-The `main` branch is the 0.3 line. This unreleased 0.4.0-alpha.2 candidate lives
-on `codex/shared-memory-safety`; checking out that branch is an explicit test of
-an unreleased candidate, not a normal upgrade.
+Use a reviewed commit or published tag. This unreleased candidate is not a normal
+upgrade path and this documentation makes no production-upgrade claim.
 
 ## Schema v1 or v2 to v3
 
@@ -26,14 +26,17 @@ stores need this migration. `setup`, `serve` and OAuth configuration do not add
 missing tables. `doctor` reports `migration_required` until migration completes.
 
 Stop the old process with its original supervisor and interpreter. Keep that
-interpreter and the installation configuration for rollback. The new `down` recognizes the exact managed command from 0.3.0-alpha.2 and
+interpreter and the installation configuration for rollback. The new `down`
+recognizes the exact managed command from 0.3.0-alpha.2 and
 0.4.0-alpha.1 using PID start time, data path and port. It never adopts a different
 release during `up`: stop it explicitly, migrate, then start. Startup replaces only
 the old installation probe with a read-only credential; ordinary client scope
 changes still require explicit replacement.
 
 Use the new interpreter for these commands, with all writers stopped. Choose a
-new backup filename in an existing private directory:
+new backup filename in an existing private directory. `migrate --apply` takes a
+second validated, standalone snapshot before changing the database; it does not
+replace the full pre-upgrade copy made above.
 
 ```sh
 dots-brain --data-dir /absolute/private/memory migrate
@@ -54,9 +57,12 @@ migration returns `already_current`. Old v2 binaries reject the new v3 database.
 
 ## Rollback before accepting new writes
 
-Stop the candidate and every client. Copy the pre-upgrade backup to
-`brain.sqlite3` in a **new** private directory. Restore `oauth.json` for the same
-issuer and, if configured, `cortex.json`. Preserve any credential files referenced
+Stop the candidate and every client. Copy the standalone snapshot produced by
+`migrate --apply` to `brain.sqlite3` in a **new** private directory. If instead
+using the manual pre-upgrade copy, restore the database together with its saved
+WAL companions under their original names; copying only the main file can lose
+committed writes. Restore `oauth.json` for the same issuer and, if configured,
+`cortex.json`. Preserve any credential files referenced
 by clients in their private locations; never include them in Git or terminal output.
 Do not copy `service.json`, PID or lock files, `disabled.json`, restore markers or
 capture cursors into the rollback directory. Recreate runtime state with the old
@@ -76,6 +82,19 @@ offline cutover validates current deletion and history state. Do not use a backu
 as host-loss recovery: a surviving current store is required for reconciliation.
 If validation fails, preserve both stores and follow the command's recovery result;
 do not overwrite the current store or delete markers to force startup.
+
+With every writer stopped, these are the current-schema commands. The source is
+still canonical until activation succeeds:
+
+```sh
+dots-brain --data-dir /absolute/private/memory backup --output /absolute/private/current.sqlite3
+dots-brain --data-dir /absolute/private/memory restore --backup /absolute/private/current.sqlite3 --target /absolute/private/restored
+dots-brain --data-dir /absolute/private/memory activate-restore --target /absolute/private/restored --writers-stopped
+```
+
+After successful activation, point the supervisor at the restored directory and
+reconnect clients with newly approved credentials. The old directory stays
+disabled. Do not start it as a second writable copy.
 
 The partial abort-recovery path cancels only a pending cutover and keeps the staged
 target disabled. It does not undo a committed cutover. Use it after a failed

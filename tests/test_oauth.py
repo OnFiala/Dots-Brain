@@ -1653,3 +1653,46 @@ def test_purge_retains_historical_grants_and_their_provenance(installation, term
         ] == provenance
         assert db.execute("SELECT COUNT(*) FROM oauth_clients").fetchone()[0] == 1
         assert db.execute("SELECT COUNT(*) FROM oauth_tokens").fetchone()[0] == 0
+
+
+def test_purge_keeps_unexpired_issued_code_client_exchangeable(installation):
+    _, state, _, app = installation
+    with TestClient(app, base_url=ISSUER) as http:
+        client = register(http, scopes="memory:read")
+        form = request_code(http, client, state, scopes="memory:read")
+        assert state.purge()["unused_clients_removed"] == 0
+        assert state.get_client(client["client_id"]) is not None
+        exchanged = http.post("/token", data=form)
+        assert exchanged.status_code == 200, exchanged.text
+        assert state.policy(exchanged.json()["access_token"]) is not None
+
+
+def test_conflicting_second_approval_preserves_original_request_and_scopes(installation):
+    store, state, _, app = installation
+    with TestClient(app, base_url=ISSUER) as http:
+        client = register(http, scopes="memory:read memory:write")
+        request_id, _ = request_code(
+            http, client, state, approve=False, scopes="memory:read memory:write"
+        )
+        state.decide(request_id, projects=["work"], scopes=["memory:read"])
+        with store.connection() as db:
+            before = tuple(
+                db.execute(
+                    "SELECT r.status,r.projects,r.params,a.scopes FROM oauth_requests r "
+                    "JOIN oauth_request_approvals a ON a.request_id=r.id WHERE r.id=?",
+                    (request_id,),
+                ).fetchone()
+            )
+        with pytest.raises(InputError, match="different approval"):
+            state.decide(request_id, projects=["other"], scopes=["memory:write"])
+        with store.connection() as db:
+            after = tuple(
+                db.execute(
+                    "SELECT r.status,r.projects,r.params,a.scopes FROM oauth_requests r "
+                    "JOIN oauth_request_approvals a ON a.request_id=r.id WHERE r.id=?",
+                    (request_id,),
+                ).fetchone()
+            )
+    assert after == before
+    assert json.loads(before[2])["scopes"] == ["memory:read", "memory:write"]
+    assert json.loads(before[3]) == ["memory:read"]

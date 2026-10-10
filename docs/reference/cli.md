@@ -1,10 +1,18 @@
 # CLI reference
 
 Operator commands write a JSON result. `serve` and `bridge` carry MCP protocol
-traffic; `--help` and `--version` print text. A non-zero exit means
-the requested action did not complete. Treat `partial`, `blocked`,
-`verification_failed`, and `capture_partial` as work still requiring attention.
-Use a private absolute data directory outside the checkout.
+traffic; `--help` and `--version` print text. Invalid command arguments exit 2.
+Other failures exit 1 with `state: "error"` and a typed `code`; a successful
+command exits 0 unless its result state is `partial`, `blocked`,
+`verification_failed`, `capture_partial`, or `capture_recovery_required`. Those
+states require operator action even when a result was written. Use a private
+absolute data directory outside the checkout.
+
+Callers should branch on `code`, not error prose. Common codes are
+`invalid_input`, `revision_conflict`, `source_suppressed`, `migration_required`,
+`capability_unavailable`, `busy`, `credential_rejected`, `service_unavailable`,
+`timed_out`, and `internal_error`. A code describes the boundary result; it does
+not make a remote service or client UI verified.
 
 ## Store and service
 
@@ -80,11 +88,16 @@ dots-brain --data-dir /absolute/private/memory client create --name local-tool -
 dots-brain --data-dir /absolute/private/memory client list
 dots-brain --data-dir /absolute/private/memory client revoke client-id
 dots-brain bridge --credential-file /absolute/private/credential.json
-dots-brain verify --credential-file /absolute/private/credential.json --write --project work
+dots-brain verify --credential-file /absolute/private/credential.json --project work
 ```
 
 Credential files are private capabilities. The CLI does not print them. `verify`
-checks a real connection and can add a synthetic write only with `--write`.
+checks a real read connection by default. It creates and then removes a synthetic
+probe only with `--write`. That probe needs `memory:read`, `memory:write`, and
+`memory:forget` on the selected project so it can verify and remove its record.
+`client create` defaults to `memory:read` and a 30-day credential lifetime;
+use explicit scopes and `--days` (up to 365) for another grant. Expired or revoked
+credentials are rejected rather than renewed.
 
 ## OAuth
 
@@ -123,3 +136,35 @@ decisions and outcomes have no upstream idempotency key and a retry can duplicat
 them. `recover-sending` never retries: it marks a record left in `sending` by a
 terminated sender as uncertain. It requires every cooperating writer to be stopped
 and an exclusive writer lease; then reconcile or make a separate explicit retry decision.
+
+Capture accepts at most 1,000 records or 16 MiB in one pass, and rejects lines
+over 256 KiB. Its cursor is durable. If replacement, truncation, or rewrite changes
+an acknowledged prefix, the collector records a gap and blocks that source under
+the current cursor; it never falls back to reimporting acknowledged rows. See
+[activity and capture](../activity.md) for the supported snapshot shapes.
+
+### Private audit review helper
+
+`scripts/audit_review.py` is a separate operator helper, not an MCP tool and not a
+deployment service. It fetches only the fixed `dots-brain audit events` command
+over SSH, adaptively reduces a page that exceeds its 1 MiB response budget, and
+keeps bounded checkpoints and findings in its private state directory.
+
+Create `target.json` in that state directory, or pass it with `--target-config`:
+
+```json
+{
+  "origin": "operator-audit",
+  "host": "audit-host.example",
+  "user": "dotsbrain",
+  "executable": "/absolute/path/to/dots-brain",
+  "data_dir": "/absolute/private/memory",
+  "timezone": "UTC"
+}
+```
+
+Keep this file private: it contains host and filesystem layout. The helper accepts
+only these validated fields, not a shell command. Run `scan` with a reviewed
+run key, review its output, then use `complete` with the matching review file.
+When `complete` returns `has_more: true`, run the next chunk with the same run key;
+the helper preserves the continuation checkpoint only after a valid reviewed chunk.

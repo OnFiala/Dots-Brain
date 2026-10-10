@@ -9,6 +9,10 @@ macOS can run local source checks and stdio experiments, but managed lifecycle
 behavior is not accepted there. Windows is not supported.
 
 Use a writable checkout and `uv`; this alpha has no supported `pip install` path.
+Put the data directory and every backup or export destination on a local POSIX
+filesystem that supports hard links. Dots Brain refuses atomic publication on an
+unsupported destination with `capability_unavailable`; use a local directory rather
+than weakening the publication step.
 
 ```sh
 uv sync --locked
@@ -53,11 +57,13 @@ uv run dots-brain --data-dir /absolute/private/memory up --semantic
 ```
 
 `model prepare` downloads the pinned, integrity-checked multilingual MiniLM
-artifact for local CPU use. Full-text search remains available while semantic
+artifact for local CPU use: about 241 MiB for the model and tokenizer files.
+Runtime memory is higher than download size and depends on workload.
+Full-text search remains available while semantic
 indexing catches up. Run `index --retry-failed` after fixing a failed model or
-environment. There is no paid API fallback. Semantic search uses a fixed score
-threshold and bounded work: at most 128 chunks per memory and 16 query chunks,
-so it may omit material from unusually large records.
+environment. There is no paid API fallback. Semantic work is bounded to at most
+128 chunks per memory and 16 query chunks, so unusually large records can have
+incomplete semantic coverage while full-text search remains available.
 
 ## Boundaries
 
@@ -69,3 +75,10 @@ or reinstall action. It can resume an intentionally disabled instance, so use
 An optional CORTEX connection requires its own endpoint, credential file, project
 map, and live verification. It is neither configured nor verified by installation.
 See [autonomy](autonomy.md) and [troubleshooting](troubleshooting.md).
+
+## Codex plugin package
+
+`plugin.json` describes this repository's Codex package: its display metadata and
+the onboarding skill at `skills/setup/SKILL.md`. It does not install a service,
+create a store, grant access to data, or verify an MCP connection. Run the setup
+and verification commands above on the host that will own the store.

@@ -21,8 +21,8 @@ jobs:
       matrix:
         python: ['3.11', '3.12', '3.13']
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2
-      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.1.0
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           python-version: ${{ matrix.python }}
           enable-cache: true
@@ -37,16 +37,54 @@ jobs:
           git archive c9637003f365f184751a3825013b2c425efd1517 src | tar -x -C "$RUNNER_TEMP/dots-historical-v2"
       - run: uv run ruff check src tests scripts
       - run: uv run ruff format --check src tests scripts
-      - run: uv run pytest -q
+      - run: uv run pytest -q --ignore=tests/test_runtime_latency.py
         env:
           BRAIN_TEST_OLD_V1_SRC: ${{ runner.temp }}/dots-historical-v1/src
           BRAIN_TEST_OLD_V2_SRC: ${{ runner.temp }}/dots-historical-v2/src
+      - name: Compare managed and direct HTTP latency
+        run: uv run pytest -q -s tests/test_runtime_latency.py
       - run: uv run python scripts/validate_project.py
       - run: uv build
+      - name: Test the installed wheel
+        run: |
+          uv venv --python ${{ matrix.python }} artifact-venv
+          uv pip install --python artifact-venv/bin/python dist/*.whl
+          (cd /tmp && "$GITHUB_WORKSPACE/artifact-venv/bin/python" "$GITHUB_WORKSPACE/scripts/verify_wheel.py")
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          python-version: '3.12'
+          enable-cache: true
+      - run: uv sync --locked --group browser
+      - name: Verify the OAuth callback in Chromium
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/dots-browsers
+        run: |
+          uv run playwright install --with-deps chromium
+          uv run pytest -q tests/test_oauth_browser.py
+  semantic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          python-version: '3.12'
+          enable-cache: true
+      - run: uv sync --locked --extra semantic
+      - name: Verify the pinned local embedding model
+        run: |
+          uv run dots-brain --data-dir "$RUNNER_TEMP/model-fixture" model prepare
+          revision="$(uv run python -c 'from dots_brain.semantic import MODEL_REVISION; print(MODEL_REVISION)')"
+          BRAIN_TEST_MODEL_DIR="$RUNNER_TEMP/model-fixture/models/$revision" uv run pytest -q tests/test_semantic.py tests/test_semantic_regressions.py
   gateway:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       - run: sudo apt-get update && sudo apt-get install -y nginx
       - run: python3 scripts/validate_deploy.py --nginx /usr/sbin/nginx

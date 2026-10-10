@@ -11,19 +11,30 @@ corpus capacity need their own representative datasets.
 
 ## Audit workload, 2026-10-10
 
-The candidate reviewed on macOS was `8fd71d0`. An independent AI reviewer ran
-these disposable workloads; they are measurements from one development host.
+An independent AI reviewer tested commit `0a48497` (source tree
+`2b9dab2072ba5495852587c3c2795974c5d9b20d`) on macOS 26.6.2 arm64,
+Python 3.11.14 and SQLite 3.50.4. All stores were disposable and all records
+synthetic. The vector workloads used fixed normalized 384-dimensional vectors,
+so their timings exclude model inference, HTTP and external clients.
 
 | Workload | Observed result |
 | --- | --- |
-| 50,000 valid chunks, 384 dimensions each | Search 0.130–0.134 s; status 0.040–0.041 s; idle index pass 0.068–0.072 s. Database 129.8 MiB. |
-| 50,000 invalid chunks | Search 0.033 s, no result, one summary warning. |
-| 31,800-character input with the pinned model | 133 candidate chunks; 128 stored in 1.764 s, truncation reported. |
-| Pinned model memory use | About 1.01–1.02 GiB RSS for one instance. |
-| 1,000 supported JSONL records | About 0.244 s; a further record remained pending for the next bounded pass. |
-| Bridge shutdown with 100 callers | Every caller settled; no abandoned request remained in the queue. |
-| 2,101 audit events | Reviewed in bounded chunks with matching checkpoint anchors. |
+| 50,000 valid chunks | Search median 147 ms (3 samples); idle index pass median 30 ms (5 samples). |
+| 100,000 valid chunks | Search median 388 ms (3 samples, range 302–503 ms); idle index pass median 62 ms (5 samples). |
+| 50,000 / 100,000 invalid chunks | Search 81 / 137 ms, no result and one summary warning per call. One repair pass repaired exactly 4 records in 34 / 68 ms. Each is one sample. |
+| 100,000 stale retry entries, limit 16 | 18 SELECT statements, exactly 16 stale entries removed in one pass (0.144 ms, one sample). |
+| 256 deferred failures | A new healthy record was indexed first; the last due failure was reached within 16 bounded passes. |
+| Forget followed by a new revision-1 record, unchanged total count | The replacement was indexed and returned by search. |
 
-Search remains linear in stored chunks. Cancellation during embedding occurs
-between records. These results do not establish appliance capacity, concurrent
-workload headroom, provider-log freshness, or a long-running service limit.
+The review caught a lossy count/revision shortcut that missed replacements, an
+unbounded retry-deadline loop, and invalid embedding shapes that could enter a
+repair loop. The final source removes the shortcut, rotates a bounded set of
+retry entries, and validates vector shape before publication. Deterministic
+regressions live in `tests/test_semantic_regressions.py`.
+
+Search remains linear in stored chunks, and an idle indexing pass still scans
+the source table for pending records. Cancellation during embedding occurs
+between records. These warm, bounded measurements do not establish production
+capacity, model relevance, concurrent workload headroom, provider-log freshness,
+or long-running service limits. CI separately exercises the pinned real model
+and an actual Chromium OAuth callback.

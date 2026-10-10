@@ -42,12 +42,50 @@ Do not run both `dots-brain up` and the systemd memory service for one data
 directory. The systemd unit owns the long-running HTTP process. Keep the service
 loopback-only; an existing TLS terminator or tunnel is a separate operator choice.
 
+For a reviewed checkout already installed at `/opt/dots-brain/current` with its
+`.venv`, a typical systemd host uses the following commands. Create the account
+only if it does not already exist. Edit the example addresses and domain before
+installing the templates:
+
+```sh
+sudo useradd --system --home-dir /var/lib/dots-brain --shell /usr/sbin/nologin dots-brain
+sudo install -d -o dots-brain -g dots-brain -m 700 /var/lib/dots-brain
+sudo -u dots-brain /opt/dots-brain/current/.venv/bin/dots-brain --data-dir /var/lib/dots-brain setup
+sudo -u dots-brain /opt/dots-brain/current/.venv/bin/dots-brain --data-dir /var/lib/dots-brain model prepare
+sudo -u dots-brain /opt/dots-brain/current/.venv/bin/dots-brain --data-dir /var/lib/dots-brain oauth configure --issuer https://memory.example.com
+python3 scripts/validate_deploy.py
+sudo install -m 644 deploy/systemd/dots-brain*.service /etc/systemd/system/
+sudo install -d -m 755 /etc/dots-brain
+sudo install -m 644 deploy/nginx/dots-brain.conf /etc/dots-brain/ingress.conf
+sudo systemctl daemon-reload
+sudo systemctl start dots-brain.service dots-brain-ingress.service
+```
+
+The service account needs read and execute access to the reviewed installation;
+the database directory is its writable location. `validate_deploy.py` checks
+template syntax in temporary paths. It does not install units or validate the
+host's TLS certificates. Use `systemctl enable` only after local acceptance if
+boot startup is wanted.
+
+For example, an existing TLS terminator on the same host can forward
+`https://memory.example.com` to the dedicated gateway at `127.0.0.1:8788`.
+In that topology, set the template's `listen` and `allow` addresses to loopback.
+For a tunnel connector in another network namespace, use its actual reachable
+private address and peer allowlist instead. Forward to the gateway, retain the
+original expected Host, and keep port 8787 private. Certificate issuance, DNS and
+the public tunnel remain the operator's separately approved configuration.
+
 ## OAuth onboarding
 
 Opening the CLI onboarding window alone is insufficient when the gateway example
 is used. Start the short gateway unit for the same time window, then approve the
 exact client request with its callback hostname and intended projects. Close the
 window after the flow and check the resulting grant. See [OAuth](../docs/oauth.md).
+
+To roll back before accepting writes, stop ingress and the memory unit, restore
+the recorded installation and unit versions together, and follow
+[database rollback](../docs/upgrading.md). A binary rollback alone cannot open
+a newer schema or restore the prior public authentication policy.
 
 This template needs host-specific review before use. It does not verify TLS,
 public reachability, client UI activation, reboot recovery, or backup recovery.

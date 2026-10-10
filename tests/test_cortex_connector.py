@@ -121,7 +121,7 @@ def config():
 
 
 def policy(*scopes, projects=("alpha",)):
-    return Policy(frozenset(scopes), projects, "oauth-grant:botter")
+    return Policy(frozenset(scopes), projects, "oauth-grant:writer-a")
 
 
 def connector(transport=None, ledger=None):
@@ -251,7 +251,7 @@ def test_note_reuses_stable_operation_receipt_and_origin_metadata():
     assert name == "cortex_record_note"
     assert request["project_id"] == "cortex-alpha"
     assert request["idempotency_key"] == first["operation_id"]
-    assert "principal=oauth-grant:botter" in request["content"]
+    assert "principal=oauth-grant:writer-a" in request["content"]
     assert "source_ref=dots://memory/1@1" in request["content"]
     assert first["retrievable_source_ref"] == "cortex://object/ctx-object-1"
     assert second["replayed"] is True
@@ -325,7 +325,7 @@ def test_planned_release_cannot_overwrite_an_active_sending_claim(tmp_path):
         {
             "operation_id": "cxo_claim-barrier",
             "request_digest": "digest-a",
-            "principal": "oauth-grant:botter",
+            "principal": "oauth-grant:writer-a",
             "local_project": "alpha",
             "cortex_project": "cortex-alpha",
             "operation_kind": "note",
@@ -359,7 +359,7 @@ def test_owner_recovers_sending_after_sender_process_dies_without_replay(tmp_pat
     request = service._upstream_request(
         "note",
         "cortex-alpha",
-        "oauth-grant:botter",
+        "oauth-grant:writer-a",
         arguments["source_ref"],
         {
             "title": arguments["title"],
@@ -374,7 +374,7 @@ def test_owner_recovers_sending_after_sender_process_dies_without_replay(tmp_pat
         {
             "operation_id": arguments["operation_id"],
             "request_digest": digest,
-            "principal": "oauth-grant:botter",
+            "principal": "oauth-grant:writer-a",
             "local_project": "alpha",
             "cortex_project": "cortex-alpha",
             "operation_kind": "note",
@@ -415,7 +415,7 @@ def test_sending_recovery_refuses_an_active_writer_lease(tmp_path):
         {
             "operation_id": "cxo_active-sender",
             "request_digest": "digest-a",
-            "principal": "oauth-grant:botter",
+            "principal": "oauth-grant:writer-a",
             "local_project": "alpha",
             "cortex_project": "cortex-alpha",
             "operation_kind": "note",
@@ -463,7 +463,7 @@ def test_corrected_outcome_supersedes_only_a_proven_unsent_outcome(tmp_path):
                 **common, status="partial"
             )
         )
-    old = ledger.list_owned("oauth-grant:botter", "alpha")[0]
+    old = ledger.list_owned("oauth-grant:writer-a", "alpha")[0]
     assert old["state"] == "planned"
     assert old["error_code"] == "cortex_pre_send_failed"
 
@@ -520,7 +520,7 @@ def test_real_sdk_connection_refusal_is_pre_send_and_keeps_the_operation_retryab
     for _ in range(2):
         with pytest.raises(CortexPreSendError):
             asyncio.run(service.write_decision(**arguments))
-    row = SqliteCortexLedger(store).list_owned("oauth-grant:botter", "alpha")[0]
+    row = SqliteCortexLedger(store).list_owned("oauth-grant:writer-a", "alpha")[0]
     assert row["state"] == "planned"
     assert row["error_code"] == "cortex_pre_send_failed"
 

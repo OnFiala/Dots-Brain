@@ -8,6 +8,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -69,22 +70,42 @@ def test_project_validator_accepts_current_tree():
     validator.validate()
 
 
+def test_validator_rejects_an_import_available_only_as_a_transitive_dependency():
+    validator = load_validator()
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]
+    project["dependencies"] = [
+        dependency for dependency in project["dependencies"] if not dependency.startswith("httpx")
+    ]
+    with pytest.raises(validator.ValidationError, match="Undeclared direct runtime imports: httpx"):
+        validator.validate_direct_dependencies(project)
+
+
 @pytest.mark.parametrize(
     "document",
-    [ROOT / "README.md", *sorted((ROOT / "docs").glob("*.md")), ROOT / "skills/setup/SKILL.md"],
+    [
+        *sorted(ROOT.glob("*.md")),
+        *sorted((ROOT / "docs").rglob("*.md")),
+        ROOT / "deploy/README.md",
+        ROOT / "skills/setup/SKILL.md",
+    ],
 )
 def test_documented_dots_brain_commands_parse(document: Path):
     """Every fenced command beginning with dots-brain stays aligned with the CLI parser."""
     from dots_brain.cli import parser
 
     fenced = False
+    continued = ""
     for line in document.read_text(encoding="utf-8").splitlines():
-        if line.startswith("```"):
+        if line.lstrip().startswith("```"):
             fenced = not fenced
             continue
         if not fenced:
             continue
-        command = line.strip()
+        command = continued + line.strip()
+        if command.endswith("\\"):
+            continued = command[:-1] + " "
+            continue
+        continued = ""
         if command.startswith("uv run dots-brain "):
             command = command.removeprefix("uv run ")
         elif not command.startswith("dots-brain "):

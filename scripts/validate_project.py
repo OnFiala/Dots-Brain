@@ -5,6 +5,7 @@ from __future__ import annotations
 import ast
 import json
 import re
+import sys
 import tomllib
 from pathlib import Path
 
@@ -38,6 +39,24 @@ def runtime_version() -> str:
     raise ValidationError("Runtime version is missing")
 
 
+def validate_direct_dependencies(project: dict) -> None:
+    dependencies = list(project.get("dependencies", []))
+    for extra in project.get("optional-dependencies", {}).values():
+        dependencies.extend(extra)
+    declared = {
+        re.split(r"[\s\[<>=!~;]", item, maxsplit=1)[0].replace("-", "_") for item in dependencies
+    }
+    imported = set()
+    for source in (ROOT / "src/dots_brain").glob("*.py"):
+        for node in ast.walk(ast.parse(source.read_text(encoding="utf-8"))):
+            if isinstance(node, ast.Import):
+                imported.update(alias.name.split(".")[0] for alias in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+                imported.add(node.module.split(".")[0])
+    missing = imported - sys.stdlib_module_names - {"dots_brain"} - declared
+    require(not missing, "Undeclared direct runtime imports: " + ", ".join(sorted(missing)))
+
+
 def validate() -> None:
     project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]
     plugin = json.loads((ROOT / "plugin.json").read_text(encoding="utf-8"))
@@ -61,6 +80,7 @@ def validate() -> None:
         (ROOT / "LICENSE").read_text(encoding="utf-8").startswith("MIT License\n"),
         "Invalid license",
     )
+    validate_direct_dependencies(project)
 
     workflows = ROOT / ".github/workflows"
     for workflow in (*workflows.glob("*.yml"), *workflows.glob("*.yaml")):
@@ -94,7 +114,7 @@ def main() -> int:
     ) as error:
         print(f"project validation failed: {error}")
         return 1
-    print("Release identity, Action pins, plugin metadata, license, and links are valid.")
+    print("Release identity, dependencies, Action pins, plugin metadata and links are valid.")
     return 0
 
 

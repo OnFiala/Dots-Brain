@@ -17,15 +17,17 @@ Use a writable checkout, Python 3.11–3.13, and [uv](https://docs.astral.sh/uv/
 There is no supported `pip install` path in this alpha.
 
 ```sh
-git clone --branch codex/shared-memory-safety https://github.com/OnFiala/Dots-Brain.git
+git clone https://github.com/OnFiala/Dots-Brain.git
 cd Dots-Brain
 uv sync --locked
 uv run dots-brain --data-dir /absolute/private/memory setup
 uv run dots-brain --data-dir /absolute/private/memory doctor
 ```
 
-The command above selects the unreleased candidate branch; pin its reviewed commit
-for repeatable installs. Python must provide SQLite 3.42 or newer.
+For repeatable work, check out a reviewed commit or release tag before syncing.
+Python must provide SQLite 3.42 or newer. The data, backup, and export directories
+must be on a local POSIX filesystem that supports hard links; network shares and
+filesystems without that capability fail with `capability_unavailable`.
 
 For several clients on the same Linux host, use `up` to run an authenticated
 loopback HTTP service, then configure a supported local adapter. See
@@ -42,6 +44,19 @@ Windows is not supported. A connection configured by `connect` is verified at th
 bridge boundary; it does not prove a remote device, web account, or conversation
 has loaded the new tools.
 
+After reloading the client, ask it to save a short project decision in `work`,
+then ask it to find that decision. The expected calls are `memory_remember`,
+`memory_search` or `memory_context`, and `memory_get` for the exact source.
+Saving happens when the client calls a tool; connecting alone does not save a
+conversation. See the [tool reference](docs/reference/mcp-tools.md).
+
+| Adapter | Default client configuration |
+| --- | --- |
+| `codex` | `~/.codex/config.toml` |
+| `claude-code` | `~/.claude.json`, or `CLAUDE_CONFIG_DIR` |
+| `cursor` | `~/.cursor/mcp.json` |
+| `mcp-json` | A path supplied with `--config` |
+
 ## Boundaries
 
 - Data remains in the selected private directory. A checkout is not a data store.
@@ -49,7 +64,8 @@ has loaded the new tools.
   opt-in bounded JSONL import, not continuous provider capture.
 - Remote OAuth needs an existing HTTPS route and an explicit owner approval flow.
   Dots Brain does not provision public ingress or configure web accounts.
-- A CORTEX endpoint is optional and needs its own credential, project mapping, and
+- CORTEX is a separate service for project context, decisions and outcomes.
+  Its optional connector needs its own credential, project mapping, and
   live verification. It is not enabled by installation.
 - Backups on the same disk do not recover a lost host. Restore requires a current
   store for deletion reconciliation; full host-loss recovery is not yet supported.
@@ -77,6 +93,8 @@ and deployment acceptance.
 The maintainer develops Dots Brain with AI coding assistants. Independent review
 means a separate AI reviewer unless a report names a human reviewer. Tests and
 review reports document what was exercised; the maintainer owns release decisions.
+Reviewers in one orchestration share the workspace and permissions. Their separate
+review tasks do not establish process or operating-system isolation.
 
 ## License
 
