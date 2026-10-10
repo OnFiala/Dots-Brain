@@ -25,6 +25,11 @@ Limits are enforced at the server: query text is at most 2,000 characters,
 content 32,000 characters, title 300 characters, search `limit` 1–50, and
 context `max_chars` 256–24,000. The HTTP MCP body is capped at 1 MiB.
 
+Hybrid search retains `semantic_score` when a full-text body excerpt replaces
+a semantic title match. That excerpt has `passage.field="content"` and
+`passage.source="fulltext"`; it has no character offsets because full-text
+snippets may contain omitted text. Semantic passages include their source offsets.
+
 Tool failures return structured error data with a stable `code`. Clients should
 use that code for control flow and treat the message as operator context. Common
 codes include `invalid_input`, `revision_conflict`, `source_suppressed`,

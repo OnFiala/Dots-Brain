@@ -81,7 +81,7 @@ def test_complete_lifecycle_keeps_memories_and_blocks_restart_until_explicit_res
         assert before == {p: p.read_bytes() for p in store.directory.rglob("*") if p.is_file()}
         assert active(read_json(store.directory / "service.json"))
         result = uninstall(store)
-        assert result["state"] == "uninstalled"
+        assert result["state"] == "uninstalled", result
         assert not active(read_json(store.directory / "service.json"))
         assert read_json(config) == {"mcpServers": {}, "theme": "new preference after setup"}
         assert store.get(memory["id"])["content"] == "Keep this memory."

@@ -6,6 +6,7 @@ import asyncio
 import contextlib
 import errno
 import os
+import select
 import shutil
 import signal
 import socket
@@ -251,18 +252,21 @@ def stop_process(store: Store, state: dict) -> None:
     except ProcessLookupError:
         return
     try:
-        if owns_process(store, state):
+        exited = select.poll()
+        exited.register(fd, select.POLLIN)
+        if not owns_process(store, state):
+            if exited.poll(0):
+                return
+            raise InputError("Managed process identity changed; it was preserved.")
+        with contextlib.suppress(ProcessLookupError):
             signal.pidfd_send_signal(fd, signal.SIGTERM)
-            deadline = time.monotonic() + 8
-            while owns_process(store, state) and time.monotonic() < deadline:
-                time.sleep(0.05)
-            if owns_process(store, state):
+        # /proc command/executable metadata can disappear before leases are
+        # released. The already verified pidfd tracks exit without PID reuse.
+        if not exited.poll(8000):
+            with contextlib.suppress(ProcessLookupError):
                 signal.pidfd_send_signal(fd, signal.SIGKILL)
-                deadline = time.monotonic() + 3
-                while owns_process(store, state) and time.monotonic() < deadline:
-                    time.sleep(0.05)
-                if owns_process(store, state):
-                    raise InputError("The managed service did not stop after SIGKILL.")
+            if not exited.poll(3000):
+                raise InputError("The managed service did not stop after SIGKILL.")
     finally:
         os.close(fd)
     with contextlib.suppress(ChildProcessError):

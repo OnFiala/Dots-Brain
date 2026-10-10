@@ -117,11 +117,22 @@ class MemoryService:
                     key = record["id"]
                     # Semantic body passages can locate evidence deep in a long note.
                     # A title-only semantic hit instead uses the full-text body excerpt.
-                    if key not in records or (
-                        ranking is fulltext
-                        and records[key].get("passage", {}).get("field") != "content"
-                    ):
+                    # Merge only the same revision; each ranker reads its own snapshot.
+                    if key not in records:
                         records[key] = record
+                    elif (
+                        ranking is fulltext
+                        and records[key].get("passage", {}).get("field") == "title"
+                        and "semantic_score" in records[key]
+                        and records[key]["revision"] == record["revision"]
+                    ):
+                        records[key] = {
+                            **record,
+                            "semantic_score": records[key]["semantic_score"],
+                            # FTS snippets have no source offsets. Do not reuse
+                            # the title passage's offsets for this body excerpt.
+                            "passage": {"field": "content", "source": "fulltext"},
+                        }
                     scores[key] = scores.get(key, 0.0) + 1 / (RRF_K + rank)
                     best_rank[key] = min(best_rank.get(key, rank), rank)
             results = [

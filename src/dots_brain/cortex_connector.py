@@ -1245,5 +1245,5 @@ def _error_code(exc: CortexConnectorError) -> str:
 
 
 def _missing_content_guard(_value: Mapping[str, object]) -> None:
-    """Reject writes when the caller omitted the required privacy guard."""
+    """Reject content crossing the CORTEX boundary without the required privacy guard."""
     raise CortexConnectorError("CORTEX write privacy validation is not configured.")

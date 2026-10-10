@@ -1,6 +1,8 @@
 """Upgrade installation state without trusting filenames or unrelated processes."""
 
 import os
+import select
+import signal
 import subprocess
 import sys
 
@@ -13,6 +15,46 @@ from dots_brain.local import read_json, write_json
 from dots_brain.operations import migrate
 from dots_brain.runtime import credential, down, owns_process, up
 from dots_brain.store import Store
+
+
+@pytest.mark.parametrize("needs_kill", [False, True])
+def test_stop_waits_for_exit_after_proc_identity_disappears(tmp_path, monkeypatch, needs_kill):
+    from dots_brain import runtime
+
+    owned = iter([True, True])
+    exited = False
+    sent = []
+    closed = []
+    waits = []
+
+    class ExitPoll:
+        def register(self, descriptor, events):
+            assert descriptor == 101 and events == select.POLLIN
+
+        def poll(self, milliseconds):
+            nonlocal exited
+            waits.append(milliseconds)
+            if needs_kill and len(waits) == 1:
+                return []
+            exited = True
+            return [(101, select.POLLIN)]
+
+    monkeypatch.setattr(runtime, "active", lambda state: True)
+    # /proc metadata disappears during exit, before the process releases its leases.
+    monkeypatch.setattr(runtime, "owns_process", lambda store, state: next(owned, False))
+    monkeypatch.setattr(os, "pidfd_open", lambda pid: 101, raising=False)
+    monkeypatch.setattr(
+        signal, "pidfd_send_signal", lambda fd, sig: sent.append(sig), raising=False
+    )
+    monkeypatch.setattr(select, "poll", ExitPoll)
+    monkeypatch.setattr(os, "close", closed.append)
+    monkeypatch.setattr(os, "waitpid", lambda pid, flags: (pid, 0))
+
+    runtime.stop_process(Store(tmp_path), {"pid": 123})
+
+    assert exited, "Returning before exit can misreport the still-held writer lease"
+    assert sent == [signal.SIGTERM] + ([signal.SIGKILL] if needs_kill else [])
+    assert closed == [101]
 
 
 def test_historical_probe_is_revoked_and_replaced_with_read_only_access(tmp_path):

@@ -322,6 +322,81 @@ def test_title_score_ranks_memory_while_best_body_passage_is_returned(index):
     assert body in context["context"]
 
 
+def test_title_only_semantic_hit_keeps_score_with_fulltext_body_excerpt(index):
+    background = "Unrelated cooking notes without the answer. " * 40
+    memory = save(
+        index, background + "Gateway endpoint port: 8443.", "title-only-fulltext", title="gateway"
+    )
+    index._embed = lambda text: index.np.array(
+        [1.0, 0.0] if text == "gateway" else [0.0, 1.0], dtype="<f4"
+    )
+    index.index()
+    semantic = index.search("gateway", limit=1)[0]
+    assert semantic["passage"]["field"] == "title"
+    service = MemoryService(index.store, index)
+    caller = Policy(frozenset({"memory:read"}), ("alpha",))
+
+    result = service.search("gateway", policy=caller, limit=1)["results"][0]
+    assert result["id"] == memory["id"]
+    assert result["semantic_score"] == 1.0
+    assert result["passage"] == {"field": "content", "source": "fulltext"}
+    assert "8443" in result["excerpt"]
+    assert "8443" in service.context("gateway", policy=caller)["context"]
+
+
+def test_hybrid_does_not_attach_new_semantic_metadata_to_an_old_fulltext_revision(
+    index, monkeypatch
+):
+    memory = save(index, "First body revision.", "hybrid-revision-race", title="gateway")
+    stale_fulltext = index.store.search("gateway")
+    assert stale_fulltext[0]["revision"] == 1
+    save(
+        index,
+        "Second body revision.",
+        "hybrid-revision-race",
+        title="gateway",
+        expected_revision=1,
+    )
+    index._embed = lambda text: index.np.array(
+        [1.0, 0.0] if text == "gateway" else [0.0, 1.0], dtype="<f4"
+    )
+    index.index()
+    monkeypatch.setattr(index.store, "search", lambda *args, **kwargs: stale_fulltext)
+
+    result = MemoryService(index.store, index).search(
+        "gateway", policy=Policy(frozenset({"memory:read"}), ("alpha",))
+    )["results"][0]
+    assert result["id"] == memory["id"]
+    assert result["revision"] == 2
+    assert result["semantic_score"] == 1.0
+    assert result["passage"]["field"] == "title"
+    assert result["excerpt"] == "gateway"
+
+
+def test_duplicate_fulltext_rows_without_semantic_hit_do_not_require_semantic_metadata(index):
+    memory = save(index, "Gateway endpoint details.", "duplicate-fulltext")
+    index._embed = lambda text: index.np.array(
+        [1.0, 0.0] if text == "gateway" else [0.0, 1.0], dtype="<f4"
+    )
+    index.index()
+    with index.store.connection(write=True) as db:
+        db.execute(
+            "INSERT INTO memory_fts(memory_id,title,content) VALUES (?,?,?)",
+            (memory["id"], "", "Gateway endpoint details."),
+        )
+    assert len(index.store.search("gateway")) == 2
+    assert index.search("gateway") == []
+
+    results = MemoryService(index.store, index).search(
+        "gateway", policy=Policy(frozenset({"memory:read"}), ("alpha",))
+    )["results"]
+    assert len(results) == 1
+    assert results[0]["id"] == memory["id"]
+    assert results[0]["revision"] == 1
+    assert "semantic_score" not in results[0]
+    assert "passage" not in results[0]
+
+
 def test_background_index_summary_avoids_explicit_status_scan(index, monkeypatch):
     monkeypatch.setattr(index, "status", lambda: pytest.fail("background index called status"))
     assert index.index(summary=False) == {"indexed_now": 0, "examined": 0}

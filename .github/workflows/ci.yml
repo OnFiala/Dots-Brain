@@ -47,9 +47,9 @@ jobs:
       - run: uv build
       - name: Test the installed wheel
         run: |
-          uv venv --python ${{ matrix.python }} artifact-venv
-          uv pip install --python artifact-venv/bin/python dist/*.whl
-          (cd /tmp && "$GITHUB_WORKSPACE/artifact-venv/bin/python" "$GITHUB_WORKSPACE/scripts/verify_wheel.py")
+          uv venv --python ${{ matrix.python }} "$RUNNER_TEMP/artifact-venv"
+          uv pip install --python "$RUNNER_TEMP/artifact-venv/bin/python" dist/*.whl
+          (cd "$RUNNER_TEMP" && "$RUNNER_TEMP/artifact-venv/bin/python" "$GITHUB_WORKSPACE/scripts/verify_wheel.py")
   browser:
     runs-on: ubuntu-latest
     timeout-minutes: 10
