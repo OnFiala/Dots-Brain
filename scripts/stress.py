@@ -38,6 +38,12 @@ def summary(samples):
     }
 
 
+def require(condition, message):
+    """Acceptance checks must also execute under python -O."""
+    if not condition:
+        raise RuntimeError(message)
+
+
 def run(records: int, workers: int, http_calls: int) -> dict:
     started = time.monotonic()
     with tempfile.TemporaryDirectory(prefix="dots-brain-stress-") as temporary:
@@ -62,8 +68,14 @@ def run(records: int, workers: int, http_calls: int) -> dict:
         with ThreadPoolExecutor(max_workers=workers) as pool:
             writes = list(pool.map(write, payloads))
             retries = list(pool.map(write, payloads))
-        assert all(not item[0]["changed"] for item in retries)
-        assert store.status()["memories"] == records
+        require(
+            all(not item[0]["changed"] for item in retries),
+            "Stress invariant failed: all((not item[0]['changed'] for item in retries))",
+        )
+        require(
+            store.status()["memories"] == records,
+            "Stress invariant failed: store.status()['memories'] == records",
+        )
 
         conflict_source = payloads[0]
 
@@ -79,7 +91,10 @@ def run(records: int, workers: int, http_calls: int) -> dict:
         with ThreadPoolExecutor(max_workers=workers) as pool:
             conflicts = list(pool.map(conflict, range(workers)))
         winners = [record for record in conflicts if record is not None]
-        assert len(winners) == 1
+        require(
+            len(winners) == 1,
+            "Stress invariant failed: len(winners) == 1",
+        )
         winner = winners[0]
 
         searches = []
@@ -87,7 +102,10 @@ def run(records: int, workers: int, http_calls: int) -> dict:
             tick = time.monotonic()
             found = store.search("SQLite shared", projects=(f"project-{project}",), limit=50)
             searches.append(time.monotonic() - tick)
-            assert found and all(row["project"] == f"project-{project}" for row in found)
+            require(
+                found and all(row["project"] == f"project-{project}" for row in found),
+                "Search crossed a project boundary or returned no fixture record.",
+            )
 
         try:
             service = up(store, port=0)
@@ -119,16 +137,25 @@ def run(records: int, workers: int, http_calls: int) -> dict:
                                     project="http-test",
                                 ),
                             )
-                            assert not saved.isError
+                            require(
+                                not saved.isError,
+                                "Stress invariant failed: not saved.isError",
+                            )
                             read = await session.call_tool(
                                 "memory_get", {"memory_id": saved.structuredContent["id"]}
                             )
-                            assert not read.isError and read.structuredContent["event_id"] == str(i)
+                            require(
+                                not read.isError and read.structuredContent["event_id"] == str(i),
+                                "HTTP write/read did not return the exact event.",
+                            )
                             measurements.append(time.monotonic() - tick)
                         forbidden = await session.call_tool(
                             "memory_get", {"memory_id": writes[-1][0]["id"]}
                         )
-                        assert forbidden.isError
+                        require(
+                            forbidden.isError,
+                            "Stress invariant failed: forbidden.isError",
+                        )
 
                 await asyncio.gather(*(worker(i) for i in range(workers)))
                 return measurements
@@ -153,10 +180,19 @@ def run(records: int, workers: int, http_calls: int) -> dict:
                     )
                 return response.status_code == 401
 
-            assert asyncio.run(revoked())
+            require(
+                asyncio.run(revoked()),
+                "Stress invariant failed: asyncio.run(revoked())",
+            )
             down(store)
-            assert up(store)["read"]
-            assert Store(store.directory).status()["memories"] == records + http_calls
+            require(
+                up(store)["read"],
+                "Stress invariant failed: up(store)['read']",
+            )
+            require(
+                Store(store.directory).status()["memories"] == records + http_calls,
+                "Restart changed the memory count.",
+            )
         finally:
             down(store)
 
@@ -171,8 +207,14 @@ def run(records: int, workers: int, http_calls: int) -> dict:
             except SuppressedError:
                 pass
         with store.connection() as db:
-            assert db.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
-            assert not db.execute("PRAGMA foreign_key_check").fetchall()
+            require(
+                db.execute("PRAGMA integrity_check").fetchone()[0] == "ok",
+                "SQLite integrity check failed.",
+            )
+            require(
+                not db.execute("PRAGMA foreign_key_check").fetchall(),
+                "Stress invariant failed: not db.execute('PRAGMA foreign_key_check').fetchall()",
+            )
         return {
             "state": "passed",
             "python": platform.python_version(),
@@ -185,6 +227,8 @@ def run(records: int, workers: int, http_calls: int) -> dict:
             "project_search": summary(searches),
             "http_write_read_pairs": summary(http_samples),
             "conflict_winners": len(winners),
+            "remaining_memories": store.status()["memories"],
+            "suppressed_sources": min(records, 100),
             "service_peak_rss_kib": rss,
             "harness_peak_rss_kib": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
             "elapsed_seconds": round(time.monotonic() - started, 2),

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import copy
 import hashlib
 import json
 import os
@@ -26,8 +28,14 @@ PROVIDERS = {
 }
 
 
+def normalized_path(path: Path) -> Path:
+    """Normalize spelling without following a configuration symlink."""
+    return Path(os.path.abspath(os.path.normpath(str(path.expanduser()))))
+
+
 def integration_key(provider: str, path: Path) -> str:
-    return hashlib.sha256(f"{provider}\0{path}".encode()).hexdigest()[:24]
+    canonical = normalized_path(path)
+    return hashlib.sha256(f"{provider}\0{canonical}".encode()).hexdigest()[:24]
 
 
 def registrations(directory: Path) -> dict:
@@ -66,17 +74,17 @@ def target_path(provider: str, config: Path | None) -> Path:
     if provider not in PROVIDERS:
         raise InputError("No tested adapter for this provider. Inspect dots-brain providers.")
     if config is not None:
-        return config.expanduser().absolute()
+        return normalized_path(config)
     default = PROVIDERS[provider]["path"]
     if default is None:
         raise InputError("A generic MCP client requires its actual configuration file path.")
     if provider == "claude-code" and os.environ.get("CLAUDE_CONFIG_DIR"):
-        return Path(os.environ["CLAUDE_CONFIG_DIR"]).expanduser().absolute() / ".claude.json"
-    return Path.home() / default
+        return normalized_path(Path(os.environ["CLAUDE_CONFIG_DIR"]) / ".claude.json")
+    return normalized_path(Path.home() / default)
 
 
-def configure(path: Path, *, provider: str, entry: dict) -> bool:
-    with locked(path.with_name(path.name + ".dots-brain.lock")):
+def configure(path: Path, *, provider: str, entry: dict, replace_entry: dict | None = None) -> bool:
+    with locked(path.with_name(path.name + ".dots-brain.lock"), create_parent=True):
         if path.is_symlink():
             raise InputError("Client configuration must not be a symbolic link.")
         original = path.read_text() if path.exists() else ""
@@ -97,7 +105,7 @@ def configure(path: Path, *, provider: str, entry: dict) -> bool:
         existing = servers.get("dots-brain")
         if existing == entry:
             return False
-        if existing is not None:
+        if existing is not None and existing != replace_entry:
             raise InputError("A different dots-brain connection already exists; it was preserved.")
         servers["dots-brain"] = entry
         content = (
@@ -111,9 +119,60 @@ def configure(path: Path, *, provider: str, entry: dict) -> bool:
         if original:
             backup = path.with_name(path.name + ".before-dots-brain")
             if not backup.exists():
-                atomic_write(backup, original)
-        atomic_write(path, content)
+                atomic_write(backup, original, preserve=True)
+        atomic_write(path, content, preserve=True)
         return True
+
+
+def preflight_configure(
+    path: Path, *, provider: str, entry: dict, replace_entry: dict | None = None
+) -> None:
+    """Reject an unsafe or conflicting client file before minting a credential."""
+    if path.is_symlink():
+        raise InputError("Client configuration must not be a symbolic link.")
+    original = path.read_text() if path.exists() else ""
+    document = (
+        tomlkit.parse(original)
+        if PROVIDERS[provider]["format"] == "toml"
+        else json.loads(original)
+        if original
+        else {}
+    )
+    if not isinstance(document, dict):
+        raise InputError("Client configuration must contain an object.")
+    key = "mcp_servers" if PROVIDERS[provider]["format"] == "toml" else "mcpServers"
+    servers = document.get(key, {})
+    if not isinstance(servers, dict):
+        raise InputError("The client's MCP server section is not an object.")
+    existing = servers.get("dots-brain")
+    if existing is not None and existing != entry and existing != replace_entry:
+        raise InputError("A different dots-brain connection already exists; it was preserved.")
+
+
+def local_connection_path(store: Store, value: str) -> Path:
+    """Resolve current and legacy local registry paths after a data-dir move."""
+    path = Path(value)
+    if not path.is_absolute():
+        return (store.directory / path).resolve(strict=False)
+    if path.parent.name == "connections":
+        return (store.directory / "connections" / path.name).resolve(strict=False)
+    return path.resolve(strict=False)
+
+
+def local_connection_record(store: Store, path: Path) -> str:
+    return str(path.resolve(strict=False).relative_to(store.directory.resolve()))
+
+
+def valid_local_registration(record: object, *, provider: str, target: Path) -> bool:
+    return (
+        isinstance(record, dict)
+        and record.get("local") is True
+        and record.get("provider") == provider
+        and isinstance(record.get("connection_file"), str)
+        and isinstance(record.get("client_id"), str)
+        and isinstance(record.get("entry"), dict)
+        and record.get("config_file") == str(target)
+    )
 
 
 def connect_client(
@@ -146,22 +205,25 @@ def _connect_client(store, *, provider, config, connection, projects):
     registry = registrations(store.directory)
     key = integration_key(provider, target)
     local = connection is None
+    previous = registry["items"].get(key)
+    replace_entry = None
+    created_credential = False
     if local:
-        runtime = up(store)
         private = store.directory / "connections"
         if private.is_symlink():
             raise InputError("Managed connection storage must not be a symbolic link.")
-        private.mkdir(mode=0o700, exist_ok=True)
         connection = private / f"{provider}-{key}.json"
-        if key in registry["items"]:
-            previous = registry["items"][key]
+        if previous is not None:
+            if not valid_local_registration(previous, provider=provider, target=target):
+                raise InputError("Invalid integration registration; existing state was preserved.")
             if previous["local"]:
-                previous_path = Path(previous["connection_file"])
+                previous_path = local_connection_path(store, previous["connection_file"])
                 if previous_path not in (connection, private / f"{provider}.json"):
                     raise InputError(
                         "Unexpected managed credential path; existing state was preserved."
                     )
                 connection = previous_path
+                replace_entry = previous["entry"]
         elif (private / f"{provider}.json").is_file() and target.is_file():
             # Preserve alpha.1 connections when their generated entry is unchanged.
             legacy = private / f"{provider}.json"
@@ -172,40 +234,76 @@ def _connect_client(store, *, provider, config, connection, projects):
                 legacy, store.directory, provider
             ):
                 connection = legacy
+        entry = bridge_entry(connection, store.directory, provider)
+        preflight_configure(target, provider=provider, entry=entry, replace_entry=replace_entry)
+        runtime = up(store)
+        private.mkdir(mode=0o700, exist_ok=True)
         with locked(private / f"{provider}.lock"):
+            prior_client_id = None
+            if connection.exists():
+                prior_client_id = read_connection(connection)["client_id"]
             client_id = credential(
-                store, name=provider, path=connection, url=runtime["url"], projects=projects
+                store,
+                name=provider,
+                path=connection,
+                url=runtime["url"],
+                projects=projects,
+                replace_invalid=previous is not None,
             )
+            created_credential = client_id != prior_client_id
     else:
-        connection = connection.expanduser().absolute()
+        connection = connection.expanduser().resolve(strict=False)
         client_id = read_connection(connection)["client_id"]
+        entry = bridge_entry(connection, None, provider)
+        preflight_configure(target, provider=provider, entry=entry)
     entry = bridge_entry(connection, store.directory if local else None, provider)
-    check = asyncio.run(
-        asyncio.wait_for(
-            verify_command(
-                entry,
-                write=local,
-                project=(projects or ["default"])[0],
-                cleanup_store=store if local else None,
-            ),
-            timeout=30,
+    try:
+        check = asyncio.run(
+            asyncio.wait_for(
+                verify_command(
+                    entry,
+                    write=local,
+                    project=(projects or ["default"])[0],
+                    cleanup_store=store if local else None,
+                ),
+                timeout=30,
+            )
         )
-    )
-    if check["state"] == "verification_failed":
-        raise InputError(
-            "The generated bridge failed verification; client configuration was preserved."
-        )
-    registry["items"][key] = {
+        if check["state"] == "verification_failed":
+            raise InputError(
+                "The generated bridge failed verification; client configuration was preserved."
+            )
+    except BaseException:
+        if local and created_credential:
+            with contextlib.suppress(InputError):
+                from .auth import revoke_client
+
+                revoke_client(store, client_id)
+            connection.unlink(missing_ok=True)
+        raise
+    record = {
         "provider": provider,
         "config_file": str(target),
         "entry": entry,
-        "connection_file": str(connection),
+        "connection_file": local_connection_record(store, connection) if local else str(connection),
         "client_id": client_id,
         "local": local,
     }
+    previous_registry = copy.deepcopy(registry)
+    registry["items"][key] = record
     # Record intent first so an interruption after configuration can be cleaned up.
     write_json(store.directory / "integrations.json", registry)
-    changed = configure(target, provider=provider, entry=entry)
+    try:
+        changed = configure(target, provider=provider, entry=entry, replace_entry=replace_entry)
+    except BaseException:
+        write_json(store.directory / "integrations.json", previous_registry)
+        if local and created_credential:
+            with contextlib.suppress(InputError):
+                from .auth import revoke_client
+
+                revoke_client(store, client_id)
+            connection.unlink(missing_ok=True)
+        raise
     return {
         "state": "configured_verified_bridge",
         "provider": provider,

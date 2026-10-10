@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "dots-brain"
-version = "0.4.0a1"
+version = "0.4.0a2"
 description = "One source-aware memory for your AI tools, hosted on your own machine."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -13,10 +13,23 @@ license-files = ["LICENSE"]
 authors = [{name = "Dots Brain contributors"}]
 classifiers = [
   "Development Status :: 3 - Alpha",
+  "Operating System :: POSIX :: Linux",
   "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
   "Topic :: Database",
 ]
-dependencies = ["mcp>=1.30,<2", "tomlkit>=0.13,<1"]
+dependencies = [
+  "anyio>=4.8,<5",
+  "httpx>=0.28,<1",
+  "jsonschema>=4.23,<5",
+  "mcp>=1.30,<1.31",
+  "pydantic>=2.10,<3",
+  "starlette>=0.45,<2",
+  "tomlkit>=0.13,<1",
+  "uvicorn>=0.34,<1",
+]
 
 [project.optional-dependencies]
 semantic = ["fastembed>=0.7,<1"]
@@ -29,10 +42,15 @@ Homepage = "https://github.com/OnFiala/dots-brain"
 Issues = "https://github.com/OnFiala/dots-brain/issues"
 
 [dependency-groups]
-dev = ["pytest>=8,<9", "ruff>=0.11,<1", "build>=1.2,<2"]
+dev = ["pytest>=8,<9", "pytest-timeout>=2.3,<3", "ruff>=0.11,<1"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+timeout = 60
+filterwarnings = [
+  "error::ResourceWarning",
+  "error::pytest.PytestUnraisableExceptionWarning",
+]
 
 [tool.ruff]
 target-version = "py311"

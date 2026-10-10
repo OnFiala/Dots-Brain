@@ -25,7 +25,15 @@ def test_setup_is_repeatable_and_cli_never_prints_issued_token(tmp_path):
     assert cli(directory, "setup").returncode == 0
     credential = tmp_path / "client.json"
     result = cli(
-        directory, "client", "create", "--name", "test", "--credential-file", str(credential)
+        directory,
+        "client",
+        "create",
+        "--name",
+        "test",
+        "--credential-file",
+        str(credential),
+        "--url",
+        "http://127.0.0.1:8765/mcp",
     )
     assert result.returncode == 0, result.stderr
     token = json.loads(credential.read_text())["token"]
@@ -36,7 +44,15 @@ def test_setup_is_repeatable_and_cli_never_prints_issued_token(tmp_path):
     existing = credential.read_bytes()
     assert (
         cli(
-            directory, "client", "create", "--name", "again", "--credential-file", str(credential)
+            directory,
+            "client",
+            "create",
+            "--name",
+            "again",
+            "--credential-file",
+            str(credential),
+            "--url",
+            "http://127.0.0.1:8765/mcp",
         ).returncode
         == 1
     )

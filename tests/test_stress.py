@@ -12,4 +12,5 @@ def test_bounded_stress_cleans_up_its_winning_revision():
     assert report["state"] == "passed"
     assert report["conflict_winners"] == 1
     assert report["http_write_read_pairs"]["count"] == 4
-    assert "deletion_suppression" in report["checks"]
+    assert report["remaining_memories"] == 4
+    assert report["suppressed_sources"] == 100

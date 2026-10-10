@@ -18,6 +18,12 @@ from dots_brain.semantic import FILES, MODEL_ID, model_directory
 from dots_brain.store import Store
 
 
+def require(condition, message):
+    """Acceptance checks must also execute under python -O."""
+    if not condition:
+        raise RuntimeError(message)
+
+
 def run(model: Path, records: int, workers: int, queries: int) -> dict:
     with tempfile.TemporaryDirectory(prefix="dots-brain-semantic-stress-") as temporary:
         store = Store(Path(temporary) / "memory")
@@ -70,7 +76,10 @@ def run(model: Path, records: int, workers: int, queries: int) -> dict:
                     deadline = time.monotonic() + 180
                     while True:
                         status = await session.call_tool("memory_status", {})
-                        assert not status.isError
+                        require(
+                            not status.isError,
+                            "Stress invariant failed: not status.isError",
+                        )
                         if status.structuredContent["semantic"]["pending"] == 0:
                             break
                         if time.monotonic() >= deadline:
@@ -95,7 +104,10 @@ def run(model: Path, records: int, workers: int, queries: int) -> dict:
                             result = await session.call_tool(
                                 "memory_search", {"query": query, "limit": 3}
                             )
-                            assert not result.isError
+                            require(
+                                not result.isError,
+                                "Stress invariant failed: not result.isError",
+                            )
                             rows = result.structuredContent["results"]
                             hits.append(any(row["id"] == expected[key] for row in rows))
                             samples.append(time.monotonic() - tick)
@@ -108,8 +120,9 @@ def run(model: Path, records: int, workers: int, queries: int) -> dict:
             rss = next(
                 int(line.split()[1]) for line in status.splitlines() if line.startswith("VmHWM:")
             )
-            assert all(hits), (
-                f"Synthetic bilingual retrieval missed {len(hits) - sum(hits)} queries."
+            require(
+                all(hits),
+                f"Synthetic bilingual retrieval missed {len(hits) - sum(hits)} queries.",
             )
             return {
                 "state": "passed",

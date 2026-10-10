@@ -123,8 +123,9 @@ def test_journal_mode_contention_has_a_deadline_and_can_resume(tmp_path, monkeyp
     from dots_brain import store as store_module
 
     memory = Store(tmp_path / "contended")
-    memory.directory.mkdir()
+    memory.initialize()
     with sqlite3.connect(memory.path) as reader:
+        reader.execute("PRAGMA journal_mode=DELETE")
         reader.execute("CREATE TABLE existing_data (value TEXT)")
         reader.execute("INSERT INTO existing_data VALUES ('preserve me')")
         reader.commit()
@@ -145,8 +146,9 @@ def test_journal_mode_retries_a_temporary_reader_lock(tmp_path):
     from concurrent.futures import TimeoutError
 
     memory = Store(tmp_path / "temporary-lock")
-    memory.directory.mkdir()
+    memory.initialize()
     with sqlite3.connect(memory.path) as reader, ThreadPoolExecutor(max_workers=1) as executor:
+        reader.execute("PRAGMA journal_mode=DELETE")
         reader.execute("CREATE TABLE existing_data (value TEXT)")
         reader.execute("INSERT INTO existing_data VALUES ('preserve me')")
         reader.commit()

@@ -97,11 +97,14 @@ def test_incomplete_scan_preserves_checkpoint(tmp_path, source, failure):
                 del page["has_more"]
         return page
 
+    if failure == "cap":
+        _, candidate = review.collect({}, fetch, max_pages=1)
+        assert candidate["has_more"] is True
+        assert review.read_json(root / "checkpoint.json") == {}
+        assert not (root / "pending.json").exists()
+        return
     with pytest.raises((ValueError, OSError, KeyError)):
-        if failure == "cap":
-            review.collect({}, fetch, max_pages=1)
-        else:
-            review.stage(root, "test", broken)
+        review.stage(root, "test", broken)
     assert (root / "checkpoint.json").read_bytes() == before
     assert not (root / "pending.json").exists()
 
@@ -259,6 +262,6 @@ def test_receipt_from_another_actor_or_project_is_not_a_match(source, field):
         return page
 
     before = copy.deepcopy(checkpoint)
-    with pytest.raises(ValueError, match="actor/project"):
-        review.collect(checkpoint, mismatched)
+    _, candidate = review.collect(checkpoint, mismatched)
+    assert candidate["anomalies"] == [{"code": "orphan_or_duplicate_receipt", "event_ids": [2]}]
     assert checkpoint == before

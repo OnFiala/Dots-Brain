@@ -3,7 +3,13 @@ import sqlite3
 import pytest
 
 from dots_brain.auth import authenticate, issue_client
-from dots_brain.errors import InputError, SuppressedError
+from dots_brain.errors import (
+    InputError,
+    IntegrityError,
+    StateError,
+    StoreDisabledError,
+    SuppressedError,
+)
 from dots_brain.operations import activate_restore, backup_store, restore_store
 from dots_brain.runtime import resume_installation
 from dots_brain.store import Store
@@ -33,7 +39,7 @@ def test_restore_merges_new_deletions_revokes_credentials_and_stays_disabled(tmp
     assert result["state"] == "restored_disabled" and result["removed_since_backup"] == 1
     assert target.status()["memories"] == 0
     assert (target.directory / "disabled.json").exists()
-    with pytest.raises(InputError, match="disabled"):
+    with pytest.raises(StoreDisabledError, match="disabled"):
         target.remember(**record)
     with target.connection() as db:
         assert db.execute("SELECT revoked FROM clients").fetchone()[0] == 1
@@ -67,7 +73,7 @@ def test_restore_activation_rechecks_deletions_and_freezes_old_writers(tmp_path)
         memory_id=saved["id"],
         expected_revision=1,
     )  # Public audited mutation after staging, before cutover.
-    with pytest.raises(InputError, match="activate-restore"):
+    with pytest.raises((StateError, InputError), match="activate-restore"):
         resume_installation(target)
     with pytest.raises(InputError, match="writers-stopped"):
         activate_restore(source, target, writers_stopped=False)
@@ -79,9 +85,9 @@ def test_restore_activation_rechecks_deletions_and_freezes_old_writers(tmp_path)
         assert len(expected) == 2 and actual == expected  # Exact ID, payload and hash chain.
     with pytest.raises(SuppressedError):
         target.remember(**record)
-    with pytest.raises(InputError, match="disabled"):
+    with pytest.raises(StoreDisabledError, match="disabled"):
         source.remember(**{**record, "event_id": "new"})
-    with pytest.raises(InputError, match="activate-restore"):
+    with pytest.raises((StateError, InputError), match="activate-restore"):
         resume_installation(source)
 
 
@@ -96,7 +102,7 @@ def test_backup_rejects_unsupported_or_logically_corrupt_database(tmp_path, dama
         else:
             db.execute("UPDATE memories SET current_revision=2")
     output = tmp_path / "bad.sqlite3"
-    with pytest.raises(InputError):
+    with pytest.raises(IntegrityError):
         backup_store(source, output)
     assert not output.exists()
 
@@ -142,13 +148,13 @@ def test_restore_revokes_pending_oauth_and_marks_inflight_connector_uncertain(tm
     restore_store(backup, target, latest_deletions=source)
     with target.connection() as db:
         for table in (
-            "oauth_clients",
             "oauth_requests",
             "oauth_codes",
-            "oauth_grants",
             "oauth_tokens",
         ):
             assert db.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] == 0
+        assert db.execute("SELECT revoked FROM oauth_grants WHERE id='grant'").fetchone()[0] == 1
+        assert db.execute("SELECT COUNT(*) FROM oauth_clients").fetchone()[0] == 1
         rows = db.execute(
             "SELECT operation_id,state,receipt_json FROM cortex_operations ORDER BY operation_id"
         ).fetchall()
@@ -176,11 +182,12 @@ def test_cutover_refuses_to_lose_new_revisions_or_audit_history(tmp_path):
     AuditLog(source).record(
         Policy(), project="default", kind="action", client_event_id="new-action"
     )
-    with pytest.raises(InputError, match="canonical state") as error:
+    with pytest.raises(IntegrityError, match="canonical state") as error:
         activate_restore(source, target, writers_stopped=True)
     assert "revisions=" in str(error.value)
     assert source.status()["memories"] == 2
-    assert all((store.directory / "disabled.json").exists() for store in (source, target))
+    assert not (source.directory / "disabled.json").exists()
+    assert (target.directory / "disabled.json").exists()
     assert target.status()["memories"] == 1
 
 

@@ -7,16 +7,30 @@ import json
 import os
 import re
 import sqlite3
+import tempfile
 import time
+import unicodedata
 import uuid
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
-from .errors import ConflictError, InputError, NotFoundError, SuppressedError
+from .errors import (
+    CapabilityError,
+    ConflictError,
+    InputError,
+    IntegrityError,
+    MigrationRequiredError,
+    NotFoundError,
+    StoreDisabledError,
+    SuppressedError,
+)
+from .local import locked, sync_directory, sync_file_and_parent
 
 SCHEMA_VERSION = 2
+APPLICATION_ID = 0x444F5453
+MIN_SQLITE_VERSION = (3, 42, 0)
 WAL_LOCK_TIMEOUT = 10.0
 SCHEMA = """
 CREATE TABLE memories (
@@ -35,6 +49,10 @@ CREATE TABLE revisions (
 );
 CREATE VIRTUAL TABLE memory_fts USING fts5(
     memory_id UNINDEXED, title, content, tokenize='unicode61 remove_diacritics 2'
+);
+CREATE TABLE memory_fts_rows (
+    memory_id TEXT PRIMARY KEY REFERENCES memories(id) ON DELETE CASCADE,
+    fts_rowid INTEGER NOT NULL UNIQUE
 );
 CREATE TABLE suppressions (source_key TEXT PRIMARY KEY, deleted_at TEXT NOT NULL);
 CREATE TABLE scoped_suppressions (
@@ -80,11 +98,82 @@ def now() -> str:
 
 
 def validate_text(value: str, name: str, maximum: int, *, empty: bool = False) -> str:
-    if not isinstance(value, str) or len(value) > maximum or "\x00" in value:
-        raise InputError(f"{name} must be text of at most {maximum} characters without NUL.")
+    if (
+        not isinstance(value, str)
+        or len(value) > maximum
+        or "\x00" in value
+        or any(0xD800 <= ord(character) <= 0xDFFF for character in value)
+        or any(
+            unicodedata.category(character) == "Cc" and character not in "\n\r\t"
+            for character in value
+        )
+    ):
+        raise InputError(f"{name} must be valid Unicode text of at most {maximum} characters.")
     if not empty and not value.strip():
         raise InputError(f"{name} must not be empty.")
     return value
+
+
+def validate_identifier(value: str, name: str, maximum: int) -> str:
+    validate_text(value, name, maximum)
+    if any(unicodedata.category(character) in {"Cc", "Cf"} for character in value):
+        raise InputError(f"{name} must not contain control or formatting characters.")
+    return value
+
+
+def validate_integer(value: int, name: str, minimum: int = 1, maximum: int = 2**63 - 1) -> int:
+    if type(value) is not int or not minimum <= value <= maximum:
+        raise InputError(f"{name} must be a positive integer between {minimum} and {maximum}.")
+    return value
+
+
+def normalize_projects(projects) -> tuple[str, ...] | None:
+    if projects is None:
+        return None
+    if not isinstance(projects, (tuple, list, set, frozenset)):
+        raise InputError("projects must be a collection of project names, not a string.")
+    return tuple(sorted({validate_identifier(project, "project", 200) for project in projects}))
+
+
+def require_sqlite() -> None:
+    if sqlite3.sqlite_version_info < MIN_SQLITE_VERSION:
+        raise CapabilityError("SQLite 3.42 or newer with FTS5 is required for secure deletion.")
+
+
+def secure_fts(db: sqlite3.Connection) -> None:
+    """Enable real FTS deletion and compact tombstones from earlier releases once."""
+    require_sqlite()
+    configured = db.execute("SELECT v FROM memory_fts_config WHERE k='secure-delete'").fetchone()
+    if not configured or configured[0] != 1:
+        db.execute("INSERT INTO memory_fts(memory_fts,rank) VALUES ('secure-delete',1)")
+        db.execute("INSERT INTO memory_fts(memory_fts) VALUES ('optimize')")
+
+
+def ensure_fts_row_mapping(db: sqlite3.Connection) -> None:
+    """Maintain an explicit mapping to the derived FTS rowid.
+
+    ``memory_fts.memory_id`` is intentionally unindexed.  The mapping lets
+    updates and deletion target the FTS row directly without making a source
+    record depend on SQLite's implicit rowid.  Existing v2 stores acquire the
+    mapping during setup; it is entirely derived from the current FTS index.
+    """
+    db.execute(
+        "CREATE TABLE IF NOT EXISTS memory_fts_rows ("
+        "memory_id TEXT PRIMARY KEY REFERENCES memories(id) ON DELETE CASCADE,"
+        "fts_rowid INTEGER NOT NULL UNIQUE)"
+    )
+    # FTS is derived state.  Ignore and securely remove an orphan rather than
+    # letting it make an otherwise recoverable source database unusable.
+    orphaned = db.execute(
+        "SELECT f.rowid FROM memory_fts f "
+        "LEFT JOIN memories m ON m.id=f.memory_id WHERE m.id IS NULL"
+    ).fetchall()
+    for row in orphaned:
+        db.execute("DELETE FROM memory_fts WHERE rowid=?", (row[0],))
+    db.execute(
+        "INSERT OR REPLACE INTO memory_fts_rows(memory_id,fts_rowid) "
+        "SELECT memory_id,rowid FROM memory_fts"
+    )
 
 
 def source_key(source: str, account: str, event_id: str) -> str:
@@ -121,45 +210,76 @@ class Store:
         self.path = self.directory / "brain.sqlite3"
 
     def initialize(self) -> None:
+        require_sqlite()
+        if (self.directory / "disabled.json").exists():
+            raise StoreDisabledError("This installation is disabled; inspect its recovery state.")
         self.directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+        # A distinct schema lock avoids reentering installation/service locks held by callers.
+        with locked(self.directory / "schema.lock"):
+            self._initialize()
+
+    def _initialize(self) -> None:
         if self.path.is_symlink():
             raise InputError("The database must not be a symbolic link.")
-        descriptor = os.open(self.path, os.O_CREAT | os.O_RDWR, 0o600)
-        os.close(descriptor)
-        self.path.chmod(0o600)
+        if not self.path.exists():
+            self._create_database()
         with self.connection() as db:
-            version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version == 1:
-                raise InputError(
-                    "Database schema v1 requires an explicit offline migration; "
-                    "do not start this release."
-                )
-            if version not in (0, SCHEMA_VERSION):
-                raise InputError("Unsupported database version; use a compatible Brain release.")
             enable_wal(db)
             db.execute("BEGIN IMMEDIATE")
-            # Another initializer may have created the schema while this connection
-            # waited for the write lock.
-            version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version == 0:
-                # The schema and version are committed together; failure leaves no partial schema.
-                for statement in schema_statements():
-                    db.execute(statement)
+            secure_fts(db)
+            ensure_fts_row_mapping(db)
+            from .semantic import STATE_SQL
+
+            db.execute(STATE_SQL)
+
+    def _create_database(self) -> None:
+        """Publish a complete initial database; a crash never leaves a version-zero store."""
+        descriptor, name = tempfile.mkstemp(prefix=".dots-initialize-", dir=self.directory)
+        os.close(descriptor)
+        temporary = Path(name)
+        try:
+            with closing(sqlite3.connect(temporary)) as db:
+                db.execute("PRAGMA foreign_keys=ON")
+                db.execute("PRAGMA secure_delete=ON")
+                db.execute("PRAGMA synchronous=FULL")
+                with db:
+                    db.execute("BEGIN IMMEDIATE")
+                    for statement in schema_statements():
+                        db.execute(statement)
+                    db.execute(f"PRAGMA application_id={APPLICATION_ID}")
+                    secure_fts(db)
+            sync_file_and_parent(temporary)
+            os.link(temporary, self.path)
+            sync_directory(self.directory)
+        finally:
+            temporary.unlink(missing_ok=True)
+            Path(str(temporary) + "-journal").unlink(missing_ok=True)
 
     @contextmanager
-    def connection(self, *, write: bool = False) -> Iterator[sqlite3.Connection]:
+    def connection(
+        self, *, write: bool = False, allow_uninitialized: bool = False
+    ) -> Iterator[sqlite3.Connection]:
+        require_sqlite()
         if not self.path.exists():
             raise InputError("Memory is not initialized. Run dots-brain setup first.")
+        if self.path.is_symlink():
+            raise InputError("The database must not be a symbolic link.")
         db = sqlite3.connect(self.path, timeout=10)
         db.row_factory = sqlite3.Row
         try:
-            if db.execute("PRAGMA user_version").fetchone()[0] == 1:
-                raise InputError(
+            version = db.execute("PRAGMA user_version").fetchone()[0]
+            if version == 1:
+                raise MigrationRequiredError(
                     "Database schema v1 requires an explicit offline migration; "
-                    "do not access it through this release."
+                    "run dots-brain migrate, then migrate --apply --writers-stopped."
                 )
-            if db.execute("PRAGMA user_version").fetchone()[0] not in (0, SCHEMA_VERSION):
-                raise InputError("Unsupported database version; use a compatible Brain release.")
+            if version != SCHEMA_VERSION and not (allow_uninitialized and version == 0):
+                raise IntegrityError(
+                    "Unsupported database version; use a compatible Brain release."
+                )
+            application = db.execute("PRAGMA application_id").fetchone()[0]
+            if application not in (0, APPLICATION_ID):
+                raise IntegrityError("This file belongs to another application.")
             db.execute("PRAGMA foreign_keys=ON")
             db.execute("PRAGMA secure_delete=ON")
             db.execute("PRAGMA synchronous=FULL")
@@ -175,8 +295,9 @@ class Store:
 
     @staticmethod
     def _filter(projects: tuple[str, ...] | None, project: str | None = None):
+        projects = normalize_projects(projects)
         if project is not None:
-            validate_text(project, "project", 200)
+            validate_identifier(project, "project", 200)
             if projects is not None and project not in projects:
                 return " AND 0", []
             return " AND m.project=?", [project]
@@ -218,12 +339,16 @@ class Store:
             validate_text(value, field, limit, empty=field == "title")
         if source_uri is not None:
             validate_text(source_uri, "source_uri", 2000)
-        if expected_revision is not None and (
-            isinstance(expected_revision, bool)
-            or not isinstance(expected_revision, int)
-            or expected_revision < 1
+        for name, value, limit in (
+            ("source", source, 200),
+            ("account", account, 200),
+            ("event_id", event_id, 500),
+            ("project", project, 200),
         ):
-            raise InputError("expected_revision must be a positive integer.")
+            validate_identifier(value, name, limit)
+        if expected_revision is not None:
+            validate_integer(expected_revision, "expected_revision")
+        projects = normalize_projects(projects)
         if projects is not None and project not in projects:
             raise NotFoundError("Project is not available to this client.")
         validate_text(writer_principal, "writer_principal", 500)
@@ -259,14 +384,22 @@ class Store:
             ).fetchone()
             if existing:
                 memory_id = existing["id"]
-                replay = db.execute(
-                    "SELECT revision FROM revisions WHERE memory_id=? AND digest=?",
-                    (memory_id, digest),
-                ).fetchone()
-                if replay and (
-                    expected_revision != existing["current_revision"]
-                    or replay["revision"] == existing["current_revision"]
-                ):
+                current = existing["current_revision"]
+                candidate = (
+                    current
+                    if expected_revision == current
+                    else (1 if expected_revision is None else expected_revision + 1)
+                )
+                replay = (
+                    db.execute(
+                        "SELECT revision FROM revisions "
+                        "WHERE memory_id=? AND revision=? AND digest=?",
+                        (memory_id, candidate, digest),
+                    ).fetchone()
+                    if candidate <= current
+                    else None
+                )
+                if replay:
                     return {
                         "id": memory_id,
                         "revision": existing["current_revision"],
@@ -313,8 +446,23 @@ class Store:
                 ),
             )
             if existing:
-                db.execute("DELETE FROM memory_fts WHERE memory_id=?", (memory_id,))
-            db.execute("INSERT INTO memory_fts VALUES (?,?,?)", (memory_id, title, content))
+                fts_row = db.execute(
+                    "SELECT fts_rowid FROM memory_fts_rows WHERE memory_id=?", (memory_id,)
+                ).fetchone()
+                if fts_row is None:
+                    raise IntegrityError(
+                        "The derived full-text index mapping is incomplete; run setup."
+                    )
+                db.execute("DELETE FROM memory_fts WHERE rowid=?", (fts_row["fts_rowid"],))
+            inserted = db.execute(
+                "INSERT INTO memory_fts(memory_id,title,content) VALUES (?,?,?)",
+                (memory_id, title, content),
+            )
+            db.execute(
+                "INSERT INTO memory_fts_rows(memory_id,fts_rowid) VALUES (?,?) "
+                "ON CONFLICT(memory_id) DO UPDATE SET fts_rowid=excluded.fts_rowid",
+                (memory_id, inserted.lastrowid),
+            )
         return {"id": memory_id, "revision": revision, "changed": True}
 
     def get(
@@ -324,11 +472,15 @@ class Store:
         revision: int | None = None,
         projects: tuple[str, ...] | None = None,
     ) -> dict:
+        validate_identifier(memory_id, "memory_id", 500)
+        if revision is not None:
+            validate_integer(revision, "revision")
         clause, args = self._filter(projects)
         with self.connection() as db:
             row = db.execute(
                 "SELECT m.id,m.source,m.account,m.event_id,m.project,m.created_at,m.updated_at,"
-                "r.revision,r.title,r.content,r.source_uri,r.writer_principal "
+                "r.revision,r.title,r.content,r.source_uri,r.writer_principal,"
+                "r.created_at AS revision_created_at "
                 "FROM memories m JOIN revisions r "
                 "ON r.memory_id=m.id AND r.revision=COALESCE(?,m.current_revision) "
                 "WHERE m.id=?" + clause,
@@ -347,9 +499,10 @@ class Store:
         projects: tuple[str, ...] | None = None,
     ) -> list[dict]:
         validate_text(query, "query", 2000)
-        if not 1 <= limit <= 50:
-            raise InputError("limit must be between 1 and 50.")
-        terms = re.findall(r"[^\W_]+", query, re.UNICODE)[:32]
+        validate_integer(limit, "limit", maximum=50)
+        terms = list(dict.fromkeys(re.findall(r"[^\W_]+", unicodedata.normalize("NFC", query))))
+        if len(terms) > 32:
+            raise InputError("query must contain at most 32 distinct full-text terms.")
         if not terms:
             return []
         expression = " OR ".join('"' + term + '"' for term in terms)
@@ -375,19 +528,16 @@ class Store:
         projects: tuple[str, ...] | None = None,
         writer_principal: str = "local-owner:stdio",
     ) -> dict:
-        if (
-            isinstance(expected_revision, bool)
-            or not isinstance(expected_revision, int)
-            or expected_revision < 1
-        ):
-            raise InputError("expected_revision must be a positive integer.")
+        validate_integer(expected_revision, "expected_revision")
+        validate_identifier(memory_id, "memory_id", 500)
         clause, args = self._filter(projects)
         validate_text(writer_principal, "writer_principal", 500)
         with self.connection(write=True) as db:
             self.ensure_writable()
+            secure_fts(db)
             row = db.execute(
-                "SELECT m.project,m.identity_key,m.current_revision FROM memories m "
-                "WHERE m.id=?" + clause,
+                "SELECT m.project,m.identity_key,m.current_revision,f.fts_rowid FROM memories m "
+                "LEFT JOIN memory_fts_rows f ON f.memory_id=m.id WHERE m.id=?" + clause,
                 [memory_id, *args],
             ).fetchone()
             if row is None:
@@ -398,7 +548,11 @@ class Store:
                 "INSERT OR IGNORE INTO scoped_suppressions VALUES (?,?,?,?,?)",
                 (row["project"], row["identity_key"], expected_revision, writer_principal, now()),
             )
-            db.execute("DELETE FROM memory_fts WHERE memory_id=?", (memory_id,))
+            if row["fts_rowid"] is None:
+                raise IntegrityError(
+                    "The derived full-text index mapping is incomplete; run setup."
+                )
+            db.execute("DELETE FROM memory_fts WHERE rowid=?", (row["fts_rowid"],))
             db.execute("DELETE FROM memories WHERE id=?", (memory_id,))
         return {"deleted": True, "reimport_suppressed": True}
 
@@ -406,7 +560,9 @@ class Store:
         # Check after acquiring the SQLite writer lock: a recovery cutover may
         # have disabled this store while this request was waiting for that lock.
         if (self.directory / "disabled.json").exists():
-            raise InputError("This installation is disabled; memory writes are unavailable.")
+            raise StoreDisabledError(
+                "This installation is disabled; memory writes are unavailable."
+            )
 
     def status(self, *, projects: tuple[str, ...] | None = None) -> dict:
         clause, args = self._filter(projects)
@@ -436,7 +592,8 @@ class Store:
         with self.connection() as db:
             rows = db.execute(
                 "SELECT m.id,m.source,m.account,m.event_id,m.project,m.created_at,m.updated_at,"
-                "r.revision,r.content,r.title,r.source_uri,r.writer_principal "
+                "r.revision,r.content,r.title,r.source_uri,r.writer_principal,"
+                "r.created_at AS revision_created_at "
                 "FROM memories m JOIN revisions r "
                 "ON r.memory_id=m.id WHERE 1" + clause + " ORDER BY m.id,r.revision",
                 args,

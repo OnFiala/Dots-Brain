@@ -10,9 +10,11 @@ from itertools import zip_longest
 from pathlib import Path
 
 from .database_checks import validate_snapshot
-from .errors import InputError
+from .database_io import open_readonly, snapshot
+from .errors import InputError, IntegrityError, StateError
+from .installation_state import marker_path, read_marker, write_marker
 from .local import locked, read_json, sync_file_and_parent, write_json
-from .store import SCHEMA_VERSION, Store
+from .store import SCHEMA_VERSION, Store, enable_wal, ensure_fts_row_mapping, secure_fts
 
 
 def migrate(store: Store, *, apply: bool, writers_stopped: bool, backup: Path | None) -> dict:
@@ -29,30 +31,26 @@ def migrate(store: Store, *, apply: bool, writers_stopped: bool, backup: Path | 
         if active(state):
             raise InputError("The managed service is still running. Stop it before migration.")
 
-    with locked(store.directory / "installation.lock"), locked(store.directory / "service.lock"):
+    if not store.path.is_file():
+        raise InputError("Memory is not initialized. Run dots-brain setup first.")
+    with (
+        locked(store.directory / "installation.lock"),
+        locked(store.directory / "service.lock"),
+        locked(store.directory / "writers.lock", timeout=0),
+    ):
         return migrate_v1_to_v2(store, apply=True, backup_path=backup, stop_guard=stopped)
 
 
 def backup_store(store: Store, output: Path) -> dict:
     """Take a consistent SQLite snapshot, including WAL, into a new private file."""
-    output = output.expanduser().absolute()
-    if not output.parent.is_dir():
-        raise InputError("Create a private backup directory first.")
-    descriptor = os.open(output, os.O_CREAT | os.O_EXCL | os.O_RDWR, 0o600)
-    os.close(descriptor)
-    try:
-        with store.connection() as source, sqlite3.connect(output) as target:
-            source.backup(target)
-            validate_snapshot(target, SCHEMA_VERSION)
-        sync_file_and_parent(output)
-    except BaseException:
-        output.unlink(missing_ok=True)
-        raise
+    with store.connection() as source:
+        output = snapshot(source, output, SCHEMA_VERSION)
     return {
         "state": "verified_backup",
         "output": str(output),
         "schema_version": SCHEMA_VERSION,
         "off_host": "not_verified",
+        "excluded": ["host_configuration", "credential_files", "model_artifacts"],
     }
 
 
@@ -70,7 +68,7 @@ def restore_store(backup: Path, target: Store, *, latest_deletions: Store) -> di
     with latest_deletions.connection() as current:
         legacy = [tuple(row) for row in current.execute("SELECT * FROM suppressions")]
         scoped = [tuple(row) for row in current.execute("SELECT * FROM scoped_suppressions")]
-    with sqlite3.connect(f"file:{backup.absolute()}?mode=ro", uri=True) as source:
+    with contextlib.closing(open_readonly(backup, immutable=True)) as source:
         validate_snapshot(source, SCHEMA_VERSION)
         try:
             target.directory.mkdir(parents=True, mode=0o700)
@@ -79,16 +77,15 @@ def restore_store(backup: Path, target: Store, *, latest_deletions: Store) -> di
         descriptor = os.open(target.path, os.O_CREAT | os.O_EXCL | os.O_RDWR, 0o600)
         os.close(descriptor)
         # Mark disabled before copying so an interrupted restore cannot be started.
-        write_json(
-            target.directory / "disabled.json",
-            {
-                "reason": "restored_requires_review",
-                "deletion_source": str(latest_deletions.directory),
-                "recovery_id": str(uuid.uuid4()),
-            },
+        write_marker(
+            target,
+            reason="restored_requires_review",
+            deletion_source=str(latest_deletions.directory),
+            recovery_id=str(uuid.uuid4()),
         )
-        with sqlite3.connect(target.path) as destination:
+        with contextlib.closing(sqlite3.connect(target.path)) as destination:
             source.backup(destination)
+            enable_wal(destination)
     with target.connection(write=True) as db:
         forgotten = _apply_deletions(db, legacy, scoped)
         _revoke_credentials(db)
@@ -105,6 +102,8 @@ def restore_store(backup: Path, target: Store, *, latest_deletions: Store) -> di
 
 
 def _apply_deletions(db, legacy, scoped) -> list[str]:
+    secure_fts(db)
+    ensure_fts_row_mapping(db)
     db.executemany("INSERT OR IGNORE INTO suppressions VALUES (?,?)", legacy)
     db.executemany("INSERT OR REPLACE INTO scoped_suppressions VALUES (?,?,?,?,?)", scoped)
     forgotten = [
@@ -116,7 +115,11 @@ def _apply_deletions(db, legacy, scoped) -> list[str]:
             "AND s.identity_key=m.identity_key)"
         )
     ]
-    db.executemany("DELETE FROM memory_fts WHERE memory_id=?", [(key,) for key in forgotten])
+    db.executemany(
+        "DELETE FROM memory_fts WHERE rowid="
+        "(SELECT fts_rowid FROM memory_fts_rows WHERE memory_id=? )",
+        [(key,) for key in forgotten],
+    )
     db.executemany("DELETE FROM memories WHERE id=?", [(key,) for key in forgotten])
     return forgotten
 
@@ -152,10 +155,10 @@ def _validate_cutover_state(source, target) -> None:
         if count:
             divergent.append(f"{name}={count}")
     if divergent:
-        raise InputError(
+        raise IntegrityError(
             "Recovery would discard or alter canonical state ("
             + ", ".join(divergent)
-            + "). Both stores remain disabled; reconcile or stage a current backup."
+            + "). The target remains disabled; stage a current backup before retrying."
         )
 
 
@@ -175,7 +178,7 @@ def _merge_audit_suffix(source, target) -> None:
 
 
 def activate_restore(source: Store, target: Store, *, writers_stopped: bool) -> dict:
-    """Offline cutover; keep both stores disabled if any recovery check fails.
+    """Offline cutover; validation failure leaves the source's state unchanged.
 
     The source writer lock orders the final deletion snapshot after in-flight
     writes. Its durable disabled marker prevents queued/new memory writes. Only
@@ -193,6 +196,7 @@ def activate_restore(source: Store, target: Store, *, writers_stopped: bool) -> 
                 raise InputError("Both recovery installations must exist.")
             locks.enter_context(locked(directory / "installation.lock"))
             locks.enter_context(locked(directory / "service.lock"))
+            locks.enter_context(locked(directory / "writers.lock", timeout=0))
         marker = target.directory / "disabled.json"
         state = read_json(marker) if marker.exists() else {}
         if (
@@ -214,8 +218,7 @@ def activate_restore(source: Store, target: Store, *, writers_stopped: bool) -> 
             validate_snapshot(db, SCHEMA_VERSION)
         with source.connection(write=True) as current:
             validate_snapshot(current, SCHEMA_VERSION)
-            source_marker = source.directory / "disabled.json"
-            previous = read_json(source_marker) if source_marker.exists() else {}
+            previous = read_marker(source)
             if previous.get("cutover") == "committed" and (
                 previous.get("recovery_id") != recovery_id
                 or Path(previous.get("replacement", "")).resolve() != target.directory.resolve()
@@ -223,16 +226,13 @@ def activate_restore(source: Store, target: Store, *, writers_stopped: bool) -> 
                 raise InputError(
                     "This source was already replaced; recover from its active successor."
                 )
-            if previous.get("cutover") != "committed":
-                write_json(
-                    source_marker,
-                    {
-                        "reason": "restore_cutover",
-                        "replacement": str(target.directory),
-                        "cutover": "pending",
-                        "recovery_id": recovery_id,
-                    },
-                )
+            if previous and not (
+                previous.get("reason") == "restore_cutover"
+                and previous.get("cutover") in {"pending", "committed"}
+                and previous.get("recovery_id") == recovery_id
+                and Path(previous.get("replacement", "")).resolve() == target.directory.resolve()
+            ):
+                raise StateError("The source has a different disable marker; it was preserved.")
             legacy = [tuple(row) for row in current.execute("SELECT * FROM suppressions")]
             scoped = [tuple(row) for row in current.execute("SELECT * FROM scoped_suppressions")]
             with target.connection(write=True) as restored:
@@ -241,15 +241,21 @@ def activate_restore(source: Store, target: Store, *, writers_stopped: bool) -> 
                 _merge_audit_suffix(current, restored)
                 validate_snapshot(restored, SCHEMA_VERSION)
                 _validate_cutover_state(current, restored)
+                if previous.get("cutover") != "committed":
+                    write_marker(
+                        source,
+                        reason="restore_cutover",
+                        replacement=str(target.directory),
+                        cutover="pending",
+                        recovery_id=recovery_id,
+                    )
             sync_file_and_parent(target.path)
-            write_json(
-                source_marker,
-                {
-                    "reason": "restore_cutover",
-                    "replacement": str(target.directory),
-                    "cutover": "committed",
-                    "recovery_id": recovery_id,
-                },
+            write_marker(
+                source,
+                reason="restore_cutover",
+                replacement=str(target.directory),
+                cutover="committed",
+                recovery_id=recovery_id,
             )
         marker.unlink()
         sync_file_and_parent(target.path)  # Persist removal of the disabled marker too.
@@ -261,6 +267,32 @@ def activate_restore(source: Store, target: Store, *, writers_stopped: bool) -> 
         "removed_at_cutover": len(forgotten),
         "service": "not_started",
     }
+
+
+def abort_restore(source: Store, target: Store, *, writers_stopped: bool) -> dict:
+    """Cancel only an uncommitted cutover while its exact target remains disabled."""
+    if not writers_stopped:
+        raise InputError("Stop every writer and supervisor; pass --writers-stopped.")
+    if source.directory == target.directory:
+        raise InputError("Recovery source and target must be different installations.")
+    with contextlib.ExitStack() as locks:
+        for directory in sorted([source.directory, target.directory]):
+            for name in ("installation.lock", "service.lock", "writers.lock"):
+                locks.enter_context(locked(directory / name, timeout=0))
+        old, new = read_marker(source), read_marker(target)
+        if not (
+            old.get("reason") == "restore_cutover"
+            and old.get("cutover") == "pending"
+            and new.get("reason") == "restored_requires_review"
+            and old.get("recovery_id")
+            and old.get("recovery_id") == new.get("recovery_id")
+            and Path(old.get("replacement", "")).resolve() == target.directory
+            and Path(new.get("deletion_source", "")).resolve() == source.directory
+        ):
+            raise StateError("Only the exact uncommitted, disabled recovery can be cancelled.")
+        marker_path(source).unlink()
+        sync_file_and_parent(source.path)
+    return {"state": "recovery_cancelled", "source": "enabled", "target": "disabled"}
 
 
 def configure_cortex(store: Store, *, endpoint: str, token_file: Path, projects: list[str]) -> dict:

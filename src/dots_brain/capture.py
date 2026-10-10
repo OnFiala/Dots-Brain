@@ -8,6 +8,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import stat as stat_module
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -41,6 +42,11 @@ def _gap(
         "target": {},
         "details": {"coverage": "partial"},
     }
+
+
+def _clean_metadata(value: Any) -> str | None:
+    """Snapshot metadata is untrusted text, never provider-verified identity."""
+    return sanitize(value, max_text=512).value if isinstance(value, str) else None
 
 
 def normalize_audit_record(
@@ -83,11 +89,11 @@ def normalize_audit_record(
         "record_id": record_id,
         "source": source,
         "kind": "action",
-        "timestamp": record.get("ts"),
-        "actor": record.get("agentId"),
+        "timestamp": _clean_metadata(record.get("ts")),
+        "actor": _clean_metadata(record.get("agentId")),
         "action": value["action"],
         "target": value["target"],
-        "details": value["details"],
+        "details": {**value["details"], "source_identity": "unverified_snapshot"},
         "sanitization": clean.summary(),
     }
 
@@ -141,7 +147,7 @@ def normalize_transcript_record(
             "record_id": record_id,
             "source": source,
             "kind": "conversation",
-            "timestamp": record.get("ts"),
+            "timestamp": _clean_metadata(record.get("ts")),
             "actor": role,
             "action": {"role": role},
             "target": {},
@@ -217,6 +223,11 @@ class JSONLCollector:
         self.paths = [Path(path).expanduser().resolve() for path in paths]
         self.cursor_path = Path(cursor_path).expanduser().resolve()
         self.sink, self.kind = sink, kind
+        self.completed = True
+
+    def _sidecar(self, suffix: str) -> Path:
+        """Keep per-cursor state beside the full filename, without suffix collisions."""
+        return self.cursor_path.with_name(self.cursor_path.name + suffix)
 
     def _load_cursor(self) -> dict[str, Any]:
         try:
@@ -239,11 +250,12 @@ class JSONLCollector:
         write_json(self.cursor_path, data)
 
     def collect(self) -> int:
-        with locked(self.cursor_path.with_suffix(".lock")):
+        with locked(self._sidecar(".lock")):
             return self._collect()
 
     def _collect(self) -> int:
         cursor, forwarded, read_bytes = self._load_cursor(), 0, 0
+        self.completed = True
         for path in self.paths:
             # Bind offsets to the descriptor we read, even if the pathname is rotated.
             key, previous = str(path), cursor["files"].get(str(path), {})
@@ -255,9 +267,10 @@ class JSONLCollector:
                     gap = _gap(
                         "collector", _identity(key, offset, b"missing"), "source_unavailable"
                     )
-                    if self.sink(gap) is False:
+                    if self.sink(gap) is not True:
                         raise InputError("Capture sink did not acknowledge record.") from None
                     cursor["files"][key] = {
+                        **previous,
                         "device": previous.get("device", 0),
                         "inode": previous.get("inode", 0),
                         "offset": offset,
@@ -266,33 +279,60 @@ class JSONLCollector:
                     self._save_cursor(cursor)
                     forwarded += 1
                 continue
-            rotated = previous and (
+            if not stat_module.S_ISREG(stat.st_mode):
+                raise InputError("Capture source must be a regular file.")
+            # Check type before opening and use non-blocking/no-follow flags so a
+            # pathname race cannot turn a collector into a FIFO/device reader.
+            flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NONBLOCK", 0)
+            flags |= getattr(os, "O_NOFOLLOW", 0)
+            try:
+                descriptor = os.open(path, flags)
+            except OSError as exc:
+                raise InputError(
+                    "Capture source could not be opened safely; retry collection."
+                ) from exc
+            try:
+                opened = os.fstat(descriptor)
+                if not stat_module.S_ISREG(opened.st_mode) or (opened.st_dev, opened.st_ino) != (
+                    stat.st_dev,
+                    stat.st_ino,
+                ):
+                    raise InputError(
+                        "Capture source changed or is not a regular file; retry collection."
+                    )
+                fingerprints = _fingerprints(descriptor, offset)
+            except Exception:
+                os.close(descriptor)
+                raise
+            rotated = bool(previous) and (
                 previous.get("device") != stat.st_dev
                 or previous.get("inode") != stat.st_ino
                 or stat.st_size < offset
+                or not _fingerprints_match(previous, fingerprints)
             )
             if rotated:
                 gap = _gap(
                     "collector", _identity(key, offset, b"rotation"), "file_rotated_or_truncated"
                 )
-                if self.sink(gap) is False:
+                if self.sink(gap) is not True:
                     raise InputError("Capture sink did not acknowledge record.")
                 offset = 0
+                fingerprints = _fingerprints(descriptor, 0)
                 cursor["files"][key] = {
                     "device": stat.st_dev,
                     "inode": stat.st_ino,
                     "offset": 0,
+                    "generation": int(previous.get("generation", 0)) + 1,
+                    **fingerprints,
                 }
                 self._save_cursor(cursor)
                 forwarded += 1
-            with path.open("rb") as stream:
-                opened = os.fstat(stream.fileno())
-                if (opened.st_dev, opened.st_ino) != (stat.st_dev, stat.st_ino):
-                    raise InputError("Capture source rotated during open; retry collection.")
+            with os.fdopen(descriptor, "rb", closefd=True) as stream:
                 stream.seek(offset)
                 discard = not rotated and previous.get("discard_until_newline", False)
                 while True:
                     if read_bytes >= MAX_BATCH_BYTES or forwarded >= MAX_BATCH_RECORDS:
+                        self.completed = False
                         return forwarded
                     start, raw = stream.tell(), stream.readline(MAX_LINE_BYTES + 1)
                     read_bytes += len(raw)
@@ -302,7 +342,9 @@ class JSONLCollector:
                     if not discard and not oversized and not raw.endswith(b"\n"):
                         break
                     next_offset = stream.tell()
-                    record_id = _identity(key, start, raw)
+                    current = cursor["files"].get(key, previous)
+                    generation = int(current.get("generation", previous.get("generation", 0)))
+                    record_id = _identity(f"{key}:g{generation}", start, raw)
                     if discard:
                         event = None  # The previously acknowledged gap covers these bytes.
                     elif oversized:
@@ -312,13 +354,15 @@ class JSONLCollector:
                     discard = (discard or oversized) and not raw.endswith(b"\n")
                     if event is not None:
                         event = sanitize(event, max_text=32000).value
-                        if self.sink(event) is False:
+                        if self.sink(event) is not True:
                             raise InputError("Capture sink did not acknowledge record.")
                         forwarded += 1
                     cursor["files"][key] = {
                         "device": stat.st_dev,
                         "inode": stat.st_ino,
                         "offset": next_offset,
+                        "generation": generation,
+                        **_fingerprints(stream.fileno(), next_offset),
                         "discard_until_newline": discard,
                     }
                     self._save_cursor(cursor)
@@ -332,5 +376,46 @@ class JSONLCollector:
                 if self.kind == "audit"
                 else normalize_transcript_record(decoded, record_id=record_id)
             )
-        except (UnicodeDecodeError, json.JSONDecodeError, RecursionError):
+        except (UnicodeDecodeError, json.JSONDecodeError, RecursionError, ValueError):
             return _gap("collector", record_id, "invalid_json_line")
+
+
+def _fingerprints(descriptor: int, offset: int, size: int = 256) -> dict[str, Any]:
+    """Bind a checkpoint to both the file prefix and bytes immediately before it."""
+    current = os.lseek(descriptor, 0, os.SEEK_CUR)
+    try:
+        file_size = os.fstat(descriptor).st_size
+        prefix_length = min(size, file_size)
+        os.lseek(descriptor, 0, os.SEEK_SET)
+        prefix = os.read(descriptor, prefix_length)
+        boundary_start = max(0, offset - size)
+        boundary_length = max(0, min(offset, file_size) - boundary_start)
+        os.lseek(descriptor, boundary_start, os.SEEK_SET)
+        boundary = os.read(descriptor, boundary_length)
+        return {
+            "prefix_fingerprint": hashlib.sha256(prefix).hexdigest(),
+            "prefix_length": prefix_length,
+            "boundary_fingerprint": hashlib.sha256(boundary).hexdigest(),
+            "boundary_start": boundary_start,
+            "boundary_length": boundary_length,
+        }
+    finally:
+        os.lseek(descriptor, current, os.SEEK_SET)
+
+
+def _fingerprints_match(previous: dict[str, Any], current: dict[str, Any]) -> bool:
+    """Accept legacy cursors, then require old prefix and checkpoint boundary."""
+    old_prefix = previous.get("prefix_fingerprint", previous.get("fingerprint"))
+    if old_prefix is not None:
+        if not isinstance(old_prefix, str):
+            return False
+        old_length = previous.get("prefix_length")
+        if old_length is None:
+            # Legacy cursors always hashed at most 256 prefix bytes.
+            old_length = 256
+        if old_length != current["prefix_length"] or old_prefix != current["prefix_fingerprint"]:
+            return False
+    for key in ("boundary_fingerprint", "boundary_start", "boundary_length"):
+        if key in previous and previous[key] != current[key]:
+            return False
+    return True

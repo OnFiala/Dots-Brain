@@ -3,9 +3,15 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 from dots_brain.auth import issue_client
 from dots_brain.runtime import down, up
 from dots_brain.store import Store
+
+requires_linux_lifecycle = pytest.mark.skipif(
+    sys.platform != "linux", reason="managed subprocess lifecycle requires Linux /proc and pidfd"
+)
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "memory_client.py"
 
@@ -20,6 +26,7 @@ def invoke(credential, *args, payload="{}"):
     )
 
 
+@requires_linux_lifecycle
 def test_shell_client_uses_live_mcp_and_preserves_client_scope(tmp_path):
     store = Store(tmp_path / "memory")
     store.initialize()

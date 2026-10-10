@@ -8,8 +8,16 @@ from pathlib import Path
 import tomlkit
 
 from .auth import read_connection, revoke_client
-from .clients import PROVIDERS, bridge_entry, integration_key, registrations, target_path
+from .clients import (
+    PROVIDERS,
+    bridge_entry,
+    integration_key,
+    local_connection_path,
+    registrations,
+    target_path,
+)
 from .errors import InputError
+from .installation_state import mark_uninstalled
 from .local import atomic_write, locked, read_json, write_json
 from .runtime import state_path, stop_process
 from .store import Store
@@ -47,7 +55,7 @@ def remove_entry(record: dict, *, dry_run: bool) -> dict:
         )
         if path.is_symlink() or path.read_text() != original:
             return {**result, "state": "preserved_concurrent_change"}
-        atomic_write(path, content)
+        atomic_write(path, content, preserve=True)
         return {**result, "state": "removed"}
 
     try:
@@ -63,8 +71,9 @@ def remove_entry(record: dict, *, dry_run: bool) -> dict:
 def inventory(store: Store, extra_configs: list[str]) -> tuple[dict, list[dict]]:
     issues = []
     try:
-        registry = registrations(store.directory)
-        for key, item in registry["items"].items():
+        raw = registrations(store.directory)
+        valid_items, invalid_items = {}, {}
+        for key, item in raw["items"].items():
             if (
                 not isinstance(item, dict)
                 or not isinstance(item.get("provider"), str)
@@ -78,9 +87,13 @@ def inventory(store: Store, extra_configs: list[str]) -> tuple[dict, list[dict]]
                 or not Path(item["config_file"]).is_absolute()
                 or key != integration_key(item["provider"], Path(item["config_file"]))
             ):
-                raise InputError("Invalid integration registration.")
+                invalid_items[key] = item
+                issues.append({"state": "registry_invalid_entry", "key": str(key)})
+                continue
+            valid_items[key] = item
+        registry = {"version": 1, "items": valid_items, "_invalid_items": invalid_items}
     except (OSError, ValueError, InputError):
-        registry = {"version": 1, "items": {}}
+        registry = {"version": 1, "items": {}, "_invalid_items": None}
         issues.append(
             {"state": "registry_unreadable", "action": "Preserve and repair the registry."}
         )
@@ -118,8 +131,22 @@ def inventory(store: Store, extra_configs: list[str]) -> tuple[dict, list[dict]]
     return registry, issues
 
 
+def persist_registry(store: Store, registry: dict, issues: list[dict]) -> None:
+    """Keep malformed rows visible while updating independent valid registrations."""
+    if any(issue["state"] == "registry_unreadable" for issue in issues):
+        return
+    invalid = registry.pop("_invalid_items", {})
+    try:
+        write_json(
+            store.directory / "integrations.json",
+            {"version": 1, "items": {**invalid, **registry["items"]}},
+        )
+    finally:
+        registry["_invalid_items"] = invalid
+
+
 def managed_credential(store: Store, record: dict) -> Path | None:
-    path = Path(record["connection_file"])
+    path = local_connection_path(store, record["connection_file"])
     private = store.directory / "connections"
     provider = record["provider"]
     key = integration_key(provider, Path(record["config_file"]))
@@ -164,12 +191,18 @@ def disconnect_client(
                 else "shared_credential_retained"
             )
         complete = result["state"] in {"removed", "already_absent"} and access == "revoked"
-        if complete:
+        remote_complete = result["state"] in {"removed", "already_absent"} and not record["local"]
+        if complete or remote_complete:
             del registry["items"][key]
-        if not any(issue["state"] == "registry_unreadable" for issue in issues):
-            write_json(store.directory / "integrations.json", registry)
+        persist_registry(store, registry, issues)
         return {
-            "state": "disconnected" if complete and not issues else "partial",
+            "state": (
+                "disconnected"
+                if complete and not issues
+                else "disconnected_remote"
+                if remote_complete and not issues
+                else "partial"
+            ),
             "client": result,
             "access": access,
             "data_preserved": True,
@@ -178,7 +211,7 @@ def disconnect_client(
 
     if dry_run or not store.directory.exists():
         return disconnect()
-    with locked(store.directory / "installation.lock"):
+    with locked(store.directory / "installation.lock", create_parent=True):
         return disconnect()
 
 
@@ -219,20 +252,27 @@ def uninstall(
                 "clients": [],
                 "issues": issues,
             }
-        with locked(store.directory / "service.lock"):
+        with locked(store.directory / "service.lock", create_parent=True):
             # Disable first: stale bridges cannot restart, and running MCP tools reject calls.
-            write_json(store.directory / "disabled.json", {"version": 1, "disabled": True})
-            if store.path.is_file():
-                with store.connection(write=True) as db:
-                    db.execute("UPDATE clients SET revoked=1")
-                    from .oauth import revoke_all
-
-                    revoke_all(db)
+            mark_uninstalled(store)
+            stopped = False
             try:
                 if state_path(store).exists():
-                    stop_process(read_json(state_path(store)))
+                    stop_process(store, read_json(state_path(store)))
+                stopped = True
             except (OSError, ValueError, InputError):
                 issues.append({"state": "managed_process_stop_failed"})
+            credentials_revoked = False
+            if store.path.is_file():
+                try:
+                    with store.connection(write=True) as db:
+                        db.execute("UPDATE clients SET revoked=1")
+                        from .oauth import revoke_all
+
+                        revoke_all(db)
+                    credentials_revoked = True
+                except (OSError, ValueError, InputError):
+                    issues.append({"state": "credential_revocation_failed"})
             results = []
             remaining = {}
             credentials = [store.directory / "probe.connection.json"]
@@ -257,20 +297,19 @@ def uninstall(
                     path.unlink(missing_ok=True)
                 except OSError:
                     issues.append({"state": "credential_file_retained", "path": str(path)})
-            if not any(issue["state"] == "registry_unreadable" for issue in issues):
-                write_json(
-                    store.directory / "integrations.json", {"version": 1, "items": remaining}
-                )
+            registry["items"] = remaining
+            persist_registry(store, registry, issues)
         return {
             **common,
             "state": "partial" if remaining or issues else "uninstalled",
             "service_disabled": True,
-            "local_credentials_revoked": True,
+            "managed_process_stopped": stopped,
+            "local_credentials_revoked": credentials_revoked,
             "clients": results,
             "issues": issues,
         }
 
     if dry_run or not store.directory.exists():
         return remove()
-    with locked(store.directory / "installation.lock"):
+    with locked(store.directory / "installation.lock", create_parent=True):
         return remove()

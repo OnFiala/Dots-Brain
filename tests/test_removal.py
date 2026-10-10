@@ -17,6 +17,10 @@ from dots_brain.removal import disconnect_client, remove_entry, uninstall
 from dots_brain.runtime import active, down, up
 from dots_brain.store import Store
 
+requires_linux_lifecycle = pytest.mark.skipif(
+    sys.platform != "linux", reason="managed subprocess lifecycle requires Linux /proc and pidfd"
+)
+
 
 @pytest.fixture(autouse=True)
 def isolated_home(tmp_path, monkeypatch):
@@ -54,6 +58,7 @@ def record_connection(store, config, provider="cursor", *, legacy=False):
     return record, read_connection(connection)["token"]
 
 
+@requires_linux_lifecycle
 def test_complete_lifecycle_keeps_memories_and_blocks_restart_until_explicit_resume(tmp_path):
     store = Store(tmp_path / "memory")
     config = tmp_path / "cursor.json"
@@ -167,6 +172,7 @@ def test_edited_or_unreadable_config_is_preserved_but_host_access_is_revoked(tmp
     assert uninstall(store)["state"] == "partial"
 
 
+@requires_linux_lifecycle
 def test_profiles_have_distinct_credentials_and_disconnect_does_not_break_other_profile(tmp_path):
     store = Store(tmp_path / "memory")
     first, second = tmp_path / "first.json", tmp_path / "second.json"
@@ -222,6 +228,7 @@ def test_corrupt_registry_is_preserved_and_reported_while_service_is_disabled(tm
     assert authenticate(store, token) is None
 
 
+@requires_linux_lifecycle
 def test_remote_disconnect_preserves_supplied_credential_and_never_creates_database(tmp_path):
     host, client = Store(tmp_path / "host"), Store(tmp_path / "device")
     config = tmp_path / "remote.json"
@@ -231,9 +238,10 @@ def test_remote_disconnect_preserves_supplied_credential_and_never_creates_datab
         token = read_connection(supplied)["token"]
         connect_client(client, provider="cursor", config=config, connection=supplied)
         result = disconnect_client(client, provider="cursor", config=config)
-        assert result["state"] == "partial" and result["access"] == "issuer_revocation_required"
+        assert result["state"] == "disconnected_remote"
+        assert result["access"] == "issuer_revocation_required"
         result = uninstall(client)
-        assert result["state"] == "partial"
+        assert result["state"] == "uninstalled"
         assert supplied.exists() and authenticate(host, token) is not None
         assert not client.path.exists()
         assert read_json(config) == {"mcpServers": {}}

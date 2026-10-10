@@ -2,6 +2,7 @@ import asyncio
 import json
 import sqlite3
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
@@ -15,6 +16,7 @@ from dots_brain.cortex_connector import (
     CortexConnectorError,
     CortexWriteUncertain,
     SqliteCortexLedger,
+    StreamableHttpCortexTransport,
     _read_token,
     setup_cortex_operations,
 )
@@ -42,6 +44,13 @@ class Ledger:
         row = self.rows.get(operation_id)
         return None if row is None else dict(row)
 
+    def list_owned(self, principal, project):
+        return [
+            dict(row)
+            for row in self.rows.values()
+            if row["principal"] == principal and row["local_project"] == project
+        ]
+
     def create_planned(self, record):
         self.rows.setdefault(
             record["operation_id"], dict(record, state="planned", receipt_json=None)
@@ -63,6 +72,9 @@ class Ledger:
 
     def mark_uncertain(self, operation_id, *, error_code):
         self.rows[operation_id].update(state="uncertain", error_code=error_code)
+
+    def release_planned(self, operation_id, *, error_code):
+        self.rows[operation_id].update(state="planned", error_code=error_code)
 
 
 class Transport:
@@ -157,7 +169,7 @@ def test_read_only_client_cannot_write():
     assert transport.calls == []
 
 
-def test_timeout_marks_uncertain_and_never_replays_unknown_write():
+def test_timeout_marks_uncertain_and_replays_idempotent_note_with_same_key():
     transport, ledger = Transport(failure=TimeoutError()), Ledger()
     service = connector(transport, ledger)
 
@@ -176,7 +188,7 @@ def test_timeout_marks_uncertain_and_never_replays_unknown_write():
         assert first.value.operation_id == second.value.operation_id
 
     asyncio.run(exercise())
-    assert len(transport.calls) == 1
+    assert len(transport.calls) == 2
     row = next(iter(ledger.rows.values()))
     assert row["state"] == "uncertain"
     assert "safe content" not in json.dumps(row)
@@ -373,7 +385,8 @@ def test_reconciliation_requires_actor_project_and_exact_origin():
     result = asyncio.run(
         service.reconcile(policy=caller, project="alpha", operation_id=operation_id)
     )
-    assert result["retrievable_source_ref"] == "cortex://object/obj-1"
+    assert result["reconciliation"] == "candidate_unverified"
+    assert result["candidate_source_ref"] == "cortex://object/obj-1"
     with pytest.raises(NotFoundError):
         service.operation_status(
             policy=Policy(frozenset({"cortex:read"}), caller.projects, "different-bot"),
@@ -395,6 +408,57 @@ def test_connection_token_requires_private_owned_regular_file(tmp_path):
     link.symlink_to(token)
     with pytest.raises(CortexConnectorError):
         _read_token(link)
+
+
+def test_real_streamable_http_transport_uses_pinned_sdk_client(tmp_path):
+    """Exercise the concrete mcp 1.30 transport against a disposable FastMCP server."""
+    import socket
+
+    import uvicorn
+    from mcp.server.fastmcp import FastMCP
+
+    upstream = FastMCP("synthetic-cortex", stateless_http=True)
+
+    @upstream.tool()
+    def cortex_brief(query: str, project_id: str):
+        return {"query": query, "project_id": project_id, "cards": []}
+
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        port = sock.getsockname()[1]
+    server = uvicorn.Server(
+        uvicorn.Config(
+            upstream.streamable_http_app(), host="127.0.0.1", port=port, log_level="error"
+        )
+    )
+    thread = threading.Thread(target=server.run, daemon=True)
+    thread.start()
+    deadline = time.monotonic() + 5
+    while not server.started and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert server.started
+    token = tmp_path / "token"
+    token.write_text("synthetic-token\n")
+    token.chmod(0o600)
+    transport = StreamableHttpCortexTransport(
+        CortexConnectionConfig(
+            endpoint=f"http://127.0.0.1:{port}/mcp",
+            token_file=token,
+            project_mapping=(("alpha", "cortex-alpha"),),
+        )
+    )
+    try:
+        assert (
+            asyncio.run(
+                transport.call_tool(
+                    "cortex_brief", {"query": "synthetic", "project_id": "cortex-alpha"}
+                )
+            )["project_id"]
+            == "cortex-alpha"
+        )
+    finally:
+        server.should_exit = True
+        thread.join(timeout=5)
 
 
 @pytest.mark.parametrize(
@@ -452,6 +516,8 @@ def test_receipt_storage_failure_reports_uncertain_without_resending(tmp_path, f
         with pytest.raises(CortexWriteUncertain) as retried:
             asyncio.run(reopened.write_note(**arguments))
         assert retried.value.operation_id == first.value.operation_id
+    # If persisting uncertainty itself fails, the original ``sending`` record
+    # remains intentionally blocking: it must never be replayed automatically.
     assert len(transport.calls) == 1
 
 
@@ -478,6 +544,6 @@ def test_reconciliation_preserves_original_acknowledgement(tmp_path):
     result = asyncio.run(
         service.reconcile(policy=caller, project="alpha", operation_id=receipt["operation_id"])
     )
-    assert result["receipt"] == {"event_id": "event-ack-1", "object_id": "projected-object-1"}
-    assert result["retrievable_source_ref"] == "cortex://object/projected-object-1"
+    assert result["receipt"] == {"event_id": "event-ack-1"}
+    assert result["reconciliation"] == "candidate_unverified"
     assert len([call for call in transport.calls if call[0] == "cortex_record_note"]) == 1

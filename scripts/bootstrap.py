@@ -1,4 +1,4 @@
-"""Install the locked alpha on a writable, authorized memory host."""
+"""Install the locked alpha on a writable, authorized Linux memory host."""
 
 import argparse
 import json
@@ -9,46 +9,94 @@ import sys
 from pathlib import Path
 
 
-def main():
+class StepFailed(Exception):
+    def __init__(self, step, result):
+        self.step, self.result = step, result
+
+
+def run_step(step, command, *, cwd, environment, structured=True):
+    """Keep the failing phase and the CLI's safe JSON diagnosis visible."""
+    try:
+        result = subprocess.run(
+            command, cwd=cwd, env=environment, capture_output=True, text=True, check=False
+        )
+    except OSError:
+        raise StepFailed(step, {"code": "command_unavailable"}) from None
+    payload = None
+    if structured:
+        for output in (result.stdout, result.stderr):
+            try:
+                payload = json.loads(output)
+            except (ValueError, TypeError):
+                continue
+            if isinstance(payload, dict):
+                break
+            payload = None
+    if result.returncode:
+        raise StepFailed(step, payload or {"code": "command_failed"})
+    if structured and payload is None:
+        raise StepFailed(step, {"code": "invalid_command_response"})
+    return payload
+
+
+def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data-dir", type=Path, required=True)
     parser.add_argument("--semantic", action="store_true")
-    parser.add_argument("--connect", metavar="PROVIDER")
+    parser.add_argument("--port", type=int, default=8765)
+    parser.add_argument("--connect", choices=("claude-code", "cursor", "codex", "mcp-json"))
     parser.add_argument("--config", type=Path)
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
+    if args.config and not args.connect:
+        parser.error("--config requires --connect")
+    if args.connect == "mcp-json" and not args.config:
+        parser.error("--connect mcp-json requires --config")
+    if not 0 <= args.port <= 65535:
+        parser.error("--port must be between 0 and 65535")
     root = Path(__file__).resolve().parents[1]
     uv = shutil.which("uv")
-    if sys.version_info < (3, 11) or uv is None:
-        print(json.dumps({"state": "blocked", "reason": "Python 3.11+ and uv are required."}))
+    if sys.platform != "linux" or sys.version_info < (3, 11) or uv is None:
+        print(
+            json.dumps({"state": "blocked", "reason": "Linux, Python 3.11+ and uv are required."})
+        )
         return 1
     environment = dict(os.environ)
     environment.setdefault("UV_CACHE_DIR", str(root / ".cache" / "uv"))
-    sync = [uv, "sync", "--frozen", "--no-dev"]
-    if args.semantic:
-        sync += ["--extra", "semantic"]
-    subprocess.run(sync, cwd=root, env=environment, check=True, stdout=sys.stderr)
-    executable = root / ".venv" / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
-    base = [str(executable), "-m", "dots_brain.cli", "--data-dir", str(args.data_dir)]
-    setup = subprocess.run(base + ["setup"], check=True, capture_output=True, text=True)
-    if args.semantic:
-        subprocess.run(base + ["model", "prepare"], check=True, stdout=sys.stderr)
-    start = base + ["up", "--resume"] + (["--semantic"] if args.semantic else [])
-    service = subprocess.run(start, check=True, capture_output=True, text=True)
-    connected = None
-    if args.connect:
-        command = base + ["connect", args.connect]
-        if args.config:
-            command += ["--config", str(args.config)]
-        result = subprocess.run(command, check=True, capture_output=True, text=True)
-        connected = json.loads(result.stdout)
+
+    def step(name, command, *, structured=True):
+        return run_step(name, command, cwd=root, environment=environment, structured=structured)
+
+    try:
+        sync = [uv, "sync", "--locked", "--no-dev"]
+        if args.semantic:
+            sync += ["--extra", "semantic"]
+        step("dependencies", sync, structured=False)
+        executable = root / ".venv/bin/python"
+        base = [str(executable), "-m", "dots_brain.cli", "--data-dir", str(args.data_dir.resolve())]
+        setup = step("setup", base + ["setup"])
+        if args.semantic:
+            step("model", base + ["model", "prepare"])
+        start = base + ["up", "--resume", "--port", str(args.port)]
+        if args.semantic:
+            start.append("--semantic")
+        service = step("service", start)
+        connected = None
+        if args.connect:
+            command = base + ["connect", args.connect]
+            if args.config:
+                command += ["--config", str(args.config)]
+            connected = step("client", command)
+    except StepFailed as exc:
+        print(json.dumps({"state": "blocked", "step": exc.step, "result": exc.result}))
+        return 1
     print(
         json.dumps(
             {
                 "state": "configured_verified_bridge" if connected else "verified_local_service",
-                "setup": json.loads(setup.stdout),
+                "setup": setup,
                 "python": str(executable),
                 "semantic_model_prepared": args.semantic,
-                "service": json.loads(service.stdout),
+                "service": service,
                 "connection": connected,
                 "remote_connection": "not_verified",
             }
@@ -58,8 +106,4 @@ def main():
 
 
 if __name__ == "__main__":
-    try:
-        raise SystemExit(main())
-    except (OSError, subprocess.CalledProcessError):
-        print(json.dumps({"state": "blocked", "reason": "Installation command failed."}))
-        raise SystemExit(1) from None
+    raise SystemExit(main())

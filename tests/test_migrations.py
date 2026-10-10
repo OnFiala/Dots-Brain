@@ -2,7 +2,7 @@ import sqlite3
 
 import pytest
 
-from dots_brain.errors import InputError
+from dots_brain.errors import IntegrityError, MigrationRequiredError
 from dots_brain.migrations import HISTORICAL_WRITER, migrate_v1_to_v2
 from dots_brain.store import Store, source_key
 
@@ -74,7 +74,7 @@ def legacy_store(tmp_path):
 def test_old_store_requires_explicit_migration_and_dry_run_has_no_writes(tmp_path):
     store = legacy_store(tmp_path)
     before = store.path.read_bytes()
-    with pytest.raises(InputError, match="explicit offline migration"):
+    with pytest.raises(MigrationRequiredError, match="explicit offline migration"):
         store.initialize()
     assert migrate_v1_to_v2(store, apply=False) == {
         "state": "migration_required",
@@ -112,7 +112,13 @@ def test_migration_rollback_leaves_v1_untouched_and_repeat_is_a_noop(tmp_path, m
     store = legacy_store(tmp_path)
     import dots_brain.migrations as migrations
 
-    monkeypatch.setattr(migrations, "SCHEMA_EXTENSION_SQL", ("INVALID SQL AFTER REAL DDL",))
+    transform = migrations._migrate
+
+    def fail_after_transform(db):
+        transform(db)
+        db.execute("INVALID SQL AFTER REAL DDL")
+
+    monkeypatch.setattr(migrations, "_migrate", fail_after_transform)
     with pytest.raises(sqlite3.OperationalError):
         migrate_v1_to_v2(store, apply=True, stop_guard=lambda: None)
     with sqlite3.connect(store.path) as db:
@@ -139,7 +145,7 @@ def test_migration_rejects_missing_current_revision(tmp_path):
     with sqlite3.connect(store.path) as db:
         db.execute("UPDATE memories SET revision=3")
         assert db.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
-    with pytest.raises(InputError, match="no current revision"):
+    with pytest.raises(IntegrityError, match="no current revision"):
         migrate_v1_to_v2(store, apply=True, stop_guard=lambda: None)
     with sqlite3.connect(store.path) as db:
         assert db.execute("PRAGMA user_version").fetchone()[0] == 1

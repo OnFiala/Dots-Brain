@@ -113,7 +113,8 @@ def test_context_uses_scoped_body_when_semantic_title_wins(index, title):
     index.index()
     service = MemoryService(index.store, index)
     caller = Policy(frozenset({"memory:read"}), ("alpha",))
-    assert service.search("allergy", policy=caller)["results"][0]["passage"]["field"] == "title"
+    assert index.search("allergy", projects=caller.projects)[0]["passage"]["field"] == "title"
+    assert "Avoid peanuts." in service.search("allergy", policy=caller)["results"][0]["excerpt"]
     for budget in (256, 6000):
         result = service.context("allergy", policy=caller, max_chars=budget)
         assert "Avoid peanuts." in result["context"] and memory["id"] in result["context"]

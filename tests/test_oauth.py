@@ -4,6 +4,7 @@ import hashlib
 import json
 import secrets
 import sqlite3
+import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import parse_qs, urlsplit
@@ -37,7 +38,9 @@ def installation(tmp_path):
     service = MemoryService(store)
     server = create_server(service, http=True)
     app = create_http_app(server, service)
-    return store, OAuthStore(store), server, app
+    state = OAuthStore(store)
+    state.set_onboarding(open_for_seconds=600)
+    return store, state, server, app
 
 
 def register(http, *, method="none", scopes="memory:read memory:write"):
@@ -84,8 +87,8 @@ def request_code(
     if not approve:
         return request_id, pairing
     state.decide(request_id, projects=["work"])
-    result = http.get(pairing, follow_redirects=False)
-    assert result.status_code == 302
+    result = http.post(pairing, follow_redirects=False)
+    assert result.status_code == 303
     query = parse_qs(urlsplit(result.headers["location"]).query)
     assert query["state"] == ["opaque-client-state"]
     return {
@@ -120,7 +123,7 @@ def test_registration_without_scope_requires_owner_approval_for_memory_access(in
             for table in ("oauth_codes", "oauth_grants", "oauth_tokens"):
                 assert db.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] == 0
         state.decide(request_id, projects=["work"], scopes=["memory:read"])
-        redirect = http.get(pairing, follow_redirects=False)
+        redirect = http.post(pairing, follow_redirects=False)
         code = parse_qs(urlsplit(redirect.headers["location"]).query)["code"][0]
         exchanged = http.post(
             "/token",
@@ -169,6 +172,51 @@ def test_registration_without_scope_requires_owner_approval_for_memory_access(in
     asyncio.run(rejected_write())
     with store.connection() as db:
         assert db.execute("SELECT COUNT(*) FROM memories").fetchone()[0] == 0
+
+
+def test_onboarding_is_closed_by_default_and_requires_an_operator_ttl(tmp_path):
+    store = Store(tmp_path / "memory")
+    store.initialize()
+    configure(store, ISSUER)
+    service = MemoryService(store)
+    app = create_http_app(create_server(service, http=True), service)
+    state = OAuthStore(store)
+    with TestClient(app, base_url=ISSUER) as http:
+        response = http.post(
+            "/register",
+            json={"redirect_uris": [CALLBACK], "token_endpoint_auth_method": "none"},
+        )
+        assert response.status_code == 503
+        assert response.json()["error"] == "temporarily_unavailable"
+        state.set_onboarding(open_for_seconds=1)
+        assert register(http)["client_id"]
+        (store.directory / "oauth-onboarding.json").write_text('{"version": 1, "expires_at": 0}')
+        assert state.onboarding_state()["state"] == "closed"
+
+
+def test_pairing_get_and_head_do_not_consume_and_post_is_browser_bound(installation):
+    _, state, _, app = installation
+    with TestClient(app, base_url=ISSUER) as browser:
+        client = register(browser, scopes="memory:read")
+        request_id, pairing = request_code(
+            browser, client, state, approve=False, scopes="memory:read"
+        )
+        state.decide(request_id, projects=["work"], scopes=["memory:read"])
+        shown = browser.get(pairing, follow_redirects=False)
+        assert shown.status_code == 200
+        assert "Synthetic test client" in shown.text
+        assert "http://127.0.0.1:9999" in shown.text
+        assert browser.head(pairing, follow_redirects=False).status_code == 200
+        original_cookies = dict(browser.cookies)
+        browser.cookies.clear()
+        assert browser.post(pairing, follow_redirects=False).status_code == 403
+        assert browser.get(pairing, follow_redirects=False).status_code == 200
+        assert browser.post(pairing, follow_redirects=False).status_code == 403
+        browser.cookies.update(original_cookies)
+        redirect = browser.post(pairing, follow_redirects=False)
+        assert redirect.status_code == 303
+        assert "code" in parse_qs(urlsplit(redirect.headers["location"]).query)
+        assert browser.get(pairing, follow_redirects=False).status_code == 410
 
 
 def test_explicit_read_only_registration_cannot_request_write(installation):
@@ -260,19 +308,18 @@ def test_discovery_pkce_binding_rotation_revocation_and_no_plaintext_tokens(inst
         replacement = refreshed.json()
         assert state.policy(tokens["access_token"]) is None
         assert state.policy(replacement["access_token"]).scopes == {"memory:read"}
-        assert (
-            http.post(
-                "/token",
-                data={
-                    "grant_type": "refresh_token",
-                    "client_id": client["client_id"],
-                    "refresh_token": replacement["refresh_token"],
-                    "resource": state.resource,
-                    "scope": "memory:read memory:write",
-                },
-            ).status_code
-            == 400
+        expanded = http.post(
+            "/token",
+            data={
+                "grant_type": "refresh_token",
+                "client_id": client["client_id"],
+                "refresh_token": replacement["refresh_token"],
+                "resource": state.resource,
+                "scope": "memory:read memory:write",
+            },
         )
+        assert expanded.status_code == 200
+        assert expanded.json()["scope"] == "memory:read memory:write"
         revoked = http.post(
             "/revoke",
             data={
@@ -396,7 +443,7 @@ def test_pending_consent_is_local_exact_and_requires_explicit_deletion_permissio
         narrowed = state.decide(request_id, projects=["work"])
         assert narrowed["scopes"] == ["memory:read"]
         state.decide(request_id, deny=True)
-        denied = http.get(pairing, follow_redirects=False)
+        denied = http.post(pairing, follow_redirects=False)
         assert parse_qs(urlsplit(denied.headers["location"]).query)["error"] == ["access_denied"]
         assert http.get(pairing).status_code == 410
         with pytest.raises(InputError, match="unavailable"):
@@ -429,7 +476,7 @@ def test_pairing_provenance_survives_exchange_restart_refresh_and_revocation(ins
         verifier = secrets.token_urlsafe(48)
         request_id, pairing = request_code(http, client, state, approve=False, verifier=verifier)
         state.decide(request_id, projects=["work"], scopes=["memory:read"])
-        response = http.get(pairing, follow_redirects=False)
+        response = http.post(pairing, follow_redirects=False)
         code = parse_qs(urlsplit(response.headers["location"]).query)["code"][0]
         assert http.get(pairing, follow_redirects=False).status_code == 410
         with store.connection() as db:
@@ -557,9 +604,12 @@ def test_provenance_upgrade_preserves_legacy_auth_without_fabricating_history(
             for table in (
                 "oauth_request_provenance",
                 "oauth_code_provenance",
-                "oauth_grant_provenance",
             ):
                 assert db.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] == 0
+            assert db.execute("SELECT COUNT(*) FROM oauth_grant_provenance").fetchone()[0] == 1
+            assert (
+                db.execute("SELECT COUNT(*) FROM oauth_grants WHERE revoked=0").fetchone()[0] == 0
+            )
 
 
 @pytest.mark.parametrize("stage", ["claim", "exchange"])
@@ -687,6 +737,10 @@ def test_restart_persists_grants_and_uninstall_prevents_refresh_after_reinstall(
         assert store.get(memory["id"])["content"] == "Retain me"
 
 
+@pytest.mark.skipif(
+    sys.platform != "linux",
+    reason="managed OAuth subprocess lifecycle requires Linux /proc and pidfd",
+)
 def test_official_oauth_client_completes_discovery_registration_and_pkce_over_live_http(tmp_path):
     store = Store(tmp_path / "host")
 
@@ -717,6 +771,7 @@ def test_official_oauth_client_completes_discovery_registration_and_pkce_over_li
         assert result["service"]["pid"] != first["pid"]
         assert result["public_ingress"] == "not_verified"
         state = OAuthStore(store)
+        state.set_onboarding(open_for_seconds=600)
         storage = ClientStorage()
         callback = {}
 
@@ -736,13 +791,15 @@ def test_official_oauth_client_completes_discovery_registration_and_pkce_over_li
                                 "oauth",
                                 "approve",
                                 request_id,
+                                "--redirect-host",
+                                "localhost",
                                 "--project",
                                 "work",
                             ]
                         )
                     )
                     assert approved["state"] == "approved"
-                    response = await browser.get(pairing, follow_redirects=False)
+                    response = await browser.post(pairing, follow_redirects=False)
                     callback.update(parse_qs(urlsplit(response.headers["location"]).query))
 
                 async def receive_callback():
@@ -919,7 +976,7 @@ def test_client_and_issuer_binding_and_public_request_limits(installation):
             ).status_code
             == 400
         )
-        configure(store, "https://new.example")
+        configure(store, "https://new.example", replace_issuer=True)
         assert state.policy(tokens["access_token"]) is None
         assert OAuthStore(store).policy(tokens["access_token"]) is None
 
@@ -941,7 +998,9 @@ def test_registration_and_pending_capacity_fail_cleanly_and_expired_entries_reco
                 "response_types": ["code"],
             },
         )
-        assert response.status_code == 400 and "capacity" in response.json()["error_description"]
+        assert response.status_code == 201
+        assert state.get_client(client["client_id"]) is None
+        client = response.json()
         request_code(http, client, state, approve=False)
         response = http.get(
             "/authorize",
@@ -1035,7 +1094,156 @@ def test_supervised_oauth_configuration_never_starts_managed_process(tmp_path, m
     monkeypatch.setattr(runtime, "up", forbidden_start)
     base = ["--data-dir", str(store.directory), "oauth"]
     configured = run(parser().parse_args(base + ["configure", "--issuer", ISSUER, "--no-start"]))
-    assert configured["restart_required"] is True and configured["service"] is None
+    assert configured["restart_required"] is True
     disabled = run(parser().parse_args(base + ["disable", "--no-start"]))
-    assert disabled["restart_required"] is True and disabled["service"] is None
+    assert disabled["restart_required"] is True
     assert not (store.directory / "service.json").exists()
+
+
+@pytest.mark.parametrize(
+    "issuer", ["https://example.com:70000", "https://bad host.example", "https://example.com:0"]
+)
+def test_invalid_issuer_is_a_safe_input_error(tmp_path, issuer):
+    store = Store(tmp_path / "memory")
+    store.initialize()
+    with pytest.raises(InputError):
+        configure(store, issuer)
+    assert not (store.directory / "oauth.json").exists()
+
+
+def test_issuer_replacement_requires_explicit_choice_and_keeps_grant_provenance(installation):
+    from dots_brain.errors import StateError
+
+    store, state, _, app = installation
+    with TestClient(app, base_url=ISSUER) as http:
+        client = register(http)
+        tokens = http.post("/token", data=request_code(http, client, state)).json()
+        before = state.grants()["grants"][0]
+        with pytest.raises(StateError):
+            configure(store, "https://replacement.example")
+        assert state.policy(tokens["access_token"]) is not None
+        result = configure(store, "https://replacement.example", replace_issuer=True)
+        assert result["grants_revoked"] == 1
+        assert result["clients_invalidated"] == 1
+        replacement = OAuthStore(store)
+        assert replacement.get_client(client["client_id"]) is None
+        assert replacement.grants()["grants"][0]["id"] == before["id"]
+        assert replacement.grants()["grants"][0]["revoked"] == 1
+
+
+def test_public_ingress_rejects_local_static_credential(installation, tmp_path):
+    from dots_brain.auth import issue_client
+
+    store, _, _, app = installation
+    credential = tmp_path / "local.json"
+    issue_client(
+        store,
+        name="local",
+        scopes=["memory:read"],
+        projects=None,
+        days=1,
+        output=credential,
+        url=ISSUER + "/mcp",
+    )
+    token = json.loads(credential.read_text())["token"]
+    with TestClient(app, base_url=ISSUER) as http:
+        result = http.post(
+            "/mcp",
+            json={},
+            headers={"Authorization": "Bearer " + token, "X-Dots-Brain-Public-Gateway": "1"},
+        )
+        assert result.status_code == 401
+        assert 'error="invalid_token"' in result.headers["www-authenticate"]
+        assert result.headers["cache-control"] == "no-store"
+        assert (
+            http.post("/mcp", json={}, headers={"Authorization": "Bearer " + token}).status_code
+            != 401
+        )
+
+
+@pytest.mark.parametrize(
+    "body,content_type",
+    [
+        ("[[]]", "application/json"),
+        ('{"client_name":"\\ud800"}', "application/json"),
+        ("{}", "text/plain"),
+    ],
+)
+def test_malformed_registration_is_bounded_and_does_not_leak(installation, body, content_type):
+    _, _, _, app = installation
+    with TestClient(app, base_url=ISSUER) as http:
+        response = http.post("/register", content=body, headers={"Content-Type": content_type})
+        assert response.status_code in {400, 415}
+        assert response.headers["cache-control"] == "no-store"
+        assert response.headers["x-frame-options"] == "DENY"
+        assert "Traceback" not in response.text
+
+
+def test_pairing_link_cannot_bind_a_second_browser_even_before_first_visit(installation):
+    _, state, _, app = installation
+    with TestClient(app, base_url=ISSUER) as browser:
+        client = register(browser)
+        response = browser.get(
+            "/authorize",
+            params={
+                "client_id": client["client_id"],
+                "redirect_uri": CALLBACK,
+                "response_type": "code",
+                "code_challenge": "x" * 43,
+                "code_challenge_method": "S256",
+                "scope": "memory:read",
+                "resource": state.resource,
+            },
+            follow_redirects=False,
+        )
+        pairing = response.headers["location"]
+        request_id = pairing.rsplit("/", 1)[-1]
+        state.decide(request_id, projects=["work"])
+        cookies = dict(browser.cookies)
+        browser.cookies.clear()  # An independent browser has no authorizing cookie.
+        assert browser.get(pairing, follow_redirects=False).status_code == 200
+        assert browser.post(pairing, follow_redirects=False).status_code == 403
+        browser.cookies.update(cookies)
+        assert browser.post(pairing, follow_redirects=False).status_code == 303
+
+
+def test_unknown_refresh_and_pairing_requests_do_not_take_writer_lock(installation, monkeypatch):
+    from contextlib import contextmanager
+
+    store, state, _, _ = installation
+    original = store.connection
+
+    @contextmanager
+    def readonly(*args, **kwargs):
+        assert kwargs.get("write") is not True
+        with original(*args, **kwargs) as db:
+            yield db
+
+    monkeypatch.setattr(store, "connection", readonly)
+    assert state.load_token("unknown", "refresh", "unknown") is None
+    assert state.pairing("req_unknown", bind_browser=True) == {"state": "expired"}
+    assert state.claim("req_unknown", require_browser=True) == {"state": "expired"}
+
+
+def test_unknown_pairing_status_never_mints_code(installation):
+    store, state, _, app = installation
+    with TestClient(app, base_url=ISSUER) as http:
+        client = register(http)
+        request_id, _ = request_code(http, client, state, approve=False)
+        with store.connection(write=True) as db:
+            db.execute("UPDATE oauth_requests SET status='unexpected' WHERE id=?", (request_id,))
+        assert state.claim(request_id) == {"state": "expired"}
+        with store.connection() as db:
+            assert db.execute("SELECT COUNT(*) FROM oauth_codes").fetchone()[0] == 0
+
+
+def test_onboarding_limiter_bounds_many_peers_and_global_capacity():
+    from dots_brain.oauth_http import OnboardingLimiter
+
+    limiter = OnboardingLimiter()
+    admitted = sum(
+        limiter.allow({"path": "/register", "client": (f"peer-{i}", 1)}) for i in range(3000)
+    )
+    assert admitted <= 61
+    assert len(limiter.buckets) <= 512
+    assert len(limiter.global_buckets) == 1

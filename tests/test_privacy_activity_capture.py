@@ -6,7 +6,7 @@ import pytest
 from dots_brain.activity import AuditLog
 from dots_brain.auth import Policy
 from dots_brain.capture import JSONLCollector, normalize_transcript_record
-from dots_brain.errors import ConflictError, InputError, NotFoundError
+from dots_brain.errors import ConflictError, ForbiddenError, InputError, NotFoundError
 from dots_brain.privacy import guard_content, sanitize
 from dots_brain.store import Store
 
@@ -55,7 +55,7 @@ def test_audit_scopes_idempotence_project_boundaries_and_missing_receipts(tmp_pa
     read = policy("audit:read", projects=("alpha",))
     report = log.report(read, project="alpha")
     assert report["coverage"]["missing_receipts"] == 1 and first["id"] == 1
-    with pytest.raises(InputError):
+    with pytest.raises(ForbiddenError):
         log.events(write, project="alpha")
 
 
@@ -78,7 +78,7 @@ def test_collector_waits_for_ack_partial_line_and_rotation(tmp_path):
         + "\n"
         + "{"
     )
-    collector = JSONLCollector([export], cursor, lambda item: delivered.append(item))
+    collector = JSONLCollector([export], cursor, lambda item: delivered.append(item) or True)
     assert collector.collect() == 1 and len(delivered) == 1
     assert collector.collect() == 0
     export.write_text(json.dumps({"type": "shell_command", "command": "x"}) + "\n")
@@ -122,7 +122,7 @@ def test_strict_guard_preserves_long_valid_content_and_rejects_truncation():
 def test_rotation_checkpoint_survives_without_a_complete_next_line(tmp_path):
     export, cursor, delivered = tmp_path / "audit.jsonl", tmp_path / "cursor.json", []
     export.write_text('{"type":"shell_command","command":"echo hello"}\n')
-    collector = JSONLCollector([export], cursor, lambda item: delivered.append(item))
+    collector = JSONLCollector([export], cursor, lambda item: delivered.append(item) or True)
     assert collector.collect() == 1
     export.write_text("{")
     assert collector.collect() == 1
@@ -136,7 +136,9 @@ def test_collector_overlap_serializes_delivery_and_checkpoints(tmp_path):
     export.write_text('{"type":"shell_command","command":"echo hello"}\n')
 
     def run(_):
-        return JSONLCollector([export], cursor, lambda event: delivered.append(event)).collect()
+        return JSONLCollector(
+            [export], cursor, lambda event: delivered.append(event) or True
+        ).collect()
 
     with ThreadPoolExecutor(max_workers=2) as pool:
         assert sorted(pool.map(run, range(2))) == [0, 1]
@@ -147,7 +149,7 @@ def test_collector_missing_source_and_oversized_lines_are_acknowledged_gaps(tmp_
     from dots_brain.capture import MAX_LINE_BYTES
 
     export, cursor, delivered = tmp_path / "audit.jsonl", tmp_path / "cursor.json", []
-    collector = JSONLCollector([export], cursor, lambda event: delivered.append(event))
+    collector = JSONLCollector([export], cursor, lambda event: delivered.append(event) or True)
     assert collector.collect() == 1
     assert collector.collect() == 0
     assert delivered[0]["action"]["reason"] == "source_unavailable"
@@ -197,6 +199,38 @@ def test_audit_redacts_persisted_payloads_and_filters_unqualified_reads(tmp_path
             "SYNTHETIC_CREDENTIAL"
             not in db.execute("SELECT action FROM audit_events WHERE project='alpha'").fetchone()[0]
         )
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "DB_PASSWORD=safe-looking-value",
+        '"password": "x"',
+        "postgres://admin:synthetic-password@db.example/test",
+        "xoxb-1234567890abcdef",
+        "sk_live_1234567890abcdef",
+        "AIza1234567890abcdefghijkl",
+        "-----BEGIN OPENSSH PRIVATE KEY-----",
+        "curl -u admin:synthetic-password",
+    ],
+)
+def test_memory_guard_rejects_common_credential_forms(value):
+    with pytest.raises(InputError):
+        guard_content({"content": value})
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "Token: budget for this sprint is 40 points.",
+        "Secret: Santa draw happens on Friday.",
+        "The flag bearer unfortunately tripped on stage.",
+        "Clone with https://andrew@dev.azure.com/org/repo",
+        "def login(user, password=None, token=None):",
+    ],
+)
+def test_memory_guard_keeps_noncredential_prose(value):
+    assert guard_content({"content": value})["content"] == value
 
 
 def test_snapshot_excludes_ambiguous_assistant_text_and_tool_payloads():

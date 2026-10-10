@@ -3,18 +3,33 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
+import tempfile
 import threading
 from pathlib import Path
 from urllib.request import Request, urlopen
 
+from . import __version__
 from .errors import CapabilityError
-from .store import Store
+from .store import Store, validate_integer, validate_text
+
+logger = logging.getLogger(__name__)
+MIN_SEMANTIC_SCORE = 0.20
+MAX_CHUNKS_PER_MEMORY = 128
+MAX_QUERY_CHUNKS = 16
 
 MODEL_NAME = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 MODEL_REPO = "qdrant/paraphrase-multilingual-MiniLM-L12-v2-onnx-Q"
 MODEL_REVISION = "faf4aa4225822f3bc6376869cb1164e8e3feedd0"
 MODEL_ID = f"{MODEL_REPO}@{MODEL_REVISION}:token-windows-v2"
+STATE_SQL = """CREATE TABLE IF NOT EXISTS semantic_state (
+    memory_id TEXT NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
+    model TEXT NOT NULL, revision INTEGER NOT NULL,
+    state TEXT NOT NULL CHECK(state IN ('indexed','empty','failed')),
+    truncated INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY(memory_id, model)
+)"""
 SCHEMA_SQL = (
     """
 CREATE TABLE semantic_chunks (
@@ -26,6 +41,7 @@ CREATE TABLE semantic_chunks (
     PRIMARY KEY(memory_id, model, chunk_index)
 )
 """,
+    STATE_SQL,
 )
 FILES = {
     "model_optimized.onnx": (
@@ -36,9 +52,18 @@ FILES = {
         "sha256",
         "fa685fc160bbdbab64058d4fc91b60e62d207e8dc60b9af5c002c5ab946ded00",
     ),
-    "config.json": ("git", "5b496dbbbe502a10e2d64525481c6f444d125403"),
-    "special_tokens_map.json": ("git", "b1879d702821e753ffe4245048eee415d54a9385"),
-    "tokenizer_config.json": ("git", "6af3e8bba20e4425103afb1ae3dee3cacdbe7afb"),
+    "config.json": (
+        "sha256",
+        "c8ec081fdad2df991bf5abbf18418fec7a5cdaa421f60ffb060a30040b8c376f",
+    ),
+    "special_tokens_map.json": (
+        "sha256",
+        "8c785abebea9ae3257b61681b4e6fd8365ceafde980c21970d001e834cf10835",
+    ),
+    "tokenizer_config.json": (
+        "sha256",
+        "0666eebf692422757e1dddf3c9fb1ded73ba3dc726c5828671fc89e45bf3609f",
+    ),
 }
 
 
@@ -47,6 +72,8 @@ def model_directory(store: Store) -> Path:
 
 
 def verify_file(path: Path, kind: str, expected: str) -> bool:
+    if kind not in {"sha256", "git"}:
+        raise CapabilityError("Unsupported model artifact hash algorithm.")
     if not path.is_file() or path.is_symlink():
         return False
     digest = hashlib.sha256() if kind == "sha256" else hashlib.sha1(usedforsecurity=False)
@@ -65,16 +92,24 @@ def prepare_model(store: Store) -> dict:
         target = directory / name
         if verify_file(target, kind, checksum):
             continue
-        temporary = directory / f"{name}.{os.getpid()}.part"
+        fd, pending = tempfile.mkstemp(prefix=f".{name}.", suffix=".part", dir=directory)
+        temporary = Path(pending)
         url = f"https://huggingface.co/{MODEL_REPO}/resolve/{MODEL_REVISION}/{name}"
         try:
-            with urlopen(Request(url, headers={"User-Agent": "Dots-Brain/0.1"}), timeout=60) as src:
-                with temporary.open("xb") as dst:
+            with os.fdopen(fd, "wb") as dst:
+                with urlopen(
+                    Request(url, headers={"User-Agent": f"Dots-Brain/{__version__}"}), timeout=60
+                ) as src:
                     while block := src.read(1024 * 1024):
                         dst.write(block)
+                dst.flush()
+                os.fsync(dst.fileno())
             if not verify_file(temporary, kind, checksum):
                 raise CapabilityError("A model artifact failed integrity verification.")
             temporary.replace(target)
+            from .local import sync_directory
+
+            sync_directory(directory)
         finally:
             temporary.unlink(missing_ok=True)
     return {
@@ -96,6 +131,12 @@ def verify_model_artifacts(store: Store) -> Path:
 
 class SemanticIndex:
     def __init__(self, store: Store):
+        with store.connection() as db:
+            if (
+                db.execute("SELECT 1 FROM sqlite_master WHERE name='semantic_state'").fetchone()
+                is None
+            ):
+                raise CapabilityError("Run dots-brain setup to prepare semantic index state.")
         directory = verify_model_artifacts(store)
         try:
             import onnxruntime
@@ -148,23 +189,38 @@ class SemanticIndex:
         return vector / norm
 
     def index(self, *, batch_size: int = 16) -> dict:
+        validate_integer(batch_size, "batch_size", maximum=128)
         with self.store.connection() as db:
             rows = db.execute(
                 "SELECT m.id,m.current_revision AS revision,r.title,r.content "
                 "FROM memories m JOIN revisions r "
                 "ON r.memory_id=m.id AND r.revision=m.current_revision WHERE NOT EXISTS "
                 "(SELECT 1 FROM semantic_chunks v WHERE v.memory_id=m.id AND v.model=? "
-                "AND v.revision=m.current_revision) ORDER BY m.id LIMIT ?",
-                (MODEL_ID, batch_size),
+                "AND v.revision=m.current_revision) AND NOT EXISTS "
+                "(SELECT 1 FROM semantic_state s WHERE s.memory_id=m.id AND s.model=? "
+                "AND s.revision=m.current_revision) ORDER BY m.id LIMIT ?",
+                (MODEL_ID, MODEL_ID, batch_size),
             ).fetchall()
         indexed = 0
         for row in rows:
-            chunks = [
-                (field, start, end, self._embed(row[field][start:end]))
-                for field in ("title", "content")
-                if row[field].strip()
-                for start, end in self._chunks(row[field])
-            ]
+            failed = False
+            try:
+                passages = [
+                    (field, start, end)
+                    for field in ("title", "content")
+                    if row[field].strip()
+                    for start, end in self._chunks(row[field])
+                ]
+                truncated = len(passages) > MAX_CHUNKS_PER_MEMORY
+                chunks = [
+                    (field, start, end, self._embed(row[field][start:end]))
+                    for field, start, end in passages[:MAX_CHUNKS_PER_MEMORY]
+                ]
+            except Exception as exc:
+                # Record a terminal attempt for this revision; explicit retry or a
+                # new revision can try again without starving subsequent memories.
+                logger.warning("Embedding failed exception_type=%s", type(exc).__name__)
+                chunks, truncated, failed = [], False, True
             with self.store.connection(write=True) as db:
                 current = db.execute(
                     "SELECT current_revision AS revision FROM memories WHERE id=?", (row["id"],)
@@ -172,8 +228,8 @@ class SemanticIndex:
                 if current is None or current["revision"] != row["revision"]:
                     continue
                 db.execute(
-                    "DELETE FROM semantic_chunks WHERE memory_id=? AND model=?",
-                    (row["id"], MODEL_ID),
+                    "DELETE FROM semantic_chunks WHERE memory_id=?",
+                    (row["id"],),
                 )
                 db.executemany(
                     "INSERT INTO semantic_chunks VALUES (?,?,?,?,?,?,?,?,?)",
@@ -192,8 +248,29 @@ class SemanticIndex:
                         for number, (field, start, end, vector) in enumerate(chunks)
                     ],
                 )
-                indexed += 1
-        return {"indexed": indexed, "examined": len(rows), **self.status()}
+                db.execute(
+                    "INSERT INTO semantic_state(memory_id,model,revision,state,truncated) "
+                    "VALUES (?,?,?,?,?) "
+                    "ON CONFLICT(memory_id,model) DO UPDATE SET revision=excluded.revision,"
+                    "state=excluded.state,truncated=excluded.truncated",
+                    (
+                        row["id"],
+                        MODEL_ID,
+                        row["revision"],
+                        "failed" if failed else "indexed" if chunks else "empty",
+                        int(truncated),
+                    ),
+                )
+                indexed += int(bool(chunks))
+        return {"indexed_now": indexed, "examined": len(rows), **self.status()}
+
+    def retry_failed(self) -> int:
+        """Operator-requested retry; keep successful and older model indexes intact."""
+        with self.store.connection(write=True) as db:
+            self.store.ensure_writable()
+            return db.execute(
+                "DELETE FROM semantic_state WHERE model=? AND state='failed'", (MODEL_ID,)
+            ).rowcount
 
     def status(self, *, projects: tuple[str, ...] | None = None) -> dict:
         clause, args = self.store._filter(projects)
@@ -208,11 +285,24 @@ class SemanticIndex:
                 "AND v.revision=m.current_revision WHERE v.model=?" + clause,
                 [MODEL_ID, *args],
             ).fetchone()[0]
+            attempts = db.execute(
+                "SELECT s.state,COUNT(*),SUM(s.truncated) FROM semantic_state s "
+                "JOIN memories m ON m.id=s.memory_id AND m.current_revision=s.revision "
+                "WHERE s.model=?" + clause + " GROUP BY s.state",
+                [MODEL_ID, *args],
+            ).fetchall()
+        counts = {row[0]: row[1] for row in attempts}
+        failed, empty = counts.get("failed", 0), counts.get("empty", 0)
+        truncated = sum(row[2] for row in attempts)
+        pending = max(0, count - indexed - failed - empty)
         return {
-            "state": "ready" if count == indexed else "pending_index",
+            "state": "pending_index" if pending else "degraded" if failed or truncated else "ready",
             "model": MODEL_ID,
             "indexed": indexed,
-            "pending": count - indexed,
+            "pending": pending,
+            "failed": failed,
+            "empty": empty,
+            "truncated": truncated,
             "inference": "local_cpu",
         }
 
@@ -224,7 +314,11 @@ class SemanticIndex:
         limit: int = 10,
         projects: tuple[str, ...] | None = None,
     ) -> list[dict]:
-        vectors = [self._embed(query[start:end]) for start, end in self._chunks(query)]
+        validate_text(query, "query", 2000)
+        validate_integer(limit, "limit", maximum=50)
+        vectors = [
+            self._embed(query[start:end]) for start, end in self._chunks(query)[:MAX_QUERY_CHUNKS]
+        ]
         clause, args = self.store._filter(projects, project)
         best = {}
         with self.store.connection() as db:
@@ -235,12 +329,20 @@ class SemanticIndex:
                 [MODEL_ID, *args],
             )
             for row in cursor:
-                other = self.np.frombuffer(row["vector"], dtype="<f4")
+                try:
+                    other = self.np.frombuffer(row["vector"], dtype="<f4")
+                except (TypeError, ValueError):
+                    logger.warning("Skipping invalid semantic vector encoding")
+                    continue
                 if row["dimension"] != len(vectors[0]) or len(other) != len(vectors[0]):
-                    raise CapabilityError("A stored vector has incompatible dimensions.")
+                    logger.warning("Skipping incompatible semantic vector for %s", row["id"])
+                    continue
                 if not self.np.isfinite(other).all():
-                    raise CapabilityError("A stored vector contains invalid values.")
+                    logger.warning("Skipping non-finite semantic vector for %s", row["id"])
+                    continue
                 score = max(float(self.np.dot(vector, other)) for vector in vectors)
+                if score < MIN_SEMANTIC_SCORE:
+                    continue
                 candidate = (
                     score,
                     row["revision"],

@@ -18,7 +18,12 @@ from dots_brain.errors import InputError
 from dots_brain.runtime import down, process_identity, up
 from dots_brain.store import Store
 
+requires_linux_lifecycle = pytest.mark.skipif(
+    sys.platform != "linux", reason="managed subprocess lifecycle requires Linux /proc and pidfd"
+)
 
+
+@requires_linux_lifecycle
 def test_concurrent_up_reuses_one_process_and_recovers_after_crash(tmp_path):
     store = Store(tmp_path / "memory")
     try:
@@ -69,6 +74,7 @@ def test_adapter_preserves_other_settings_is_idempotent_and_refuses_conflicts(tm
     assert path.read_text() == text
 
 
+@requires_linux_lifecycle
 def test_connect_verifies_write_keeps_tokens_private_and_bridge_restarts_service(tmp_path):
     store = Store(tmp_path / "memory")
     config = tmp_path / "cursor.json"

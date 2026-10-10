@@ -5,26 +5,57 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import logging
 import os
-import sqlite3
 import sys
 from pathlib import Path
 
 from . import __version__
 from .auth import SCOPES
-from .errors import BrainError
 from .store import Store
 
 
 def default_directory() -> Path:
-    base = Path(os.environ.get("XDG_DATA_HOME", str(Path.home() / ".local" / "share")))
+    configured = os.environ.get("XDG_DATA_HOME", "")
+    base = (
+        Path(configured)
+        if configured and Path(configured).is_absolute()
+        else Path.home() / ".local" / "share"
+    )
     return base / "dots-brain"
 
 
+class ArgumentParser(argparse.ArgumentParser):
+    def error(self, message):
+        # argparse includes user-supplied values; use a stable, non-reflective error.
+        print(
+            json.dumps(
+                {
+                    "state": "error",
+                    "code": "invalid_input",
+                    "message": "Invalid command arguments; use --help.",
+                }
+            ),
+            file=sys.stderr,
+        )
+        raise SystemExit(2)
+
+
+def port_number(value):
+    number = int(value)
+    if not 1 <= number <= 65535:
+        raise argparse.ArgumentTypeError("Port must be between 1 and 65535.")
+    return number
+
+
+def managed_port(value):
+    return 0 if value == "0" else port_number(value)
+
+
 def parser() -> argparse.ArgumentParser:
-    root = argparse.ArgumentParser(description="One source-aware memory for your AI tools.")
+    root = ArgumentParser(description="One source-aware memory for your AI tools.")
     root.add_argument("--version", action="version", version=__version__)
-    root.add_argument("--data-dir", type=Path, default=default_directory())
+    root.add_argument("--data-dir", type=Path)
     commands = root.add_subparsers(dest="command", required=True)
     commands.add_parser("setup", help="Initialize or reuse the local memory database.")
     migration = commands.add_parser("migrate", help="Plan or apply the offline v1 to v2 migration.")
@@ -41,10 +72,21 @@ def parser() -> argparse.ArgumentParser:
     )
     activate.add_argument("--target", type=Path, required=True)
     activate.add_argument("--writers-stopped", action="store_true")
+    abort = commands.add_parser(
+        "abort-restore", help="Cancel a pending cutover; keep the restored target disabled."
+    )
+    abort.add_argument("--target", type=Path, required=True)
+    abort.add_argument("--writers-stopped", action="store_true")
     cortex = commands.add_parser("cortex", help="Configure a dedicated CORTEX MCP connection.")
-    cortex.add_argument("--endpoint", required=True)
-    cortex.add_argument("--token-file", type=Path, required=True)
-    cortex.add_argument("--project-map", action="append", required=True)
+    cortex.add_argument(
+        "action", nargs="?", choices=["configure", "operations", "resolve"], default="configure"
+    )
+    cortex.add_argument("--endpoint")
+    cortex.add_argument("--token-file", type=Path)
+    cortex.add_argument("--project-map", action="append")
+    cortex.add_argument("--project")
+    cortex.add_argument("--operation-id")
+    cortex.add_argument("--resolution", choices=["retry"])
     audit = commands.add_parser("audit", help="Inspect sanitized audit events on the memory host.")
     audit.add_argument("action", choices=["report", "events"])
     audit.add_argument("--project")
@@ -61,12 +103,17 @@ def parser() -> argparse.ArgumentParser:
     capture.add_argument("--credential-file", type=Path, required=True)
     capture.add_argument("--project", required=True)
     capture.add_argument("--account", required=True)
+    capture.add_argument(
+        "--recover-pending",
+        action="store_true",
+        help="Quarantine an invalid or rejected pending coverage receipt before retrying.",
+    )
     commands.add_parser(
         "preflight", help="Inspect host capabilities without changing configuration."
     )
     start = commands.add_parser("up", help="Start or reuse and verify the local HTTP service.")
-    start.add_argument("--port", type=int)
-    start.add_argument("--semantic", action="store_true")
+    start.add_argument("--port", type=managed_port)
+    start.add_argument("--semantic", action=argparse.BooleanOptionalAction, default=None)
     start.add_argument(
         "--resume", action="store_true", help="Explicitly re-enable a removed installation."
     )
@@ -104,14 +151,32 @@ def parser() -> argparse.ArgumentParser:
     oauth_setup.add_argument(
         "--no-start", action="store_true", help="Leave startup to an external supervisor."
     )
+    oauth_setup.add_argument(
+        "--replace-issuer",
+        action="store_true",
+        help="Explicitly revoke old grants when changing the issuer.",
+    )
     oauth_disable = oauth_actions.add_parser("disable")
     oauth_disable.add_argument(
         "--no-start", action="store_true", help="Leave startup to an external supervisor."
     )
-    for name in ("status", "pending", "grants"):
+    for name in ("status", "pending", "grants", "clients", "purge"):
         oauth_actions.add_parser(name)
+    onboarding = oauth_actions.add_parser(
+        "onboarding", help="Bound registration and pairing to a short operator-opened window."
+    )
+    onboarding_actions = onboarding.add_subparsers(dest="onboarding_action", required=True)
+    window = onboarding_actions.add_parser("open")
+    window.add_argument("--minutes", type=int, default=10)
+    onboarding_actions.add_parser("close")
+    onboarding_actions.add_parser("status")
     approve = oauth_actions.add_parser("approve")
     approve.add_argument("request_id")
+    approve.add_argument(
+        "--redirect-host",
+        required=True,
+        help="Expected callback hostname from the client you deliberately connected.",
+    )
     projects = approve.add_mutually_exclusive_group(required=True)
     projects.add_argument("--project", action="append")
     projects.add_argument("--all-projects", action="store_true")
@@ -123,11 +188,17 @@ def parser() -> argparse.ArgumentParser:
     revoke_oauth.add_argument("grant_id")
     serve = commands.add_parser("serve", help="Run on the memory host; HTTP binds loopback only.")
     serve.add_argument("--transport", choices=["stdio", "http"], default="stdio")
-    serve.add_argument("--port", type=int, default=8765)
+    serve.add_argument("--port", type=port_number, default=8765)
+    serve.add_argument("--listen-fd", type=int, help=argparse.SUPPRESS)
     serve.add_argument("--semantic", action="store_true")
     model = commands.add_parser("model", help="Manage the pinned local embedding model.")
     model.add_argument("action", choices=["prepare"])
-    commands.add_parser("index", help="Index pending memories with the local model.")
+    index = commands.add_parser("index", help="Index pending memories with the local model.")
+    index.add_argument(
+        "--retry-failed",
+        action="store_true",
+        help="Retry failed embeddings for their current revision.",
+    )
     export = commands.add_parser("export", help="Export memories and revisions as JSON Lines.")
     export.add_argument("--output", required=True, type=Path)
     for name in ("bridge", "verify"):
@@ -146,7 +217,7 @@ def parser() -> argparse.ArgumentParser:
     create.add_argument("--project", action="append")
     create.add_argument("--days", type=int, default=30)
     create.add_argument("--credential-file", required=True, type=Path)
-    create.add_argument("--url", default="http://127.0.0.1:8765/mcp")
+    create.add_argument("--url", help="MCP URL; defaults to the recorded managed service endpoint.")
     revoke = actions.add_parser("revoke")
     revoke.add_argument("client_id")
     actions.add_parser("list")
@@ -154,28 +225,24 @@ def parser() -> argparse.ArgumentParser:
 
 
 def run(args) -> dict | None:
-    store = Store(args.data_dir)
-    if args.command in {"migrate", "backup", "restore", "activate-restore", "cortex"}:
-        from .operations import (
-            activate_restore,
-            backup_store,
-            configure_cortex,
-            migrate,
-            restore_store,
-        )
+    # Host inventory and remote clients must not resolve or initialize a local store.
+    if args.command == "preflight":
+        from .runtime import preflight
 
-        if args.command == "migrate":
-            return migrate(
-                store, apply=args.apply, writers_stopped=args.writers_stopped, backup=args.backup
-            )
-        if args.command == "backup":
-            return backup_store(store, args.output)
-        if args.command == "restore":
-            return restore_store(args.backup, Store(args.target), latest_deletions=store)
-        if args.command == "activate-restore":
-            return activate_restore(store, Store(args.target), writers_stopped=args.writers_stopped)
-        return configure_cortex(
-            store, endpoint=args.endpoint, token_file=args.token_file, projects=args.project_map
+        return preflight()
+    if args.command == "providers":
+        from .clients import providers
+
+        return providers()
+    if args.command in ("bridge", "verify"):
+        from .bridge import resume_local_connection, run_bridge, verify_connection
+
+        if args.command == "bridge":
+            if args.local_data_dir is not None:
+                resume_local_connection(args.credential_file, args.local_data_dir)
+            return asyncio.run(run_bridge(args.credential_file))
+        return asyncio.run(
+            verify_connection(args.credential_file, write=args.write, project=args.project)
         )
     if args.command == "capture":
         from .capture_delivery import collect_remote
@@ -188,75 +255,40 @@ def run(args) -> dict | None:
                 project=args.project,
                 account=args.account,
                 kind=args.kind,
+                recover_pending=args.recover_pending,
             )
         )
+    store = Store(args.data_dir or default_directory())
+    if args.command in {
+        "migrate",
+        "backup",
+        "restore",
+        "activate-restore",
+        "abort-restore",
+        "cortex",
+    }:
+        from .operator_cli import run_storage
+
+        return run_storage(store, args)
     if args.command == "audit":
         from .activity import AuditLog
         from .auth import Policy
 
         audit = AuditLog(store)
-        arguments = dict(project=args.project, since=args.since, until=args.until, limit=args.limit)
+        arguments = dict(
+            project=args.project,
+            since=args.since,
+            until=args.until,
+            after_id=args.after_id,
+            limit=args.limit,
+        )
         if args.action == "report":
             return audit.report(Policy(), **arguments)
-        rows = audit.events(Policy(), **arguments, after_id=args.after_id)
-        return {
-            "events": rows,
-            "next_after_id": rows[-1]["id"] if rows else args.after_id,
-            "has_more": bool(
-                rows
-                and audit.events(Policy(), **(arguments | {"limit": 1}), after_id=rows[-1]["id"])
-            ),
-        }
+        return audit.page(Policy(), **arguments)
     if args.command == "oauth":
-        from .local import locked
-        from .oauth import OAuthStore, configuration, configure, revoke_all
-        from .runtime import up
+        from .operator_cli import run_oauth
 
-        if args.oauth_action == "status":
-            config = configuration(store)
-            return {
-                "state": "configured" if config else "not_configured",
-                "issuer": config["issuer"] if config else None,
-                "service_disabled": (store.directory / "disabled.json").exists(),
-                "public_ingress": "not_verified",
-                "secret_isolation": False,
-            }
-        store.status()  # Never initialize another memory on a client device.
-        with locked(store.directory / "installation.lock"):
-            if args.oauth_action == "configure":
-                result = configure(store, args.issuer)
-                return {
-                    **result,
-                    "service": None if args.no_start else up(store),
-                    "restart_required": args.no_start,
-                }
-            if args.oauth_action == "disable":
-                with store.connection(write=True) as db:
-                    revoke_all(db)
-                (store.directory / "oauth.json").unlink(missing_ok=True)
-                return {
-                    "state": "oauth_disabled",
-                    "grants_revoked": True,
-                    "service": up(store)
-                    if not args.no_start and not (store.directory / "disabled.json").exists()
-                    else None,
-                    "restart_required": args.no_start,
-                }
-            state = OAuthStore(store)
-            if args.oauth_action == "pending":
-                return state.pending()
-            if args.oauth_action == "grants":
-                return state.grants()
-            if args.oauth_action == "revoke":
-                return state.revoke_grant(args.grant_id)
-            if args.oauth_action == "deny":
-                return state.decide(args.request_id, deny=True)
-            return state.decide(
-                args.request_id,
-                projects=args.project,
-                allow_forget=args.allow_forget,
-                scopes=args.scope,
-            )
+        return run_oauth(store, args)
     if args.command in ("disconnect", "uninstall"):
         from .removal import disconnect_client, uninstall
 
@@ -305,67 +337,13 @@ def run(args) -> dict | None:
             "capture": "opt_in_snapshot_collector",
         }
     if args.command == "doctor":
-        from .oauth import configuration
+        from .operator_cli import doctor
 
-        initialized = store.path.is_file()
-        return {
-            "state": "disabled"
-            if (store.directory / "disabled.json").exists()
-            else "local_ready"
-            if initialized
-            else "setup_required",
-            "version": __version__,
-            "sqlite_version": sqlite3.sqlite_version,
-            "memory": store.status() if initialized else None,
-            "vm_persistence": "not_verified",
-            "public_ingress": "not_verified",
-            "secret_isolation": False,
-            "remote_oauth": "configured" if configuration(store) else "not_configured",
-            "host_costs": "not_verified",
-            "event_automation": "not_implemented",
-        }
-    if args.command in ("bridge", "verify"):
-        from .bridge import resume_local_connection, run_bridge, verify_connection
-
-        if args.command == "bridge":
-            if args.local_data_dir is not None:
-                resume_local_connection(args.credential_file, args.local_data_dir)
-            return asyncio.run(run_bridge(args.credential_file))
-        return asyncio.run(
-            verify_connection(args.credential_file, write=args.write, project=args.project)
-        )
+        return doctor(store)
     if args.command == "serve":
-        from .integration_tools import load_cortex
-        from .runtime import ensure_enabled
-        from .server import create_http_app, create_server
-        from .service import MemoryService
+        from .operator_cli import run_serve
 
-        ensure_enabled(store)
-        store.status()  # Fail before starting if setup has not completed.
-        semantic = None
-        if args.semantic:
-            from .semantic import SemanticIndex
-
-            semantic = SemanticIndex(store)
-        service = MemoryService(store, semantic)
-        try:
-            service.cortex = load_cortex(store)
-        except BrainError:
-            service.cortex_error = "invalid_configuration"
-        server = create_server(service, http=args.transport == "http", port=args.port)
-        if args.transport == "http":
-            import uvicorn
-
-            uvicorn.run(
-                create_http_app(server, service),
-                host="127.0.0.1",
-                port=args.port,
-                access_log=False,
-                log_level="warning",
-            )
-        else:
-            server.run(transport="stdio")
-        return None
+        return run_serve(store, args)
     if args.command == "model":
         from .semantic import prepare_model
 
@@ -374,29 +352,21 @@ def run(args) -> dict | None:
         from .semantic import SemanticIndex
 
         semantic = SemanticIndex(store)
+        if args.retry_failed:
+            semantic.retry_failed()
         indexed = 0
         while True:
             result = semantic.index()
-            indexed += result["indexed"]
+            indexed += result["indexed_now"]
             if result["examined"] == 0:
                 return {"indexed_this_run": indexed, **semantic.status()}
     if args.command == "export":
-        output = args.output.expanduser().absolute()
-        fd = os.open(output, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
-        count = 0
-        try:
-            with os.fdopen(fd, "w") as stream:
-                for record in store.export():
-                    stream.write(json.dumps(record, ensure_ascii=False) + "\n")
-                    count += 1
-                stream.flush()
-                os.fsync(stream.fileno())
-        except BaseException:
-            output.unlink(missing_ok=True)
-            raise
-        return {"output": str(output), "revisions": count}
+        from .operator_cli import export_store
+
+        return export_store(store, args.output)
     if args.command == "client":
         from .auth import issue_client, list_clients, revoke_client
+        from .operator_cli import client_url
 
         if args.client_action == "create":
             return issue_client(
@@ -406,7 +376,7 @@ def run(args) -> dict | None:
                 projects=args.project,
                 days=args.days,
                 output=args.credential_file,
-                url=args.url,
+                url=client_url(store, args.url),
             )
         if args.client_action == "revoke":
             return revoke_client(store, args.client_id)
@@ -415,30 +385,25 @@ def run(args) -> dict | None:
 
 
 def main() -> None:
+    logging.basicConfig(
+        level=logging.WARNING, format="%(asctime)s %(levelname)s %(name)s %(message)s"
+    )
     try:
         result = run(parser().parse_args())
         if result is not None:
             print(json.dumps(result, ensure_ascii=False))
-            if result.get("state") in {"verification_failed", "blocked", "partial"}:
+            if result.get("state") in {
+                "verification_failed",
+                "blocked",
+                "partial",
+                "capture_partial",
+            }:
                 raise SystemExit(1)
-    except BrainError as exc:
-        print(
-            json.dumps({"state": "error", "code": exc.code, "message": str(exc)}), file=sys.stderr
-        )
-        raise SystemExit(1) from None
-    except (OSError, ValueError, sqlite3.Error, ExceptionGroup):
-        # Connection and OS errors can contain secret URLs or local paths. Keep them out
-        # of machine output; diagnose credentials and permissions without dumping inputs.
-        print(
-            json.dumps(
-                {
-                    "state": "error",
-                    "code": "operation_failed",
-                    "message": "Check local permissions, connectivity, and command arguments.",
-                }
-            ),
-            file=sys.stderr,
-        )
+    except Exception as exc:
+        from .protocol import safe_error
+
+        error = safe_error(exc)
+        print(json.dumps({"state": "error", **error}), file=sys.stderr)
         raise SystemExit(1) from None
 
 

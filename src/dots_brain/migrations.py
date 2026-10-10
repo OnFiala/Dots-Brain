@@ -7,19 +7,16 @@ not guess whether a process using the database is safe to interrupt.
 
 from __future__ import annotations
 
-import os
 import sqlite3
 from collections.abc import Callable
+from contextlib import closing
 from datetime import UTC, datetime
 from pathlib import Path
 
 from .database_checks import validate_snapshot
-from .errors import InputError
-from .local import sync_file_and_parent
-from .store import Store, extension_statements
-
-# Used by failure injection tests after the real schema transformation.
-SCHEMA_EXTENSION_SQL: tuple[str, ...] = ()
+from .database_io import open_readonly, snapshot
+from .errors import BusyError, InputError
+from .store import Store, ensure_fts_row_mapping, extension_statements, secure_fts
 
 V1 = 1
 V2 = 2
@@ -65,7 +62,10 @@ def _version(path: Path) -> int:
         raise InputError("Memory is not initialized. Run dots-brain setup first.")
     if path.is_symlink():
         raise InputError("The database must not be a symbolic link.")
-    with sqlite3.connect(f"file:{path}?mode=ro", uri=True) as db:
+    wal = path.with_name(path.name + "-wal")
+    if wal.exists() and wal.stat().st_size > 0:
+        raise BusyError("Stop every writer and checkpoint its WAL before planning migration.")
+    with closing(open_readonly(path, immutable=True)) as db:
         return db.execute("PRAGMA user_version").fetchone()[0]
 
 
@@ -75,26 +75,9 @@ def _default_backup(path: Path) -> Path:
 
 
 def _backup(path: Path, destination: Path) -> Path:
-    destination = destination.expanduser().absolute()
-    if destination.parent != path.parent:
-        raise InputError("The migration backup must be a private file beside the database.")
-    if destination.is_symlink():
-        raise InputError("The migration backup must not be a symbolic link.")
-    descriptor = os.open(destination, os.O_CREAT | os.O_EXCL | os.O_RDWR, 0o600)
-    os.close(descriptor)
-    destination.chmod(0o600)
-    try:
-        with sqlite3.connect(path) as source, sqlite3.connect(destination) as copied:
-            validate_snapshot(source, V1)
-            source.backup(copied)
-            validate_snapshot(copied, V1)
-        if destination.stat().st_mode & 0o777 != 0o600:
-            raise InputError("The migration backup is not private.")
-        sync_file_and_parent(destination)
-    except BaseException:
-        # Keep a failed backup for inspection rather than silently deleting evidence.
-        raise
-    return destination
+    with closing(open_readonly(path)) as source:
+        validate_snapshot(source, V1)
+        return snapshot(source, destination, V1)
 
 
 def _migrate(db: sqlite3.Connection) -> None:
@@ -132,11 +115,11 @@ def _migrate(db: sqlite3.Connection) -> None:
     db.execute("DROP TABLE vectors_v1")
     db.execute("DROP TABLE revisions_v1")
     db.execute("DROP TABLE memories_v1")
-    for statement in (*extension_statements(), *SCHEMA_EXTENSION_SQL):
+    for statement in extension_statements():
         db.execute(statement)
     db.execute(f"PRAGMA user_version={V2}")
-    if db.execute("PRAGMA foreign_key_check").fetchone() is not None:
-        raise InputError("Foreign-key validation failed; migration was rolled back.")
+    secure_fts(db)
+    ensure_fts_row_mapping(db)
     if validate_snapshot(db, V2) != before:
         raise InputError("Migration changed record counts; migration was rolled back.")
 
@@ -174,6 +157,8 @@ def migrate_v1_to_v2(
     db.row_factory = sqlite3.Row
     try:
         db.execute("PRAGMA foreign_keys=OFF")
+        db.execute("PRAGMA secure_delete=ON")
+        db.execute("PRAGMA synchronous=FULL")
         db.execute("BEGIN IMMEDIATE")
         _migrate(db)
         db.commit()

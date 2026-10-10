@@ -6,29 +6,39 @@ in an existing client's grant. CORTEX writes resolve a real source revision firs
 
 from __future__ import annotations
 
-from typing import Any
+import logging
+import uuid
+from dataclasses import replace
+from typing import Annotated, Any, Literal
 
 from mcp.types import ToolAnnotations
+from pydantic import Field
 
 from .errors import CapabilityError, InputError
+from .protocol import ContextLimit, Identifier, Project, Query, Revision
+
+AuditLimit = Annotated[int, Field(strict=True, ge=1, le=500)]
 
 
 def register_tools(
     server, service, policy, read_call, write_call
 ) -> dict[str, str | tuple[str, ...]]:
     read = ToolAnnotations(readOnlyHint=True, destructiveHint=False, openWorldHint=False)
-    write = ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=True)
+    write = ToolAnnotations(
+        readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=False
+    )
+    external_read = ToolAnnotations(readOnlyHint=True, destructiveHint=False, openWorldHint=True)
 
     @server.tool(annotations=write)
     async def audit_record(
-        project: str,
-        kind: str,
-        client_event_id: str,
+        project: Identifier,
+        kind: Literal["intent", "receipt", "error", "gap", "correction", "coverage", "action"],
+        client_event_id: Identifier,
         action: Any = None,
         target: Any = None,
         details: Any = None,
-        occurred_at: str | None = None,
-        intent_event_id: str | None = None,
+        occurred_at: Annotated[str, Field(strict=True, max_length=64)] = "",
+        intent_event_id: Project = "",
     ) -> dict[str, Any]:
         """Append a sanitized client report. It is not evidence of provider-wide capture."""
         return await write_call(
@@ -40,62 +50,46 @@ def register_tools(
             action=action,
             target=target,
             details=details,
-            occurred_at=occurred_at,
-            intent_event_id=intent_event_id,
+            occurred_at=occurred_at or None,
+            intent_event_id=intent_event_id or None,
         )
 
     @server.tool(annotations=read)
     async def audit_events(
-        project: str | None = None,
-        since: str | None = None,
-        until: str | None = None,
-        after_id: int | None = None,
-        limit: int = 100,
+        project: Project = "",
+        since: Annotated[str, Field(strict=True, max_length=64)] = "",
+        until: Annotated[str, Field(strict=True, max_length=64)] = "",
+        after_id: Revision | None = None,
+        limit: AuditLimit = 100,
     ) -> dict[str, Any]:
         """Read sanitized events in ID order; paginate until has_more is false."""
-        current = policy("audit:read")
-        rows = await read_call(
-            service.audit.events,
-            current,
-            project=project,
-            since=since,
-            until=until,
+        return await read_call(
+            service.audit.page,
+            policy("audit:read"),
+            project=project or None,
+            since=since or None,
+            until=until or None,
             after_id=after_id,
             limit=limit,
         )
-        more = bool(
-            rows
-            and await read_call(
-                service.audit.events,
-                current,
-                project=project,
-                since=since,
-                until=until,
-                after_id=rows[-1]["id"],
-                limit=1,
-            )
-        )
-        return {
-            "events": rows,
-            "has_more": more,
-            "next_after_id": rows[-1]["id"] if rows else after_id,
-        }
 
     @server.tool(annotations=read)
     async def audit_report(
-        project: str | None = None,
-        since: str | None = None,
-        until: str | None = None,
-        limit: int = 500,
+        project: Project = "",
+        since: Annotated[str, Field(strict=True, max_length=64)] = "",
+        until: Annotated[str, Field(strict=True, max_length=64)] = "",
+        limit: AuditLimit = 100,
+        after_id: Revision | None = None,
     ) -> dict[str, Any]:
         """Summarize recorded coverage; a truncated window remains partial."""
         return await read_call(
             service.audit.report,
             policy("audit:read"),
-            project=project,
-            since=since,
-            until=until,
+            project=project or None,
+            since=since or None,
+            until=until or None,
             limit=limit,
+            after_id=after_id,
         )
 
     scopes = {
@@ -106,8 +100,10 @@ def register_tools(
     if service.cortex is None:
         return scopes
 
-    @server.tool(annotations=read)
-    async def cortex_context(project: str, query: str, max_chars: int = 6000) -> dict[str, Any]:
+    @server.tool(annotations=external_read)
+    async def cortex_context(
+        project: Identifier, query: Query, max_chars: ContextLimit = 6000
+    ) -> dict[str, Any]:
         """Read mapped CORTEX context without importing it into local memories."""
         return await service.cortex.read_context(
             policy=policy("cortex:read"),
@@ -125,10 +121,10 @@ def register_tools(
         )
     )
     async def cortex_publish(
-        memory_id: str,
-        revision: int,
-        kind: str = "note",
-        status: str | None = None,
+        memory_id: Identifier,
+        revision: Revision,
+        kind: Literal["note", "decision", "outcome"] = "note",
+        status: Literal["success", "failure", "partial"] | None = None,
     ) -> dict[str, Any]:
         """Publish this exact accessible revision as a selected note, decision, or outcome.
 
@@ -137,8 +133,6 @@ def register_tools(
         """
         current = policy("cortex:write")
         current.require("memory:read")
-        if type(revision) is not int or revision < 1:
-            raise InputError("revision must be a positive integer.")
         record = await read_call(
             service.store.get, memory_id, revision=revision, projects=current.projects
         )
@@ -149,18 +143,71 @@ def register_tools(
             source_ref=source_ref,
             title=record["title"] or "Selected bot memory",
         )
-        if kind == "note":
-            return await service.cortex.write_note(**arguments, content=record["content"])
-        if kind == "decision":
-            return await service.cortex.write_decision(**arguments, summary=record["content"])
-        if kind == "outcome" and status in {"success", "failure", "partial"}:
-            return await service.cortex.write_outcome(
-                **arguments, summary=record["content"], status=status
+        if kind == "outcome" and status is None:
+            raise InputError("An outcome requires success, failure or partial status.")
+        if kind != "outcome" and status is not None:
+            raise InputError("Status is valid only for an outcome.")
+        observer = replace(current, scopes=current.scopes | {"audit:write"})
+        event_id = uuid.uuid4().hex
+        audit = dict(policy=observer, project=record["project"])
+        await write_call(
+            service.audit.observed,
+            **audit,
+            kind="intent",
+            client_event_id=event_id,
+            action={"tool": "cortex_publish", "kind": kind},
+            target={"source_ref": source_ref},
+        )
+        try:
+            if kind == "note":
+                result = await service.cortex.write_note(**arguments, content=record["content"])
+            elif kind == "decision":
+                result = await service.cortex.write_decision(**arguments, summary=record["content"])
+            else:
+                result = await service.cortex.write_outcome(
+                    **arguments, summary=record["content"], status=status
+                )
+        except Exception as exc:
+            try:
+                await write_call(
+                    service.audit.observed,
+                    **audit,
+                    kind="receipt",
+                    client_event_id=event_id + ":receipt",
+                    intent_event_id=event_id,
+                    details={
+                        "status": "failed",
+                        "error_code": getattr(exc, "code", "operation_failed"),
+                        "operation_id": getattr(exc, "operation_id", None),
+                    },
+                )
+            except Exception:
+                logging.getLogger("dots_brain").error(
+                    "CORTEX publish failed and its audit receipt is pending"
+                )
+            raise
+        try:
+            await write_call(
+                service.audit.observed,
+                **audit,
+                kind="receipt",
+                client_event_id=event_id + ":receipt",
+                intent_event_id=event_id,
+                details={
+                    "status": "completed",
+                    "operation_id": result.get("operation_id"),
+                    "state": result.get("state"),
+                },
             )
-        raise InputError("Use note, decision, or outcome with success/failure/partial status.")
+        except Exception:
+            logging.getLogger("dots_brain").error(
+                "CORTEX publish completed but its audit receipt is pending"
+            )
+            return {**result, "audit_receipt": "pending"}
+        return result
 
     @server.tool(annotations=read)
-    async def cortex_operation(project: str, operation_id: str) -> dict[str, Any]:
+    async def cortex_operation(project: Identifier, operation_id: Identifier) -> dict[str, Any]:
         """Inspect the authenticated caller's durable outbound receipt."""
         return await read_call(
             service.cortex.operation_status,
@@ -169,12 +216,24 @@ def register_tools(
             operation_id=operation_id,
         )
 
-    @server.tool(annotations=write)
-    async def cortex_reconcile(project: str, operation_id: str) -> dict[str, Any]:
+    @server.tool(
+        annotations=ToolAnnotations(
+            readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=True
+        )
+    )
+    async def cortex_reconcile(project: Identifier, operation_id: Identifier) -> dict[str, Any]:
         """Confirm an upstream object; an empty search never permits duplicate writes."""
         return await service.cortex.reconcile(
             policy=policy("cortex:write"), project=project, operation_id=operation_id
         )
+
+    @server.tool(annotations=read)
+    async def cortex_operations(project: Identifier) -> dict[str, Any]:
+        """List the caller's recorded outbound operations for one accessible project."""
+        operations = await read_call(
+            service.cortex.operations, policy=policy("cortex:read"), project=project
+        )
+        return {"operations": operations}
 
     scopes.update(
         {
@@ -182,6 +241,7 @@ def register_tools(
             "cortex_publish": ("cortex:write", "memory:read"),
             "cortex_operation": "cortex:read",
             "cortex_reconcile": "cortex:write",
+            "cortex_operations": "cortex:read",
         }
     )
     return scopes

@@ -29,7 +29,7 @@ def test_local_resume_rejects_missing_store_before_startup(tmp_path, monkeypatch
 @pytest.mark.parametrize("problem", ["other-store", "url", "revoked", "state", "disabled"])
 def test_local_resume_rejects_mismatched_connection_before_startup(tmp_path, monkeypatch, problem):
     from dots_brain.bridge import resume_local_connection
-    from dots_brain.errors import InputError
+    from dots_brain.errors import InputError, StoreDisabledError
     from dots_brain.local import write_json
 
     store = Store(tmp_path / "memory")
@@ -54,7 +54,7 @@ def test_local_resume_rejects_mismatched_connection_before_startup(tmp_path, mon
     if problem == "disabled":
         write_json(store.directory / "disabled.json", {"disabled": True})
     monkeypatch.setattr("dots_brain.runtime.up", lambda *_: pytest.fail("Must not start"))
-    with pytest.raises(InputError):
+    with pytest.raises((InputError, StoreDisabledError)):
         resume_local_connection(path, store.directory)
     assert store.status()["memories"] == 0
     assert not (store.directory / "probe.connection.json").exists()
@@ -176,3 +176,6 @@ def test_real_http_process_and_stdio_bridge_share_one_store(tmp_path):
         except subprocess.TimeoutExpired:
             process.kill()
             process.wait(timeout=5)
+        finally:
+            if process.stderr is not None:
+                process.stderr.close()

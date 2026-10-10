@@ -199,12 +199,17 @@ def test_scoped_mcp_audit_capture_and_selected_cortex_publication(tmp_path, monk
                         )
                         first = await capture_delivery.collect_remote(**parameters)
                         assert first["forwarded"] == 3 and first["state"] == "capture_partial"
-                        pending = json.loads(cursor.with_suffix(".coverage.json").read_text())
+                        pending = json.loads(
+                            cursor.with_name(cursor.name + ".coverage.json").read_text()
+                        )
                         assert pending["client_event_id"].startswith("capture-run:")
                         assert (await capture_delivery.collect_remote(**parameters))[
                             "forwarded"
                         ] == 0
-                        assert json.loads(cursor.with_suffix(".coverage.json").read_text()) == {}
+                        assert (
+                            json.loads(cursor.with_name(cursor.name + ".coverage.json").read_text())
+                            == {}
+                        )
                         events = await session.call_tool("audit_events", {})
                         assert (
                             sum(
@@ -255,7 +260,9 @@ def test_scoped_mcp_audit_capture_and_selected_cortex_publication(tmp_path, monk
                         monkeypatch.setattr(capture_delivery, "write_json", fail_finalization)
                         with pytest.raises(OSError):
                             await capture_delivery.collect_remote(**parameters)
-                        interrupted = json.loads(cursor.with_suffix(".coverage.json").read_text())
+                        interrupted = json.loads(
+                            cursor.with_name(cursor.name + ".coverage.json").read_text()
+                        )
                         assert interrupted["details"]["pass_completed"] is False
                         assert interrupted["details"]["forwarded"] is None
                         recovered = await capture_delivery.collect_remote(**parameters)

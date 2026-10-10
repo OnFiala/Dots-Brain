@@ -1,12 +1,22 @@
 import asyncio
+import sys
 import threading
 import time
+from pathlib import Path
+
+import pytest
 
 from dots_brain.bridge import connect
+from dots_brain.cortex_connector import CortexConnectionConfig, CortexConnector
 from dots_brain.runtime import down, up
 from dots_brain.store import Store
 
+requires_linux_lifecycle = pytest.mark.skipif(
+    sys.platform != "linux", reason="managed subprocess lifecycle requires Linux /proc and pidfd"
+)
 
+
+@requires_linux_lifecycle
 def test_waiting_writer_does_not_block_mcp_reads(tmp_path):
     store = Store(tmp_path / "memory")
     lock_acquired = threading.Event()
@@ -53,3 +63,76 @@ def test_waiting_writer_does_not_block_mcp_reads(tmp_path):
     finally:
         release_lock.set()
         down(store)
+
+
+def test_cortex_ledger_does_not_block_event_loop():
+    """The CORTEX write path sends its synchronous ledger work to a thread."""
+
+    class Policy:
+        principal = "oauth-grant:synthetic"
+        projects = ("alpha",)
+
+        def require(self, scope):
+            assert scope == "cortex:write"
+
+    class SlowLedger:
+        def __init__(self):
+            self.row = None
+
+        def get(self, operation_id):
+            time.sleep(0.25)
+            return self.row
+
+        def create_planned(self, record):
+            time.sleep(0.25)
+            self.row = {**record, "state": "planned", "receipt_json": None}
+
+        def claim_sending(self, operation_id, request_digest):
+            time.sleep(0.25)
+            self.row["state"] = "sending"
+            return True
+
+        def mark_acknowledged(self, operation_id, *, receipt, upstream_object_id):
+            time.sleep(0.25)
+            self.row.update(
+                state="acknowledged",
+                receipt_json='{"event_id":"synthetic"}',
+                upstream_object_id=upstream_object_id,
+            )
+
+        def mark_uncertain(self, operation_id, *, error_code):
+            self.row.update(state="uncertain", error_code=error_code)
+
+        def release_planned(self, operation_id, *, error_code):
+            self.row.update(state="planned", error_code=error_code)
+
+    class Transport:
+        async def call_tool(self, name, arguments):
+            return {"event_id": "synthetic"}
+
+    connector = CortexConnector(
+        CortexConnectionConfig(
+            endpoint="http://127.0.0.1:9/mcp",
+            token_file=Path(__file__),
+            project_mapping=(("alpha", "cortex-alpha"),),
+        ),
+        transport=Transport(),
+        ledger=SlowLedger(),
+        content_guard=lambda value: None,
+    )
+
+    async def exercise():
+        write = asyncio.create_task(
+            connector.write_note(
+                policy=Policy(),
+                project="alpha",
+                source_ref="dots://memory/synthetic@1",
+                title="Synthetic",
+            )
+        )
+        started = time.monotonic()
+        await asyncio.sleep(0.05)
+        assert time.monotonic() - started < 0.15
+        await write
+
+    asyncio.run(exercise())
