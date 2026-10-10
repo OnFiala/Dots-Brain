@@ -260,19 +260,17 @@ def test_same_operation_id_with_different_request_is_rejected():
 def test_concurrent_sqlite_claim_sends_once_and_survives_reconstruction(tmp_path):
     store = Store(tmp_path / "brain")
     store.initialize()
-    barrier = threading.Barrier(2)
-    local = threading.local()
+    entered, release = threading.Event(), threading.Event()
 
-    class RacedLedger(SqliteCortexLedger):
-        def get(self, operation_id):
-            row = super().get(operation_id)
-            if not getattr(local, "checked", False):
-                local.checked = True
-                barrier.wait(timeout=5)
-            return row
+    class BlockingTransport(Transport):
+        async def call_tool(self, name, arguments):
+            self.calls.append((name, dict(arguments)))
+            entered.set()
+            await asyncio.to_thread(release.wait, 5)
+            return {"object_id": "ctx-object-1"}
 
-    transport = Transport()
-    ledger = RacedLedger(store)
+    transport = BlockingTransport()
+    ledger = SqliteCortexLedger(store)
     service = connector(transport, ledger)
     arguments = dict(
         policy=policy("cortex:write"),
@@ -282,20 +280,20 @@ def test_concurrent_sqlite_claim_sends_once_and_survives_reconstruction(tmp_path
         content="safe",
     )
 
-    def send():
-        try:
-            return asyncio.run(service.write_note(**arguments))
-        except CortexWriteUncertain:
-            return None  # The first caller can still be sending.
-
     with ThreadPoolExecutor(max_workers=2) as pool:
-        results = list(pool.map(lambda _: send(), range(2)))
-    assert any(result and result["state"] == "acknowledged" for result in results)
+        winner = pool.submit(lambda: asyncio.run(service.write_note(**arguments)))
+        assert entered.wait(timeout=5)
+        loser = pool.submit(lambda: asyncio.run(service.write_note(**arguments)))
+        with pytest.raises(CortexWriteUncertain):
+            loser.result(timeout=5)
+        release.set()
+        result = winner.result(timeout=5)
+    assert result["state"] == "acknowledged"
     assert len(transport.calls) == 1
     reopened = connector(transport, SqliteCortexLedger(store))
     assert asyncio.run(reopened.write_note(**arguments))["replayed"]
     assert len(transport.calls) == 1
-    operation_id = next(result["operation_id"] for result in results if result)
+    operation_id = result["operation_id"]
     ledger.mark_uncertain(operation_id, error_code="stale_failure")
     assert SqliteCortexLedger(store).get(operation_id)["state"] == "acknowledged"
 
