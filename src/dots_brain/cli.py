@@ -87,7 +87,10 @@ def parser() -> argparse.ArgumentParser:
     cortex.add_argument("--project-map", action="append")
     cortex.add_argument("--project")
     cortex.add_argument("--operation-id")
-    cortex.add_argument("--resolution", choices=["retry"])
+    cortex.add_argument("--resolution", choices=["retry", "recover-sending"])
+    cortex.add_argument(
+        "--writers-stopped", action="store_true", help="Confirm all CORTEX writers are stopped."
+    )
     audit = commands.add_parser("audit", help="Inspect sanitized audit events on the memory host.")
     audit.add_argument("action", choices=["report", "events"])
     audit.add_argument("--project")

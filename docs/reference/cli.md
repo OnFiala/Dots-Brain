@@ -112,10 +112,14 @@ dots-brain capture --kind audit --path /absolute/private/snapshot.jsonl --cursor
 dots-brain --data-dir /absolute/private/memory cortex configure --endpoint https://cortex.example/mcp --token-file /absolute/private/cortex-token --project-map work=work
 dots-brain --data-dir /absolute/private/memory cortex operations --project work
 dots-brain --data-dir /absolute/private/memory cortex resolve --project work --operation-id operation-id --resolution retry
+dots-brain --data-dir /absolute/private/memory cortex resolve --project work --operation-id operation-id --resolution recover-sending --writers-stopped
 ```
 
 Capture is a bounded import of supplied JSONL. `--recover-pending` only handles a
 terminally quarantined pending receipt after inspection. CORTEX is optional and
 uses a dedicated endpoint, token file, and explicit project mapping. The local
-owner alone may resolve an uncertain, idempotent note for retry. Decisions and
-outcomes are never automatically duplicated.
+owner may explicitly retry an uncertain note, decision, or outcome after review;
+decisions and outcomes have no upstream idempotency key and a retry can duplicate
+them. `recover-sending` never retries: it marks a record left in `sending` by a
+terminated sender as uncertain. It requires every cooperating writer to be stopped
+and an exclusive writer lease; then reconcile or make a separate explicit retry decision.

@@ -40,6 +40,7 @@ _MAX_CONTEXT_CHARS = 24_000
 _MIN_CONTEXT_CHARS = 256
 _MAX_RESULTS = 20
 _WRITE_KINDS = frozenset({"note", "decision", "outcome"})
+_PROVEN_UNSENT_ERRORS = frozenset({"cortex_pre_send_failed", "cortex_credentials_unavailable"})
 
 
 class CortexConnectorError(CapabilityError):
@@ -99,6 +100,23 @@ class CortexLedger(Protocol):
     def mark_uncertain(self, operation_id: str, *, error_code: str) -> None: ...
 
     def release_planned(self, operation_id: str, *, error_code: str) -> None: ...
+
+    def return_pre_send(
+        self, operation_id: str, request_digest: str, *, error_code: str
+    ) -> bool: ...
+
+    def retry_uncertain(self, operation_id: str, *, error_code: str) -> bool: ...
+
+    def recover_sending(self, operation_id: str, *, error_code: str) -> bool: ...
+
+    def supersede_pre_send_outcomes(
+        self,
+        *,
+        principal: str,
+        project: str,
+        source_ref: str,
+        replacement: Mapping[str, object],
+    ) -> bool: ...
 
 
 class SqliteCortexLedger:
@@ -199,16 +217,127 @@ class SqliteCortexLedger:
             )
 
     def release_planned(self, operation_id: str, *, error_code: str) -> None:
-        """Return a definitely unsent request to its safe retry state."""
+        """Annotate an operation which has not yet been claimed for sending."""
         from .store import now
 
         with self.store.connection(write=True) as db:
             self.store.ensure_writable()
             db.execute(
                 "UPDATE cortex_operations SET state='planned',error_code=?,updated_at=? "
-                "WHERE operation_id=? AND state IN ('planned','sending','uncertain')",
+                "WHERE operation_id=? AND state='planned'",
                 (error_code, now(), operation_id),
             )
+
+    def return_pre_send(self, operation_id: str, request_digest: str, *, error_code: str) -> bool:
+        """Release this sender's proven-unsent claim without changing another sender."""
+        from .store import now
+
+        with self.store.connection(write=True) as db:
+            self.store.ensure_writable()
+            return (
+                db.execute(
+                    "UPDATE cortex_operations SET state='planned',error_code=?,updated_at=? "
+                    "WHERE operation_id=? AND request_digest=? AND state='sending'",
+                    (error_code, now(), operation_id, request_digest),
+                ).rowcount
+                == 1
+            )
+
+    def retry_uncertain(self, operation_id: str, *, error_code: str) -> bool:
+        """Record an explicit owner retry decision without changing active sends."""
+        from .store import now
+
+        with self.store.connection(write=True) as db:
+            self.store.ensure_writable()
+            return (
+                db.execute(
+                    "UPDATE cortex_operations SET state='planned',error_code=?,updated_at=? "
+                    "WHERE operation_id=? AND state='uncertain' "
+                    "AND COALESCE(error_code,'') NOT GLOB 'superseded_*'",
+                    (error_code, now(), operation_id),
+                ).rowcount
+                == 1
+            )
+
+    def recover_sending(self, operation_id: str, *, error_code: str) -> bool:
+        """Mark an orphaned send uncertain while every cooperating writer is stopped."""
+        from .local import locked
+        from .store import now
+
+        with locked(self.store.directory / "writers.lock", timeout=0):
+            with self.store.connection(write=True) as db:
+                self.store.ensure_writable()
+                return (
+                    db.execute(
+                        "UPDATE cortex_operations SET state='uncertain',error_code=?,updated_at=? "
+                        "WHERE operation_id=? AND state='sending'",
+                        (error_code, now(), operation_id),
+                    ).rowcount
+                    == 1
+                )
+
+    def supersede_pre_send_outcomes(
+        self,
+        *,
+        principal: str,
+        project: str,
+        source_ref: str,
+        replacement: Mapping[str, object],
+    ) -> bool:
+        """Atomically retire proven-unsent outcomes before recording a corrected outcome."""
+        from .store import now
+
+        with self.store.connection(write=True) as db:
+            self.store.ensure_writable()
+            prior = db.execute(
+                "SELECT operation_id,error_code,state FROM cortex_operations "
+                "WHERE principal=? AND local_project=? AND source_ref=? "
+                "AND operation_kind='outcome' "
+                "AND COALESCE(error_code,'') NOT GLOB 'superseded_*' "
+                "AND operation_id<>?",
+                (principal, project, source_ref, replacement["operation_id"]),
+            ).fetchall()
+            if not prior or any(
+                row["state"] != "planned" or row["error_code"] not in _PROVEN_UNSENT_ERRORS
+                for row in prior
+            ):
+                return False
+            timestamp = now()
+            for row in prior:
+                db.execute(
+                    "UPDATE cortex_operations SET state='uncertain',error_code=?,updated_at=? "
+                    "WHERE operation_id=? AND state='planned'",
+                    (f"superseded_{row['error_code']}", timestamp, row["operation_id"]),
+                )
+            inserted = db.execute(
+                """
+                INSERT OR IGNORE INTO cortex_operations (
+                    operation_id,request_digest,principal,local_project,cortex_project,
+                    operation_kind,source_ref,state,receipt_json,upstream_object_id,error_code,
+                    created_at,updated_at
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+                """,
+                (
+                    replacement["operation_id"],
+                    replacement["request_digest"],
+                    replacement["principal"],
+                    replacement["local_project"],
+                    replacement["cortex_project"],
+                    replacement["operation_kind"],
+                    replacement["source_ref"],
+                    "planned",
+                    None,
+                    None,
+                    None,
+                    replacement["created_at"],
+                    replacement["created_at"],
+                ),
+            )
+            if inserted.rowcount != 1:
+                raise ConflictError(
+                    "CORTEX operation identity is already bound to different content."
+                )
+            return True
 
     def _update(self, operation_id: str, **changes: object) -> None:
         from .store import now
@@ -307,12 +436,12 @@ class StreamableHttpCortexTransport:
                 async with ClientSession(read, write) as session:
                     await session.initialize()
                     yield _McpSessionTransport(session)
-        except CortexConnectorError:
-            raise
-        except httpx.ConnectError as exc:
-            logger.warning("CORTEX connection failed before request: %s", type(exc).__name__)
-            raise CortexPreSendError("CORTEX connector is unavailable before sending.") from exc
-        except Exception as exc:
+        except BaseException as exc:
+            if isinstance(exc, asyncio.CancelledError | KeyboardInterrupt | SystemExit):
+                raise
+            classified = _classify_transport_failure(exc)
+            if classified is not None:
+                raise classified from exc
             # Never include the endpoint, headers, token, or upstream body in an error.
             logger.warning("CORTEX transport failed: %s", type(exc).__name__)
             raise CortexConnectorError("CORTEX connector is unavailable.") from exc
@@ -340,6 +469,23 @@ class _McpSessionTransport:
                 if isinstance(decoded, dict):
                     return decoded
         raise CortexConnectorError("CORTEX returned an invalid operation receipt.")
+
+
+def _classify_transport_failure(exc: BaseException) -> CortexConnectorError | None:
+    """Classify only leaves whose transport position proves no write was sent."""
+    leaves = _exception_leaves(exc)
+    if len(leaves) == 1 and isinstance(leaves[0], CortexConnectorError):
+        return leaves[0]
+    if leaves and all(isinstance(leaf, httpx.ConnectError) for leaf in leaves):
+        logger.warning("CORTEX connection failed before request: %s", type(leaves[0]).__name__)
+        return CortexPreSendError("CORTEX connector is unavailable before sending.")
+    return None
+
+
+def _exception_leaves(exc: BaseException) -> list[BaseException]:
+    if isinstance(exc, BaseExceptionGroup):
+        return [leaf for nested in exc.exceptions for leaf in _exception_leaves(nested)]
+    return [exc]
 
 
 ContentGuard = Callable[[Mapping[str, object]], None]
@@ -503,17 +649,40 @@ class CortexConnector:
             kind, cortex_project, principal, source_ref, payload, actual_id
         )
         digest = _digest(request)
+        from .store import now
+
+        planned = {
+            "operation_id": actual_id,
+            "request_digest": digest,
+            "principal": principal,
+            "local_project": project,
+            "cortex_project": cortex_project,
+            "operation_kind": kind,
+            "source_ref": source_ref,
+            "created_at": now(),
+        }
         # SQLite ledger calls are synchronous and can block on its writer lock;
         # never perform them in the MCP event loop.
         existing = await asyncio.to_thread(self._ledger.get, actual_id)
+        superseded = False
         if kind == "outcome" and existing is None:
-            await asyncio.to_thread(
-                self._reject_prior_outcome,
-                principal,
-                project,
-                source_ref,
-                actual_id,
-            )
+            supersede = getattr(self._ledger, "supersede_pre_send_outcomes", None)
+            if callable(supersede):
+                superseded = await asyncio.to_thread(
+                    supersede,
+                    principal=principal,
+                    project=project,
+                    source_ref=source_ref,
+                    replacement=planned,
+                )
+            if not superseded:
+                await asyncio.to_thread(
+                    self._reject_prior_outcome,
+                    principal,
+                    project,
+                    source_ref,
+                    actual_id,
+                )
         if existing is not None:
             if existing.get("request_digest") != digest:
                 raise ConflictError(
@@ -522,32 +691,14 @@ class CortexConnector:
             state = existing.get("state")
             if state == "acknowledged":
                 return _receipt_from_row(existing, replayed=True)
-            if state == "uncertain" and kind == "note":
-                # Notes carry a stable upstream idempotency key, so their uncertain
-                # delivery can be retried without creating another upstream object.
-                await asyncio.to_thread(
-                    self._ledger.release_planned, actual_id, error_code="idempotent_retry"
-                )
-                state = "planned"
-            elif state in {"sending", "uncertain"}:
+            if state in {"sending", "uncertain"}:
                 raise CortexWriteUncertain(actual_id)
             if state != "planned":
                 raise CortexConnectorError("CORTEX operation receipt is invalid.")
-        else:
-            from .store import now
-
+        elif not superseded:
             await asyncio.to_thread(
                 self._ledger.create_planned,
-                {
-                    "operation_id": actual_id,
-                    "request_digest": digest,
-                    "principal": principal,
-                    "local_project": project,
-                    "cortex_project": cortex_project,
-                    "operation_kind": kind,
-                    "source_ref": source_ref,
-                    "created_at": now(),
-                },
+                planned,
             )
         try:
             await _prepare_write(self._transport)
@@ -590,11 +741,16 @@ class CortexConnector:
             raise CortexWriteUncertain(actual_id) from exc
         except CortexPreSendError as exc:
             try:
-                await asyncio.to_thread(
-                    self._ledger.release_planned, actual_id, error_code=_error_code(exc)
+                released = await asyncio.to_thread(
+                    self._ledger.return_pre_send,
+                    actual_id,
+                    digest,
+                    error_code=_error_code(exc),
                 )
             except Exception:
-                pass
+                released = False
+            if not released:
+                raise CortexWriteUncertain(actual_id) from exc
             raise
         except asyncio.CancelledError:
             # Cancellation after a claimed send never leaves an immortal
@@ -608,7 +764,7 @@ class CortexConnector:
             except Exception:
                 pass
             raise
-        except BaseException as exc:
+        except Exception as exc:
             try:
                 await asyncio.shield(
                     asyncio.to_thread(
@@ -643,13 +799,19 @@ class CortexConnector:
         return [_receipt_from_row(row, replayed=False) for row in rows(principal, project)]
 
     def resolve_operation(
-        self, *, policy, project: str, operation_id: str, resolution: str
+        self,
+        *,
+        policy,
+        project: str,
+        operation_id: str,
+        resolution: str,
+        writers_stopped: bool = False,
     ) -> dict[str, object]:
-        """Permit an owner-authorized retry only for idempotent uncertain notes.
+        """Record an explicit owner retry decision after uncertainty review.
 
         This records no asserted upstream success.  Only the local operator may
-        invoke it, and it only releases notes because their deterministic
-        idempotency key makes a replay safe at the upstream boundary.
+        invoke it. The upstream outcome remains unproven and any later send is
+        a deliberate owner action, never an automatic retry.
         """
         if getattr(policy, "principal", None) != "local-owner:stdio":
             raise NotFoundError("CORTEX operation is unavailable.")
@@ -658,11 +820,31 @@ class CortexConnector:
         operation = self._ledger.get(operation_id)
         if operation is None or operation["local_project"] != project:
             raise NotFoundError("CORTEX operation is unavailable.")
-        if resolution != "retry" or operation["state"] not in {"sending", "uncertain"}:
+        if resolution == "recover-sending":
+            if not writers_stopped:
+                raise InputError(
+                    "Stop every writer and pass --writers-stopped before recovering send."
+                )
+            recover = getattr(self._ledger, "recover_sending", None)
+            if not callable(recover) or not recover(
+                operation_id, error_code="recovered_after_sender_exit"
+            ):
+                raise InputError("CORTEX operation resolution is invalid.")
+            receipt = _receipt_from_row(self._ledger.get(operation_id), replayed=False)
+            return {
+                **receipt,
+                "resolution": "sending_recovered",
+                "retry_allowed": False,
+                "next_action": "reconcile_or_explicit_retry",
+            }
+        if (
+            resolution != "retry"
+            or operation["state"] != "uncertain"
+            or str(operation.get("error_code") or "").startswith("superseded_")
+        ):
             raise InputError("CORTEX operation resolution is invalid.")
-        if operation["operation_kind"] != "note":
-            raise InputError("Only idempotent CORTEX note operations may be retried.")
-        self._ledger.release_planned(operation_id, error_code="operator_authorized_retry")
+        if not self._ledger.retry_uncertain(operation_id, error_code="operator_authorized_retry"):
+            raise InputError("CORTEX operation resolution is invalid.")
         receipt = _receipt_from_row(self._ledger.get(operation_id), replayed=False)
         return {**receipt, "resolution": "retry_allowed"}
 
@@ -889,7 +1071,7 @@ def _object_id(receipt: Mapping[str, object]) -> str | None:
 
 
 def _safe_id(value: object) -> str | None:
-    if isinstance(value, bool) or not isinstance(value, (str, int)):
+    if isinstance(value, bool) or not isinstance(value, str | int):
         return None
     normalized = str(value)
     if not re.fullmatch(r"[\w:./@-]{1,300}", normalized):
@@ -942,8 +1124,9 @@ def _bounded_json(value: Mapping[str, object], maximum: int) -> tuple[str, bool]
     # Reduce cardinality before reducing per-item text. Object identifiers remain
     # available even in the smallest representation, so a caller can fetch source.
     identifiers = _context_identifiers(value)
-    for item_limit in (20, 10, 5, 3, 1):
-        for text_limit in (max(32, maximum // 6), max(24, maximum // 12), 16):
+    best: tuple[str, bool] | None = None
+    for item_limit in (20, 15, 12, 10, 8, 6, 5, 4, 3, 2, 1):
+        for text_limit in {max(16, maximum // divisor) for divisor in range(1, 33)}:
             compact, partial = _compact(value, text_limit=text_limit, item_limit=item_limit)
             if isinstance(compact, dict):
                 compact = {
@@ -954,7 +1137,10 @@ def _bounded_json(value: Mapping[str, object], maximum: int) -> tuple[str, bool]
             if len(encoded) <= maximum and (
                 not identifiers or any(identifier in encoded for identifier in identifiers)
             ):
-                return encoded, partial
+                if best is None or len(encoded) > len(best[0]):
+                    best = encoded, partial
+    if best is not None:
+        return best
     fallback = {
         "untrusted_data": True,
         "project_id": str(value.get("project_id", ""))[:80],

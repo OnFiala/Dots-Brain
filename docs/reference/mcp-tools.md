@@ -40,5 +40,8 @@ They do not copy CORTEX data into local memory automatically.
 
 Each publish starts with a local intent record and ends with an acknowledged
 receipt only after the upstream response is stored. Unknown delivery remains
-uncertain and needs reconciliation. A local-owner CLI retry is deliberately
-limited to idempotent notes; it never retries decisions or outcomes automatically.
+uncertain and needs reconciliation. A local-owner CLI retry is an explicit risk
+decision for notes, decisions, and outcomes; decisions and outcomes can duplicate
+because they have no upstream idempotency key. Recovering an orphaned `sending`
+receipt only marks it uncertain while all cooperating writers are stopped; it does
+not send or authorize a retry.

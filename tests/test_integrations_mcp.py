@@ -9,11 +9,173 @@ from mcp.client.streamable_http import streamable_http_client
 
 from dots_brain import capture_delivery
 from dots_brain.auth import BearerAuth, issue_client
-from dots_brain.cortex_connector import CortexConnectionConfig, CortexConnector, SqliteCortexLedger
+from dots_brain.cortex_connector import (
+    CortexConnectionConfig,
+    CortexConnector,
+    CortexConnectorError,
+    SqliteCortexLedger,
+)
 from dots_brain.privacy import guard_content
 from dots_brain.server import create_server
 from dots_brain.service import MemoryService
 from dots_brain.store import Store
+
+
+def _reconcile_app(tmp_path, transport):
+    store = Store(tmp_path / "brain")
+    store.initialize()
+    credential = tmp_path / "client.json"
+    issued = issue_client(
+        store,
+        name="reconcile-client",
+        projects=["alpha"],
+        days=1,
+        scopes=["audit:read", "cortex:write"],
+        output=credential,
+        url="http://127.0.0.1:8765/mcp",
+    )
+    operation_id = "cxo_reconcile-audit"
+    with store.connection(write=True) as db:
+        db.execute(
+            "INSERT INTO cortex_operations VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                operation_id,
+                "synthetic-digest",
+                "local-client:" + issued["client_id"],
+                "alpha",
+                "mapped-alpha",
+                "note",
+                "dots://memory/reconcile@1",
+                "uncertain",
+                None,
+                None,
+                "synthetic_uncertain",
+                "now",
+                "now",
+            ),
+        )
+    connector = CortexConnector(
+        CortexConnectionConfig(
+            "https://cortex.example.test/mcp", tmp_path / "unused", (("alpha", "mapped-alpha"),)
+        ),
+        transport=transport,
+        ledger=SqliteCortexLedger(store),
+        content_guard=guard_content,
+    )
+    service = MemoryService(store, cortex=connector)
+    server = create_server(service, http=True)
+    app = BearerAuth(server.streamable_http_app(), store)
+    return service, server, app, credential, operation_id
+
+
+@asynccontextmanager
+async def _mcp_session(server, app, credential):
+    async with server.session_manager.run():
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app),
+            headers={"Authorization": "Bearer " + json.loads(credential.read_text())["token"]},
+        ) as http:
+            async with streamable_http_client("http://127.0.0.1:8765/mcp", http_client=http) as (
+                read,
+                write,
+                _,
+            ):
+                async with ClientSession(read, write) as session:
+                    await session.initialize()
+                    yield session
+
+
+def test_successful_reconcile_records_sanitized_audit_state(tmp_path):
+    class Upstream:
+        async def call_tool(self, name, arguments):
+            assert name == "cortex_search"
+            return {"results": [], "Authorization": "Basic SYNTHETIC_UPSTREAM_SECRET"}
+
+    _, server, app, credential, operation_id = _reconcile_app(tmp_path, Upstream())
+
+    async def exercise():
+        async with _mcp_session(server, app, credential) as session:
+            result = await session.call_tool(
+                "cortex_reconcile", {"project": "alpha", "operation_id": operation_id}
+            )
+            assert not result.isError
+            assert result.structuredContent["reconciliation"] == "indeterminate"
+            audit_events = await session.call_tool("audit_events", {"project": "alpha"})
+            events = audit_events.structuredContent["events"]
+            event = next(item for item in events if item["action"] == {"tool": "cortex_reconcile"})
+            assert event["target"] == {"operation_id": operation_id}
+            assert event["details"]["value"] == {
+                "status": "completed",
+                "state": "uncertain",
+                "reconciliation": "indeterminate",
+                "retry_allowed": False,
+            }
+            assert "SYNTHETIC_UPSTREAM_SECRET" not in json.dumps(event)
+
+    asyncio.run(exercise())
+
+
+def test_failed_reconcile_records_audit_and_preserves_typed_error_when_audit_fails(
+    tmp_path, monkeypatch
+):
+    class Upstream:
+        async def call_tool(self, name, arguments):
+            raise CortexConnectorError("Synthetic typed reconcile failure")
+
+    service, server, app, credential, operation_id = _reconcile_app(tmp_path, Upstream())
+    real_observed = service.audit.observed
+
+    def fail_reconcile_audit(*args, **kwargs):
+        if kwargs.get("action") == {"tool": "cortex_reconcile"}:
+            raise OSError("Synthetic audit storage failure")
+        return real_observed(*args, **kwargs)
+
+    async def exercise():
+        async with _mcp_session(server, app, credential) as session:
+            first = await session.call_tool(
+                "cortex_reconcile", {"project": "alpha", "operation_id": operation_id}
+            )
+            assert first.isError
+            assert first.structuredContent["error"]["code"] == "cortex_connector_unavailable"
+            audit_events = await session.call_tool("audit_events", {"project": "alpha"})
+            events = audit_events.structuredContent["events"]
+            event = next(item for item in events if item["action"] == {"tool": "cortex_reconcile"})
+            assert event["details"]["value"] == {
+                "status": "failed",
+                "error_code": "cortex_connector_unavailable",
+            }
+            monkeypatch.setattr(service.audit, "observed", fail_reconcile_audit)
+            second = await session.call_tool(
+                "cortex_reconcile", {"project": "alpha", "operation_id": operation_id}
+            )
+            assert second.isError
+            assert second.structuredContent["error"]["code"] == "cortex_connector_unavailable"
+
+    asyncio.run(exercise())
+
+
+def test_successful_reconcile_reports_pending_when_its_audit_write_fails(tmp_path, monkeypatch):
+    class Upstream:
+        async def call_tool(self, name, arguments):
+            return {"results": []}
+
+    service, server, app, credential, operation_id = _reconcile_app(tmp_path, Upstream())
+
+    def fail_audit(*_args, **_kwargs):
+        raise OSError("Synthetic audit storage failure")
+
+    monkeypatch.setattr(service.audit, "observed", fail_audit)
+
+    async def exercise():
+        async with _mcp_session(server, app, credential) as session:
+            result = await session.call_tool(
+                "cortex_reconcile", {"project": "alpha", "operation_id": operation_id}
+            )
+            assert not result.isError
+            assert result.structuredContent["reconciliation"] == "indeterminate"
+            assert result.structuredContent["audit_receipt"] == "pending"
+
+    asyncio.run(exercise())
 
 
 def test_scoped_mcp_audit_capture_and_selected_cortex_publication(tmp_path, monkeypatch):

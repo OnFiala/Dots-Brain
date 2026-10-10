@@ -55,12 +55,13 @@ def run_storage(store, args):
     if args.action == "operations":
         return {"operations": connector.operations(policy=Policy(), project=args.project)}
     if not args.operation_id or not args.resolution:
-        raise InputError("Resolve requires --operation-id and --resolution retry.")
+        raise InputError("Resolve requires --operation-id and --resolution.")
     return connector.resolve_operation(
         policy=Policy(),
         project=args.project,
         operation_id=args.operation_id,
         resolution=args.resolution,
+        writers_stopped=args.writers_stopped,
     )
 
 

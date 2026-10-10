@@ -100,6 +100,18 @@ def register_tools(
     if service.cortex is None:
         return scopes
 
+    async def record_reconcile_observation(observer, project, operation_id, event_id, details):
+        await write_call(
+            service.audit.observed,
+            policy=observer,
+            project=project,
+            kind="action",
+            client_event_id=event_id,
+            action={"tool": "cortex_reconcile"},
+            target={"operation_id": operation_id},
+            details=details,
+        )
+
     @server.tool(annotations=external_read)
     async def cortex_context(
         project: Identifier, query: Query, max_chars: ContextLimit = 6000
@@ -223,9 +235,41 @@ def register_tools(
     )
     async def cortex_reconcile(project: Identifier, operation_id: Identifier) -> dict[str, Any]:
         """Confirm an upstream object; an empty search never permits duplicate writes."""
-        return await service.cortex.reconcile(
-            policy=policy("cortex:write"), project=project, operation_id=operation_id
-        )
+        current = policy("cortex:write")
+        observer = replace(current, scopes=current.scopes | {"audit:write"})
+        event_id = uuid.uuid4().hex
+        try:
+            result = await service.cortex.reconcile(
+                policy=current, project=project, operation_id=operation_id
+            )
+            details = {
+                "status": "completed",
+                "state": result.get("state"),
+                "reconciliation": result.get("reconciliation"),
+                "retry_allowed": bool(result.get("retry_allowed")),
+            }
+        except Exception as exc:
+            details = {
+                "status": "failed",
+                "error_code": getattr(exc, "code", "operation_failed"),
+            }
+            try:
+                await record_reconcile_observation(
+                    observer, project, operation_id, event_id, details
+                )
+            except Exception:
+                logging.getLogger("dots_brain").error(
+                    "CORTEX reconciliation failed and its audit event is pending"
+                )
+            raise
+        try:
+            await record_reconcile_observation(observer, project, operation_id, event_id, details)
+        except Exception:
+            logging.getLogger("dots_brain").error(
+                "CORTEX reconciliation completed but its audit event is pending"
+            )
+            return {**result, "audit_receipt": "pending"}
+        return result
 
     @server.tool(annotations=read)
     async def cortex_operations(project: Identifier) -> dict[str, Any]:
