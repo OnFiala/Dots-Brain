@@ -14,15 +14,15 @@ from .database_io import open_readonly, snapshot
 from .errors import InputError, IntegrityError, StateError
 from .installation_state import marker_path, read_marker, write_marker
 from .local import locked, read_json, sync_file_and_parent, write_json
-from .store import SCHEMA_VERSION, Store, enable_wal, ensure_fts_row_mapping, secure_fts
+from .store import SCHEMA_VERSION, Store, enable_wal, rebuild_fts, secure_fts
 
 
 def migrate(store: Store, *, apply: bool, writers_stopped: bool, backup: Path | None) -> dict:
-    from .migrations import migrate_v1_to_v2
+    from .migrations import migrate_store
     from .runtime import active, state_path
 
     if not apply:
-        return migrate_v1_to_v2(store, apply=False)
+        return migrate_store(store, apply=False)
 
     def stopped():
         if not writers_stopped:
@@ -38,7 +38,7 @@ def migrate(store: Store, *, apply: bool, writers_stopped: bool, backup: Path | 
         locked(store.directory / "service.lock"),
         locked(store.directory / "writers.lock", timeout=0),
     ):
-        return migrate_v1_to_v2(store, apply=True, backup_path=backup, stop_guard=stopped)
+        return migrate_store(store, apply=True, backup_path=backup, stop_guard=stopped)
 
 
 def backup_store(store: Store, output: Path) -> dict:
@@ -103,7 +103,7 @@ def restore_store(backup: Path, target: Store, *, latest_deletions: Store) -> di
 
 def _apply_deletions(db, legacy, scoped) -> list[str]:
     secure_fts(db)
-    ensure_fts_row_mapping(db)
+    rebuild_fts(db)
     db.executemany("INSERT OR IGNORE INTO suppressions VALUES (?,?)", legacy)
     db.executemany("INSERT OR REPLACE INTO scoped_suppressions VALUES (?,?,?,?,?)", scoped)
     forgotten = [

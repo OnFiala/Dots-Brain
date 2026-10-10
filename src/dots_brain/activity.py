@@ -12,26 +12,6 @@ from .errors import ConflictError, InputError, NotFoundError
 from .privacy import sanitize
 from .store import validate_text
 
-SCHEMA_SQL = (
-    """CREATE TABLE audit_events (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, project TEXT NOT NULL, principal TEXT NOT NULL,
-        client_event_id TEXT NOT NULL, kind TEXT NOT NULL, evidence TEXT NOT NULL,
-        occurred_at TEXT NOT NULL, recorded_at TEXT NOT NULL, action TEXT NOT NULL,
-        target TEXT NOT NULL, details TEXT NOT NULL, intent_event_id TEXT,
-        payload_hash TEXT NOT NULL, prev_hash TEXT NOT NULL, event_hash TEXT NOT NULL,
-        UNIQUE(principal, project, client_event_id)
-    )""",
-    "CREATE INDEX audit_events_project_id ON audit_events(project, id)",
-    "CREATE INDEX audit_events_intent ON audit_events(project, principal, intent_event_id)",
-    """CREATE TRIGGER audit_events_no_update BEFORE UPDATE ON audit_events
-       BEGIN SELECT RAISE(ABORT, 'audit events are append-only'); END""",
-    """CREATE TRIGGER audit_events_no_delete BEFORE DELETE ON audit_events
-       BEGIN SELECT RAISE(ABORT, 'audit events are append-only'); END""",
-    """CREATE TRIGGER audit_events_chain BEFORE INSERT ON audit_events
-       BEGIN SELECT CASE WHEN NEW.prev_hash != COALESCE(
-       (SELECT event_hash FROM audit_events ORDER BY id DESC LIMIT 1), '')
-       THEN RAISE(ABORT, 'audit hash chain mismatch') END; END""",
-)
 _KINDS = frozenset({"intent", "receipt", "error", "gap", "correction", "coverage", "action"})
 _CHAIN_V3 = "v3:"
 _CHAIN_DOMAIN = "dots-brain.audit-chain.v3"

@@ -37,55 +37,6 @@ MAX_PENDING = 128
 MAX_PENDING_PER_CLIENT = 3
 MAX_REFRESH_ROTATIONS = 4096
 ONBOARDING_MAX_SECONDS = 60 * 60
-CLIENT_REVOCATIONS_SQL = """CREATE TABLE IF NOT EXISTS oauth_client_revocations (
-    client_id TEXT PRIMARY KEY REFERENCES oauth_clients(id) ON DELETE CASCADE,
-    revoked_at REAL NOT NULL
-)"""
-
-SCHEMA = (
-    """
-CREATE TABLE IF NOT EXISTS oauth_clients (
-    id TEXT PRIMARY KEY, metadata TEXT NOT NULL, created REAL NOT NULL
-);
-CREATE TABLE IF NOT EXISTS oauth_requests (
-    id TEXT PRIMARY KEY, client_id TEXT NOT NULL REFERENCES oauth_clients(id) ON DELETE CASCADE,
-    params TEXT NOT NULL, status TEXT NOT NULL, projects TEXT, expires REAL NOT NULL
-);
-CREATE TABLE IF NOT EXISTS oauth_codes (
-    hash TEXT PRIMARY KEY, client_id TEXT NOT NULL REFERENCES oauth_clients(id) ON DELETE CASCADE,
-    params TEXT NOT NULL, projects TEXT, expires REAL NOT NULL
-);
-CREATE TABLE IF NOT EXISTS oauth_grants (
-    id TEXT PRIMARY KEY, client_id TEXT NOT NULL REFERENCES oauth_clients(id) ON DELETE CASCADE,
-    scopes TEXT NOT NULL, projects TEXT, resource TEXT NOT NULL, expires REAL NOT NULL,
-    revoked INTEGER NOT NULL DEFAULT 0
-);
-CREATE TABLE IF NOT EXISTS oauth_tokens (
-    hash TEXT PRIMARY KEY, kind TEXT NOT NULL,
-    grant_id TEXT NOT NULL REFERENCES oauth_grants(id) ON DELETE CASCADE,
-    scopes TEXT NOT NULL, expires REAL NOT NULL
-);
-CREATE INDEX IF NOT EXISTS oauth_tokens_grant ON oauth_tokens(grant_id);
-CREATE TABLE IF NOT EXISTS oauth_request_provenance (
-    request_id TEXT PRIMARY KEY REFERENCES oauth_requests(id) ON DELETE CASCADE,
-    request_created_at REAL NOT NULL
-);
-CREATE TABLE IF NOT EXISTS oauth_code_provenance (
-    code_hash TEXT PRIMARY KEY REFERENCES oauth_codes(hash) ON DELETE CASCADE,
-    request_id TEXT NOT NULL, request_created_at REAL
-);
-CREATE TABLE IF NOT EXISTS oauth_grant_provenance (
-    grant_id TEXT PRIMARY KEY REFERENCES oauth_grants(id) ON DELETE CASCADE,
-    request_id TEXT, request_created_at REAL, created_at REAL NOT NULL
-);
-CREATE TABLE IF NOT EXISTS oauth_request_approvals (
-    request_id TEXT PRIMARY KEY REFERENCES oauth_requests(id) ON DELETE CASCADE,
-    scopes TEXT NOT NULL
-);
-"""
-    + CLIENT_REVOCATIONS_SQL
-    + ";"
-)
 
 
 def digest(value: str) -> str:
@@ -153,7 +104,6 @@ def onboarding_path(store: Store):
 
 def revoke_all(db) -> dict:
     if db.execute("SELECT 1 FROM sqlite_master WHERE name='oauth_clients'").fetchone():
-        db.execute(CLIENT_REVOCATIONS_SQL)
         clients = db.execute("SELECT COUNT(*) FROM oauth_clients").fetchone()[0]
         db.execute(
             "INSERT OR IGNORE INTO oauth_client_revocations SELECT id,? FROM oauth_clients",
@@ -224,10 +174,6 @@ def configure(store: Store, issuer: str, *, replace_issuer: bool = False) -> dic
     try:
         with store.connection(write=True) as db:
             store.ensure_writable()
-            for statement in SCHEMA.split(";"):
-                if statement.strip():
-                    db.execute(statement)
-            db.execute("CREATE TABLE IF NOT EXISTS oauth_config_commits (id TEXT PRIMARY KEY)")
             if previous != config:
                 revoked = revoke_all(db)
                 record_auth_change(store, db, "oauth_issuer_configured", details=revoked)
@@ -262,26 +208,8 @@ class OAuthStore:
             raise InputError("Configure OAuth on the existing memory host first.")
         self.issuer = config["issuer"]
         self.resource = self.issuer + "/mcp"
-        # Upgrade only through explicit configuration. Companion tables preserve
-        # the old INSERT layouts so reverting the binary does not break auth.
-        with store.connection() as db:
-            tables = {
-                row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")
-            }
-        if (
-            not {
-                "oauth_request_provenance",
-                "oauth_code_provenance",
-                "oauth_grant_provenance",
-                "oauth_request_approvals",
-                "oauth_client_revocations",
-            }
-            <= tables
-        ):
-            raise InputError(
-                "OAuth provenance upgrade required. Stop the service, back up, and run "
-                "oauth configure with the existing issuer and --no-start before restarting."
-            )
+        with store.connection():
+            pass  # Validate the schema before accepting OAuth traffic.
 
     def enabled(self) -> bool:
         try:

@@ -14,7 +14,6 @@ import json
 import logging
 import os
 import re
-import sqlite3
 import stat
 from collections.abc import Callable, Mapping
 from contextlib import asynccontextmanager
@@ -33,27 +32,6 @@ from .auth import validate_endpoint
 from .errors import CapabilityError, ConflictError, InputError, NotFoundError
 
 logger = logging.getLogger(__name__)
-
-# This is intentionally separate from Store.SCHEMA.  The schema worker owns when
-# it is installed or migrated; connector calls never create tables implicitly.
-SCHEMA_SQL = """
-CREATE TABLE cortex_operations (
-    operation_id TEXT PRIMARY KEY,
-    request_digest TEXT NOT NULL,
-    principal TEXT NOT NULL,
-    local_project TEXT NOT NULL,
-    cortex_project TEXT NOT NULL,
-    operation_kind TEXT NOT NULL,
-    source_ref TEXT NOT NULL,
-    state TEXT NOT NULL CHECK (state IN ('planned', 'sending', 'acknowledged', 'uncertain')),
-    receipt_json TEXT,
-    upstream_object_id TEXT,
-    error_code TEXT,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
-);
-CREATE INDEX cortex_operations_project_state ON cortex_operations(local_project, state);
-"""
 
 _READ_SCOPE = "cortex:read"
 _WRITE_SCOPE = "cortex:write"
@@ -123,15 +101,8 @@ class CortexLedger(Protocol):
     def release_planned(self, operation_id: str, *, error_code: str) -> None: ...
 
 
-def setup_cortex_operations(db: sqlite3.Connection) -> None:
-    """Install the connector ledger as part of a caller-owned schema transaction."""
-    for statement in SCHEMA_SQL.split(";"):
-        if statement.strip():
-            db.execute(statement)
-
-
 class SqliteCortexLedger:
-    """Ledger adapter for a schema-v2 Store.  It never performs schema setup."""
+    """Ledger adapter for an initialized Store. It never creates tables."""
 
     def __init__(self, store) -> None:
         self.store = store

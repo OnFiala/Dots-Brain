@@ -561,7 +561,8 @@ def test_pairing_provenance_survives_exchange_restart_refresh_and_revocation(ins
 def test_provenance_upgrade_preserves_legacy_auth_without_fabricating_history(
     installation, monkeypatch
 ):
-    from dots_brain import oauth
+    from dots_brain import migrations
+    from dots_brain.errors import MigrationRequiredError
 
     store, state, _, app = installation
     with TestClient(app, base_url=ISSUER) as http:
@@ -583,31 +584,22 @@ def test_provenance_upgrade_preserves_legacy_auth_without_fabricating_history(
                 "oauth_tokens",
             )
             before = {name: list(db.execute(f"SELECT * FROM {name}")) for name in tables}
+            db.execute("PRAGMA user_version=2")
         old_config = (store.directory / "oauth.json").read_bytes()
-        with pytest.raises(InputError, match="provenance upgrade required"):
+        with pytest.raises(MigrationRequiredError):
             OAuthStore(store)
-        with store.connection() as db:
-            assert (
-                db.execute(
-                    "SELECT COUNT(*) FROM sqlite_master WHERE name LIKE '%_provenance'"
-                ).fetchone()[0]
-                == 0
-            )
+        real_transform = migrations._migrate
+
+        def fail_after_transform(db):
+            real_transform(db)
+            raise sqlite3.OperationalError("synthetic migration failure")
+
         with monkeypatch.context() as patch:
-            patch.setattr(oauth, "SCHEMA", oauth.SCHEMA + "CREATE TABLE invalid (")
+            patch.setattr(migrations, "_migrate", fail_after_transform)
             with pytest.raises(sqlite3.OperationalError):
-                configure(store, ISSUER)
-        with store.connection() as db:
-            assert (
-                db.execute(
-                    "SELECT COUNT(*) FROM sqlite_master WHERE name LIKE '%_provenance'"
-                ).fetchone()[0]
-                == 0
-            )
-            assert {name: list(db.execute(f"SELECT * FROM {name}")) for name in tables} == before
+                migrations.migrate_store(store, apply=True, stop_guard=lambda: None)
         assert (store.directory / "oauth.json").read_bytes() == old_config
-        configure(store, ISSUER)
-        configure(store, ISSUER)  # Same-issuer retries must not revoke or duplicate.
+        migrations.migrate_store(store, apply=True, stop_guard=lambda: None)
         with store.connection() as db:
             assert {name: list(db.execute(f"SELECT * FROM {name}")) for name in tables} == before
         restarted = OAuthStore(store)

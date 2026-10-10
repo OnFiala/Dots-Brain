@@ -9,7 +9,7 @@ from multiprocessing import get_context
 
 import pytest
 
-from dots_brain.errors import BrainError, ConflictError, InputError
+from dots_brain.errors import BrainError, ConflictError, InputError, IntegrityError
 from dots_brain.operations import activate_restore, backup_store, restore_store
 from dots_brain.store import Store
 
@@ -90,7 +90,7 @@ def test_forgotten_terms_are_removed_from_new_snapshots_and_restores(store, tmp_
     assert not list(tmp_path.glob("after-forget.sqlite3-*"))
 
 
-def test_setup_derives_fts_row_mapping_for_existing_v2_store(store):
+def test_migration_rebuilds_fts_mapping_and_removes_derived_orphans(store):
     record = put(store)
     with store.connection(write=True) as db:
         db.execute("DROP TABLE memory_fts_rows")
@@ -98,7 +98,10 @@ def test_setup_derives_fts_row_mapping_for_existing_v2_store(store):
             "INSERT INTO memory_fts(memory_id,title,content) "
             "VALUES ('orphaned-derived-row','','old')"
         )
-    store.initialize()
+        db.execute("PRAGMA user_version=2")
+    from dots_brain.migrations import migrate_store
+
+    migrate_store(store, apply=True, stop_guard=lambda: None)
     with store.connection() as db:
         mapped = db.execute(
             "SELECT fts_rowid FROM memory_fts_rows WHERE memory_id=?", (record["id"],)
@@ -240,15 +243,15 @@ def test_multiprocess_setup_and_prepublication_crash_leave_one_complete_database
     store = Store(directory)
     assert store.status()["memories"] == 0
     with store.connection() as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 2
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 3
         assert db.execute("PRAGMA application_id").fetchone()[0] != 0
         assert db.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
 
 
-def test_legacy_schema_v2_zero_application_id_remains_explicitly_compatible(tmp_path):
-    store = Store(tmp_path / "legacy-v2")
+def test_current_schema_rejects_a_missing_application_id(tmp_path):
+    store = Store(tmp_path / "not-a-recognized-current-store")
     store.initialize()
     with store.connection() as db:
         db.execute("PRAGMA application_id=0")
-    store.initialize()
-    assert store.status()["memories"] == 0
+    with pytest.raises(IntegrityError, match="another application"):
+        store.initialize()

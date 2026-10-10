@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from pathlib import Path
 
 import tomlkit
@@ -16,7 +17,7 @@ from .clients import (
     registrations,
     target_path,
 )
-from .errors import InputError
+from .errors import BrainError, InputError
 from .installation_state import mark_uninstalled
 from .local import atomic_write, locked, read_json, write_json
 from .runtime import state_path, stop_process
@@ -260,7 +261,7 @@ def uninstall(
                 if state_path(store).exists():
                     stop_process(store, read_json(state_path(store)))
                 stopped = True
-            except (OSError, ValueError, InputError):
+            except (OSError, ValueError, BrainError):
                 issues.append({"state": "managed_process_stop_failed"})
             credentials_revoked = False
             if store.path.is_file():
@@ -271,7 +272,7 @@ def uninstall(
 
                         revoke_all(db)
                     credentials_revoked = True
-                except (OSError, ValueError, InputError):
+                except (OSError, ValueError, BrainError, sqlite3.Error):
                     issues.append({"state": "credential_revocation_failed"})
             results = []
             remaining = {}

@@ -27,70 +27,10 @@ from .errors import (
     SuppressedError,
 )
 from .local import locked, sync_directory, sync_file_and_parent
+from .schema import APPLICATION_ID, SCHEMA_VERSION, create_schema
 
-SCHEMA_VERSION = 2
-APPLICATION_ID = 0x444F5453
 MIN_SQLITE_VERSION = (3, 42, 0)
 WAL_LOCK_TIMEOUT = 10.0
-SCHEMA = """
-CREATE TABLE memories (
-    id TEXT PRIMARY KEY, identity_key TEXT NOT NULL,
-    source TEXT NOT NULL, account TEXT NOT NULL, event_id TEXT NOT NULL,
-    project TEXT NOT NULL, title TEXT NOT NULL, current_revision INTEGER NOT NULL,
-    created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
-    UNIQUE(project, identity_key)
-);
-CREATE TABLE revisions (
-    memory_id TEXT NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
-    revision INTEGER NOT NULL, content TEXT NOT NULL, digest TEXT NOT NULL,
-    source_uri TEXT, title TEXT NOT NULL, writer_principal TEXT NOT NULL,
-    created_at TEXT NOT NULL,
-    PRIMARY KEY(memory_id, revision)
-);
-CREATE VIRTUAL TABLE memory_fts USING fts5(
-    memory_id UNINDEXED, title, content, tokenize='unicode61 remove_diacritics 2'
-);
-CREATE TABLE memory_fts_rows (
-    memory_id TEXT PRIMARY KEY REFERENCES memories(id) ON DELETE CASCADE,
-    fts_rowid INTEGER NOT NULL UNIQUE
-);
-CREATE TABLE suppressions (source_key TEXT PRIMARY KEY, deleted_at TEXT NOT NULL);
-CREATE TABLE scoped_suppressions (
-    project TEXT NOT NULL, identity_key TEXT NOT NULL,
-    deleted_revision INTEGER NOT NULL, deleted_by TEXT NOT NULL, deleted_at TEXT NOT NULL,
-    PRIMARY KEY(project, identity_key)
-);
-CREATE TABLE vectors (
-    memory_id TEXT NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
-    revision INTEGER NOT NULL, model TEXT NOT NULL,
-    dimension INTEGER NOT NULL, vector BLOB NOT NULL,
-    PRIMARY KEY(memory_id, model)
-);
-CREATE TABLE clients (
-    id TEXT PRIMARY KEY, name TEXT NOT NULL, token_hash TEXT UNIQUE NOT NULL,
-    scopes TEXT NOT NULL, projects TEXT, expires_at REAL NOT NULL,
-    revoked INTEGER NOT NULL DEFAULT 0
-);
-PRAGMA user_version=2;
-"""
-
-
-def extension_statements() -> Iterator[str]:
-    """Load feature schemas only at setup/migration, avoiding import-time cycles."""
-    from .activity import SCHEMA_SQL as audit_sql
-    from .cortex_connector import SCHEMA_SQL as cortex_sql
-    from .semantic import SCHEMA_SQL as semantic_sql
-
-    yield from audit_sql
-    yield from (statement for statement in cortex_sql.split(";") if statement.strip())
-    yield from semantic_sql
-
-
-def schema_statements() -> Iterator[str]:
-    for statement in SCHEMA.split(";"):
-        if statement.strip():
-            yield statement
-    yield from extension_statements()
 
 
 def now() -> str:
@@ -149,30 +89,18 @@ def secure_fts(db: sqlite3.Connection) -> None:
         db.execute("INSERT INTO memory_fts(memory_fts) VALUES ('optimize')")
 
 
-def ensure_fts_row_mapping(db: sqlite3.Connection) -> None:
-    """Maintain an explicit mapping to the derived FTS rowid.
-
-    ``memory_fts.memory_id`` is intentionally unindexed.  The mapping lets
-    updates and deletion target the FTS row directly without making a source
-    record depend on SQLite's implicit rowid.  Existing v2 stores acquire the
-    mapping during setup; it is entirely derived from the current FTS index.
-    """
+def rebuild_fts(db: sqlite3.Connection) -> None:
+    """Rebuild both derived indexes from canonical current revisions."""
+    secure_fts(db)
+    db.execute("DELETE FROM memory_fts_rows")
+    db.execute("DELETE FROM memory_fts")
     db.execute(
-        "CREATE TABLE IF NOT EXISTS memory_fts_rows ("
-        "memory_id TEXT PRIMARY KEY REFERENCES memories(id) ON DELETE CASCADE,"
-        "fts_rowid INTEGER NOT NULL UNIQUE)"
+        "INSERT INTO memory_fts(memory_id,title,content) "
+        "SELECT m.id,r.title,r.content FROM memories m JOIN revisions r "
+        "ON r.memory_id=m.id AND r.revision=m.current_revision ORDER BY m.id"
     )
-    # FTS is derived state.  Ignore and securely remove an orphan rather than
-    # letting it make an otherwise recoverable source database unusable.
-    orphaned = db.execute(
-        "SELECT f.rowid FROM memory_fts f "
-        "LEFT JOIN memories m ON m.id=f.memory_id WHERE m.id IS NULL"
-    ).fetchall()
-    for row in orphaned:
-        db.execute("DELETE FROM memory_fts WHERE rowid=?", (row[0],))
     db.execute(
-        "INSERT OR REPLACE INTO memory_fts_rows(memory_id,fts_rowid) "
-        "SELECT memory_id,rowid FROM memory_fts"
+        "INSERT INTO memory_fts_rows(memory_id,fts_rowid) SELECT memory_id,rowid FROM memory_fts"
     )
 
 
@@ -225,12 +153,6 @@ class Store:
             self._create_database()
         with self.connection() as db:
             enable_wal(db)
-            db.execute("BEGIN IMMEDIATE")
-            secure_fts(db)
-            ensure_fts_row_mapping(db)
-            from .semantic import STATE_SQL
-
-            db.execute(STATE_SQL)
 
     def _create_database(self) -> None:
         """Publish a complete initial database; a crash never leaves a version-zero store."""
@@ -244,9 +166,7 @@ class Store:
                 db.execute("PRAGMA synchronous=FULL")
                 with db:
                     db.execute("BEGIN IMMEDIATE")
-                    for statement in schema_statements():
-                        db.execute(statement)
-                    db.execute(f"PRAGMA application_id={APPLICATION_ID}")
+                    create_schema(db)
                     secure_fts(db)
             sync_file_and_parent(temporary)
             os.link(temporary, self.path)
@@ -256,9 +176,7 @@ class Store:
             Path(str(temporary) + "-journal").unlink(missing_ok=True)
 
     @contextmanager
-    def connection(
-        self, *, write: bool = False, allow_uninitialized: bool = False
-    ) -> Iterator[sqlite3.Connection]:
+    def connection(self, *, write: bool = False) -> Iterator[sqlite3.Connection]:
         require_sqlite()
         if not self.path.exists():
             raise InputError("Memory is not initialized. Run dots-brain setup first.")
@@ -268,17 +186,17 @@ class Store:
         db.row_factory = sqlite3.Row
         try:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version == 1:
+            if version in (1, 2):
                 raise MigrationRequiredError(
-                    "Database schema v1 requires an explicit offline migration; "
+                    f"Database schema v{version} requires an explicit offline migration; "
                     "run dots-brain migrate, then migrate --apply --writers-stopped."
                 )
-            if version != SCHEMA_VERSION and not (allow_uninitialized and version == 0):
+            if version != SCHEMA_VERSION:
                 raise IntegrityError(
                     "Unsupported database version; use a compatible Brain release."
                 )
             application = db.execute("PRAGMA application_id").fetchone()[0]
-            if application not in (0, APPLICATION_ID):
+            if application != APPLICATION_ID:
                 raise IntegrityError("This file belongs to another application.")
             db.execute("PRAGMA foreign_keys=ON")
             db.execute("PRAGMA secure_delete=ON")

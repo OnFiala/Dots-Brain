@@ -23,26 +23,6 @@ MODEL_NAME = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 MODEL_REPO = "qdrant/paraphrase-multilingual-MiniLM-L12-v2-onnx-Q"
 MODEL_REVISION = "faf4aa4225822f3bc6376869cb1164e8e3feedd0"
 MODEL_ID = f"{MODEL_REPO}@{MODEL_REVISION}:token-windows-v2"
-STATE_SQL = """CREATE TABLE IF NOT EXISTS semantic_state (
-    memory_id TEXT NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
-    model TEXT NOT NULL, revision INTEGER NOT NULL,
-    state TEXT NOT NULL CHECK(state IN ('indexed','empty','failed')),
-    truncated INTEGER NOT NULL DEFAULT 0,
-    PRIMARY KEY(memory_id, model)
-)"""
-SCHEMA_SQL = (
-    """
-CREATE TABLE semantic_chunks (
-    memory_id TEXT NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
-    revision INTEGER NOT NULL, model TEXT NOT NULL, chunk_index INTEGER NOT NULL,
-    field TEXT NOT NULL CHECK(field IN ('title','content')),
-    start_char INTEGER NOT NULL, end_char INTEGER NOT NULL,
-    dimension INTEGER NOT NULL, vector BLOB NOT NULL,
-    PRIMARY KEY(memory_id, model, chunk_index)
-)
-""",
-    STATE_SQL,
-)
 FILES = {
     "model_optimized.onnx": (
         "sha256",

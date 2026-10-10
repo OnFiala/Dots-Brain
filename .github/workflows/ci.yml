@@ -20,6 +20,9 @@ jobs:
       fail-fast: false
       matrix:
         python: ['3.11', '3.12', '3.13']
+    env:
+      BRAIN_TEST_OLD_V1_SRC: ${{ runner.temp }}/dots-historical-v1/src
+      BRAIN_TEST_OLD_V2_SRC: ${{ runner.temp }}/dots-historical-v2/src
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2
       - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.1.0
@@ -27,6 +30,14 @@ jobs:
           python-version: ${{ matrix.python }}
           enable-cache: true
       - run: uv sync --locked --all-extras
+      - name: Export historical source for upgrade and rollback acceptance
+        run: |
+          git fetch --no-tags --depth=1 origin 263c38617aa17ae1ebaea84c8938065c131cfae1
+          mkdir -p "$RUNNER_TEMP/dots-historical-v1"
+          git archive 263c38617aa17ae1ebaea84c8938065c131cfae1 src | tar -x -C "$RUNNER_TEMP/dots-historical-v1"
+          git fetch --no-tags --depth=1 origin c9637003f365f184751a3825013b2c425efd1517
+          mkdir -p "$RUNNER_TEMP/dots-historical-v2"
+          git archive c9637003f365f184751a3825013b2c425efd1517 src | tar -x -C "$RUNNER_TEMP/dots-historical-v2"
       - run: uv run ruff check src tests scripts
       - run: uv run ruff format --check src tests scripts
       - run: uv run pytest -q

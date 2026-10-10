@@ -11,7 +11,6 @@ from pathlib import Path
 import pytest
 
 from dots_brain.cortex_connector import (
-    SCHEMA_SQL,
     CortexConnectionConfig,
     CortexConnector,
     CortexConnectorError,
@@ -19,7 +18,6 @@ from dots_brain.cortex_connector import (
     SqliteCortexLedger,
     StreamableHttpCortexTransport,
     _read_token,
-    setup_cortex_operations,
 )
 from dots_brain.errors import InputError, NotFoundError
 from dots_brain.privacy import guard_content
@@ -257,20 +255,6 @@ def test_same_operation_id_with_different_request_is_rejected():
         assert exc.value.code == "revision_conflict"
 
     asyncio.run(exercise())
-
-
-def test_parent_schema_helper_installs_only_the_distinct_ledger_table():
-    connection = sqlite3.connect(":memory:")
-    try:
-        setup_cortex_operations(connection)
-        names = {
-            row[0]
-            for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")
-        }
-    finally:
-        connection.close()
-    assert names == {"cortex_operations"}
-    assert "CREATE TABLE cortex_operations" in SCHEMA_SQL
 
 
 def test_concurrent_sqlite_claim_sends_once_and_survives_reconstruction(tmp_path):

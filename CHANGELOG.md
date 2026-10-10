@@ -17,8 +17,9 @@ state.
 
 ### Changed
 
-- Require SQLite 3.42 or newer for secure FTS deletion behavior. Schema v1 stores
-  require an offline migration; existing schema v2 stores retain their version.
+- Require SQLite 3.42 or newer for secure FTS deletion behavior.
+- Use one versioned schema definition for setup and offline migration. Both v1
+  and v2 stores require migration to v3, including OAuth and semantic index state.
 - Make backup creation standalone and atomic, and preserve a safe recovery state
   when restore cutover validation fails.
 - Bound semantic indexing to 128 chunks per memory, exclude low-similarity
@@ -51,6 +52,8 @@ state.
 
 ### Breaking
 
+- Old v1/v2 stores report `migration_required` until an explicit offline upgrade.
+  Older binaries reject schema v3. See [upgrade and rollback](docs/upgrading.md).
 - Existing stores backed by unsupported SQLite versions cannot be safely upgraded
   or rolled back through this candidate.
 - CLI and MCP callers should use structured error codes and the updated result

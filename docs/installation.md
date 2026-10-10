@@ -4,7 +4,7 @@
 
 Managed deployment is supported on Linux with Python 3.11, 3.12, or 3.13 and
 SQLite 3.42 or newer. SQLite must support FTS secure deletion. Older SQLite
-builds are not a supported upgrade or rollback path for a schema-v2 store.
+builds are not a supported upgrade or rollback path for a schema-v3 store.
 macOS can run local source checks and stdio experiments, but managed lifecycle
 behavior is not accepted there. Windows is not supported.
 
@@ -17,7 +17,8 @@ uv run dots-brain --data-dir /absolute/private/memory doctor
 ```
 
 Choose a private directory outside the checkout. `setup` initializes or reuses the
-selected store. `doctor` reports local state and does not prove public ingress,
+selected current-schema store. Older stores require the explicit
+[offline upgrade](upgrading.md). `doctor` reports local state and does not prove public ingress,
 another device, or client UI activation.
 
 ## Local MCP
