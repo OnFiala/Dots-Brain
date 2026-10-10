@@ -1,0 +1,276 @@
+{
+  "facts": [
+    [
+      "The user is allergic to peanuts and must avoid them.",
+      "Uživatel je alergický na arašídy a musí se jim vyhýbat.",
+      "Which food should I stay away from?",
+      "Kterému jídlu se mám vyhnout?",
+      "food allergy",
+      "alergie na jídlo",
+      "allergy",
+      "alergie"
+    ],
+    [
+      "The production database backup runs every night at 2 am.",
+      "Záloha produkční databáze běží každou noc ve 2 hodiny ráno.",
+      "When is the data copied for safekeeping?",
+      "Kdy se zálohují data?",
+      "backup schedule",
+      "rozvrh záloh",
+      "backup",
+      "záloha"
+    ],
+    [
+      "The gym opens at 6 in the morning on weekdays.",
+      "Posilovna otevírá ve všední dny v 6 ráno.",
+      "What are the opening hours of the fitness centre?",
+      "Jaká je otevírací doba fitness centra?",
+      "opening hours",
+      "otevírací doba",
+      "hours",
+      "otevřeno"
+    ],
+    [
+      "Martin is responsible for trainer certification exams.",
+      "Martin má na starosti zkoušky pro certifikaci trenérů.",
+      "Who handles the coach licensing tests?",
+      "Kdo řeší zkoušky trenérů?",
+      "certification owner",
+      "certifikace trenérů",
+      "certification",
+      "certifikace"
+    ],
+    [
+      "The hearing aid batteries need to be replaced every five days.",
+      "Baterie ve sluchadlech je potřeba měnit každých pět dní.",
+      "How often do I change the cells in the hearing device?",
+      "Jak často se mění baterie ve sluchadle?",
+      "battery replacement",
+      "výměna baterií",
+      "batteries",
+      "baterie"
+    ],
+    [
+      "We decided to use SQLite instead of Postgres for the memory service.",
+      "Rozhodli jsme se pro paměťovou službu použít SQLite místo Postgresu.",
+      "Which storage engine did we choose?",
+      "Jakou databázi jsme zvolili?",
+      "database choice",
+      "volba databáze",
+      "database",
+      "databáze"
+    ],
+    [
+      "The flight to Lisbon departs on Friday at 7:40 from Vienna.",
+      "Let do Lisabonu odlétá v pátek v 7:40 z Vídně.",
+      "When do I travel to Portugal?",
+      "Kdy letím do Portugalska?",
+      "flight departure",
+      "odlet letadla",
+      "flight",
+      "let"
+    ],
+    [
+      "The dachshund must not climb stairs because of his back.",
+      "Jezevčík nesmí chodit po schodech kvůli zádům.",
+      "What is the dog not allowed to do?",
+      "Co pes nesmí dělat?",
+      "dog restrictions",
+      "omezení pro psa",
+      "dog",
+      "pes"
+    ],
+    [
+      "The Wi-Fi password for the clinic guests is changed every month.",
+      "Heslo k Wi-Fi pro hosty kliniky se mění každý měsíc.",
+      "How often is the visitor network key rotated?",
+      "Jak často se mění heslo pro hosty?",
+      "wifi password",
+      "heslo wifi",
+      "wifi",
+      "wifi"
+    ],
+    [
+      "Invoices are sent to the accountant by the fifth day of each month.",
+      "Faktury se posílají účetní do pátého dne každého měsíce.",
+      "What is the deadline for handing bills to bookkeeping?",
+      "Do kdy se posílají faktury účetní?",
+      "invoice deadline",
+      "termín faktur",
+      "invoices",
+      "faktury"
+    ],
+    [
+      "The deployment target is a small virtual machine with 2 GB of RAM.",
+      "Cílem nasazení je malý virtuální stroj se 2 GB paměti.",
+      "Where will the application run?",
+      "Kde aplikace poběží?",
+      "deployment server",
+      "server pro nasazení",
+      "deployment",
+      "nasazení"
+    ],
+    [
+      "The customer prefers to be contacted by email, never by phone.",
+      "Zákazník chce být kontaktován e-mailem, nikdy telefonicky.",
+      "How should I reach the client?",
+      "Jak mám klienta kontaktovat?",
+      "contact preference",
+      "preferovaný kontakt",
+      "contact",
+      "kontakt"
+    ],
+    [
+      "The kayak trip along the Croatian coast is planned for the second week of July.",
+      "Výlet na kajaku podél chorvatského pobřeží je naplánován na druhý červencový týden.",
+      "When is the paddling holiday?",
+      "Kdy je dovolená na vodě?",
+      "kayak trip",
+      "výlet na kajaku",
+      "kayak",
+      "kajak"
+    ],
+    [
+      "Squat sessions are scheduled on Mondays and Thursdays.",
+      "Tréninky dřepů jsou naplánované na pondělí a čtvrtek.",
+      "Which days do I train legs?",
+      "Ve které dny trénuji nohy?",
+      "leg day",
+      "trénink nohou",
+      "squats",
+      "dřepy"
+    ],
+    [
+      "The API rate limit is 100 requests per minute per client.",
+      "Limit API je 100 požadavků za minutu na klienta.",
+      "How many calls can one consumer make?",
+      "Kolik volání může klient udělat?",
+      "rate limit",
+      "limit požadavků",
+      "throttling",
+      "omezení"
+    ],
+    [
+      "The newsletter is published every Tuesday morning.",
+      "Newsletter vychází každé úterý ráno.",
+      "When does the weekly digest go out?",
+      "Kdy vychází týdenní přehled?",
+      "newsletter schedule",
+      "vydání newsletteru",
+      "newsletter",
+      "zpravodaj"
+    ],
+    [
+      "The NFC readers at the gym doors use MIFARE DESFire cards.",
+      "NFC čtečky u dveří posilovny používají karty MIFARE DESFire.",
+      "What kind of entry tags do we use?",
+      "Jaké přístupové karty používáme?",
+      "access cards",
+      "přístupové karty",
+      "cards",
+      "karty"
+    ],
+    [
+      "The audiology clinic in Brno is closed on Wednesdays.",
+      "Foniatrická ambulance v Brně má ve středu zavřeno.",
+      "Which day is the hearing practice shut?",
+      "Který den je ambulance zavřená?",
+      "clinic closed",
+      "zavřená ambulance",
+      "clinic",
+      "ambulance"
+    ],
+    [
+      "All secrets must be stored in the password manager, never in the repository.",
+      "Všechna tajemství musí být uložena ve správci hesel, nikdy v repozitáři.",
+      "Where do we keep credentials?",
+      "Kde uchováváme přihlašovací údaje?",
+      "secret storage",
+      "ukládání hesel",
+      "credentials",
+      "hesla"
+    ],
+    [
+      "The website migration from WordPress is postponed until January.",
+      "Migrace webu z WordPressu je odložena do ledna.",
+      "When will the site be moved?",
+      "Kdy se bude web stěhovat?",
+      "website migration",
+      "migrace webu",
+      "migration",
+      "migrace"
+    ],
+    [
+      "The user's favourite coffee is a flat white without sugar.",
+      "Uživatelova oblíbená káva je flat white bez cukru.",
+      "What does he like to drink?",
+      "Co rád pije?",
+      "coffee preference",
+      "oblíbená káva",
+      "coffee",
+      "káva"
+    ],
+    [
+      "Code reviews must be done by a different person than the author.",
+      "Revize kódu musí dělat někdo jiný než autor.",
+      "Who is allowed to approve changes?",
+      "Kdo smí schvalovat změny?",
+      "review policy",
+      "pravidla revizí",
+      "review",
+      "revize"
+    ],
+    [
+      "The monthly budget for cloud services is three hundred euros.",
+      "Měsíční rozpočet na cloudové služby je tři sta eur.",
+      "How much can we spend on hosting?",
+      "Kolik můžeme utratit za hosting?",
+      "cloud budget",
+      "rozpočet na cloud",
+      "budget",
+      "rozpočet"
+    ],
+    [
+      "The bicycle needs a new chain before the race in May.",
+      "Kolo potřebuje před květnovým závodem nový řetěz.",
+      "What must be repaired on the bike?",
+      "Co je potřeba na kole opravit?",
+      "bike maintenance",
+      "údržba kola",
+      "bicycle",
+      "kolo"
+    ]
+  ],
+  "ood": [
+    "quantum chromodynamics lattice gauge theory",
+    "How do I bake sourdough bread?",
+    "Jak se peče kváskový chléb?",
+    "history of the Roman empire",
+    "Kdo vyhrál mistrovství světa v hokeji?",
+    "symptoms of influenza in children",
+    "best guitar strings for jazz",
+    "Jak vyměnit pneumatiku na autě?",
+    "weather forecast for tomorrow",
+    "Shakespeare sonnets about love",
+    "recept na svíčkovou",
+    "stock market crash of 1929",
+    "photosynthesis in plants",
+    "Jak funguje fotosyntéza?",
+    "rules of chess castling",
+    "volcano eruption in Iceland",
+    "mortgage interest rates",
+    "pravidla ofsajdu ve fotbale",
+    "how to knit a scarf",
+    "Kolik měsíců má Jupiter?",
+    "capital of Australia",
+    "hlavní město Austrálie",
+    "tell me a joke",
+    "řekni mi vtip"
+  ],
+  "filler": {
+    "en": "Notes from the weekly sync. We went through the open items one by one and nobody had blocking issues. The team talked about the office plants, the parking situation and the new chairs that arrived last week. Somebody suggested moving the standup half an hour later, and we agreed to try it for two weeks. ",
+    "en2": "After that we discussed the summer party, the catering options and who brings the speakers. The printer on the second floor is still broken and a technician is expected next week. Finally we reviewed the holiday calendar and confirmed that there are no conflicts in August.",
+    "cz": "Poznámky z týdenní porady. Prošli jsme otevřené body jeden po druhém a nikdo neměl žádnou blokující věc. Tým probíral květiny v kanceláři, parkování a nové židle, které dorazily minulý týden. Někdo navrhl posunout ranní poradu o půl hodiny později a shodli jsme se, že to na dva týdny zkusíme. ",
+    "cz2": "Potom jsme řešili letní večírek, možnosti občerstvení a kdo přinese reproduktory. Tiskárna ve druhém patře je pořád rozbitá a technik má přijít příští týden. Nakonec jsme prošli kalendář dovolených a potvrdili, že v srpnu nejsou žádné kolize."
+  }
+}

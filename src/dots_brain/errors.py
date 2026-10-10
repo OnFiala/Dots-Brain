@@ -23,3 +23,27 @@ class InputError(BrainError):
 
 class CapabilityError(BrainError):
     code = "capability_unavailable"
+
+
+class StateError(BrainError):
+    code = "invalid_state"
+
+
+class StoreDisabledError(StateError):
+    code = "store_disabled"
+
+
+class MigrationRequiredError(StateError):
+    code = "migration_required"
+
+
+class BusyError(StateError):
+    code = "busy"
+
+
+class IntegrityError(BrainError):
+    code = "integrity_error"
+
+
+class ForbiddenError(BrainError):
+    code = "forbidden"

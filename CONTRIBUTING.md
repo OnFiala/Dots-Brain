@@ -1,9 +1,10 @@
 # Contributing
 
 Use English for documentation, code comments, product text, issues, and commits.
-Small, focused changes are easier to review and maintain.
+Small, focused changes are easier to review and maintain. Focused external PRs
+with synthetic regression evidence are welcome; discuss interface changes first.
 
-Install development dependencies with `uv sync --frozen --all-extras`. Before
+Install development dependencies with `uv sync --locked --all-extras`. Before
 committing, run `uv run ruff check src tests scripts`,
 `uv run ruff format --check src tests scripts`, `uv run pytest -q`,
 `uv run python scripts/validate_project.py`, and `uv build`. Model downloads are

@@ -1,108 +1,102 @@
 # Dots Brain
 
-**One memory for your AI tools, hosted on your own machine.**
+Dots Brain is a self-hosted MCP memory service for explicitly saved notes. It
+stores source metadata and revisions in one SQLite database, supports full-text
+search, and can add local CPU embeddings. It does not automatically collect
+assistant conversations.
 
-Dots Brain is an open-source memory service for an OpenAI Dot and other MCP-compatible assistants. It stores useful context with its sources, retrieves relevant memories, and lets connected assistants continue each other's work. The target deployment is your Dot's VM, with local storage and local embeddings and no paid model API.
+**Version: 0.4.0-alpha.2 (unreleased).** This candidate has local MCP storage,
+scoped client credentials, backup and staged restore commands. It is not a
+published release or a deployment claim. Live capture, a CORTEX connection,
+off-host recovery, and host reboot recovery need separate configuration and
+acceptance evidence.
 
-**Status: OAuth alpha (`0.3.0-alpha.2`).** An agent can start the shared service, configure supported local clients, authorize OAuth clients on the VM, and remove the integration while preserving memories. Local installation with CPU embeddings is verified on one user-confirmed shared Work/Dot VM. Public ingress, automatic web-account setup, conversation capture, and native ChatGPT views remain planned. See the [capability matrix](docs/capabilities.md).
+## Quick start on Linux
 
-Tell your agent: "Install Dots Brain on my memory host and connect my supported
-AI tools. Follow the repository's setup skill and verify the connections."
-
-## What works today
-
-- One personal memory store, shared through MCP.
-- Searchable memories with source references, revisions, and explicit deletion.
-- Local text and semantic search without a paid embedding API.
-- Local setup, diagnostics, and client verification with machine-readable status.
-- Repeatable background startup and client adapters for Claude Code, Cursor, Codex, and MCP JSON.
-- Six memory tools through stdio or authenticated loopback HTTP.
-- A stdio bridge that connects to the same HTTP service without another database.
-- Client disconnection and repeatable service removal that preserves memories.
-- VM-local OAuth with PKCE, scoped owner approval, refresh, and revocation.
-
-Provider capture adapters, autonomous web setup, native ChatGPT views, and
-event-driven automations are on the [roadmap](docs/roadmap.md).
-
-An MCP connection gives an assistant access to memory. It does **not** automatically grant access to that assistant's conversations or account history.
-
-## Try the alpha
-
-From a writable checkout with Python 3.11+ and [uv](https://docs.astral.sh/uv/):
+Use a writable checkout, Python 3.11–3.13, and [uv](https://docs.astral.sh/uv/).
+There is no supported `pip install` path in this alpha.
 
 ```sh
-uv sync --frozen
-uv run dots-brain setup
-uv run dots-brain doctor
-uv run dots-brain serve
+git clone https://github.com/OnFiala/Dots-Brain.git
+cd Dots-Brain
+uv sync --locked
+uv run dots-brain --data-dir /absolute/private/memory setup
+uv run dots-brain --data-dir /absolute/private/memory doctor
 ```
 
-`serve` starts a stdio MCP server for a client on the memory host. The default data
-directory is `$XDG_DATA_HOME/dots-brain`, or `~/.local/share/dots-brain`. To choose a
-different private directory, pass `--data-dir /absolute/path` before the subcommand.
+For repeatable work, check out a reviewed commit or release tag before syncing.
+Python must provide SQLite 3.42 or newer. The data, backup, and export directories
+must be on a local POSIX filesystem that supports hard links; network shares and
+filesystems without that capability fail with `capability_unavailable`.
 
-For a shared HTTP instance, scoped credentials, local embeddings, or agent-driven
-bootstrap, follow [installation and operation](docs/installation.md).
-
-## Give the setup to your agent
-
-The repository includes an onboarding plugin manifest and a [setup skill](skills/setup/SKILL.md).
-The agent should identify the real memory host, run the packaged bootstrap, and
-verify the available capabilities. This is an installer skill package; it does not
-contain a universal MCP endpoint or register a public ChatGPT plugin automatically.
-
-Ask: "Set up Dots Brain from this checkout on my memory host. Use the setup skill
-and report which capabilities you actually verified."
-
-On a Linux memory host, the agent can install, start, and connect a local client:
+For several clients on the same Linux host, use `up` to run an authenticated
+loopback HTTP service, then configure a supported local adapter. See
+[installation](docs/installation.md).
 
 ```sh
-python scripts/bootstrap.py --data-dir /absolute/private/memory --connect claude-code
+uv run dots-brain --data-dir /absolute/private/memory up
+uv run dots-brain --data-dir /absolute/private/memory connect codex --project work
 ```
 
-Use `cursor` or `codex` for another supported client on that machine. The agent
-chooses the actual private directory; the user does not need to edit JSON or copy
-a token. See the [autonomous setup contract](docs/autonomy.md) for remote devices,
-resuming installation, and the exact remaining platform dependencies.
+Linux is the supported deployment platform. macOS is suitable for local source
+work and stdio experiments; managed lifecycle behavior is not accepted there.
+Windows is not supported. A connection configured by `connect` is verified at the
+bridge boundary; it does not prove a remote device, web account, or conversation
+has loaded the new tools.
 
-For a client that supports remote MCP OAuth, see [OAuth on your VM](docs/oauth.md).
-The authentication service runs beside the memory; an actual reachable HTTPS
-route is still required. Configuring an issuer does not provision a tunnel.
+After reloading the client, ask it to save a short project decision in `work`,
+then ask it to find that decision. The expected calls are `memory_remember`,
+`memory_search` or `memory_context`, and `memory_get` for the exact source.
+Saving happens when the client calls a tool; connecting alone does not save a
+conversation. See the [tool reference](docs/reference/mcp-tools.md).
 
-## Leaving or updating
+| Adapter | Default client configuration |
+| --- | --- |
+| `codex` | `~/.codex/config.toml` |
+| `claude-code` | `~/.claude.json`, or `CLAUDE_CONFIG_DIR` |
+| `cursor` | `~/.cursor/mcp.json` |
+| `mcp-json` | A path supplied with `--config` |
 
-Ask your agent: "Uninstall Dots Brain, disconnect its managed clients, and keep my
-memories." The `uninstall` command disables the instance and preserves personal
-data; program files are removed separately according to the installation method.
-See [uninstall and reinstall](docs/uninstall.md), [upgrading](docs/upgrading.md),
-and [troubleshooting](docs/troubleshooting.md).
+## Boundaries
 
-The [documentation index](docs/README.md) covers the implemented alpha's lifecycle
-and [everyday memory use](docs/using-memory.md), with remaining limits explicit.
+- Data remains in the selected private directory. A checkout is not a data store.
+- An MCP connection gives access only to explicitly saved memory. Capture is an
+  opt-in bounded JSONL import, not continuous provider capture.
+- Remote OAuth needs an existing HTTPS route and an explicit owner approval flow.
+  Dots Brain does not provision public ingress or configure web accounts.
+- CORTEX is a separate service for project context, decisions and outcomes.
+  Its optional connector needs its own credential, project mapping, and
+  live verification. It is not enabled by installation.
+- Backups on the same disk do not recover a lost host. Restore requires a current
+  store for deletion reconciliation; full host-loss recovery is not yet supported.
+
+Read [security](SECURITY.md), [upgrading and recovery](docs/upgrading.md), and the
+[documentation index](docs/README.md) before operating a long-lived store.
 
 ## Development
 
 ```sh
-uv sync --frozen --all-extras
+uv sync --locked --all-extras
 uv run ruff check src tests scripts
+uv run ruff format --check src tests scripts
 uv run pytest -q
 uv run python scripts/validate_project.py
 uv build
 ```
 
-Tests use synthetic data. The real embedding-model test is opt-in and does not
-download models during CI. See [verification evidence](docs/verification.md).
+Tests use disposable stores. CI validates Python 3.11, 3.12, and 3.13. See
+[verification](docs/verification.md) for the distinction between source checks
+and deployment acceptance.
 
-## Deployment contract
+## How this project is developed
 
-The memory database, embedding inference, authentication, and installation state belong on the user's host. A public HTTPS ingress or a compatible tunnel is needed for remote clients. Hosting and resource limits must be verified; an existing subscription is not a promise of unlimited compute or free external services.
+The maintainer develops Dots Brain with AI coding assistants. Independent review
+means a separate AI reviewer unless a report names a human reviewer. Tests and
+review reports document what was exercised; the maintainer owns release decisions.
+Reviewers in one orchestration share the workspace and permissions. Their separate
+review tasks do not establish process or operating-system isolation.
 
-ChatGPT Sites is a separate hosting option under investigation, not the default deployment. No data is silently moved there.
+## License
 
-Read the [architecture](docs/architecture.md), [capabilities](docs/capabilities.md), and [roadmap](docs/roadmap.md).
-
-## Contributing and license
-
-Code, documentation, CLI messages, issues, and commit messages are written in English. See [CONTRIBUTING.md](CONTRIBUTING.md).
-
-Licensed under [MIT](LICENSE): personal and commercial use, modification, and redistribution are permitted under its terms. Third-party dependencies and model artifacts retain their own licenses. Dots Brain is an independent project and is not affiliated with OpenAI or other AI providers.
+MIT. Dots Brain is independent of AI providers. Third-party dependencies and model
+artifacts retain their own licenses. See [third-party notices](THIRD_PARTY_NOTICES.md).

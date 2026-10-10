@@ -1,82 +1,40 @@
-# Stress-test evidence
+# Stress testing
 
-These tests ran on 2026-10-02 in a managed Linux development workspace. The host
-exposed five CPU IDs with a cgroup quota of four CPU cores and a 16 GiB memory
-limit. It has not been verified as the user's Dot VM. Measurements are individual
-synthetic runs on shared development infrastructure, not a capacity guarantee.
+Stress tests must run against a disposable store with synthetic data. Record the
+source revision, environment, workload, limits, and measurements separately from
+production claims. Do not access a canonical store, credential, or external client
+to improve a benchmark result.
 
-## Storage and authenticated HTTP
+SQLite has one writer at a time; measure contention and failure behavior rather
+than inferring capacity from a single successful run. Semantic relevance and large
+corpus capacity need their own representative datasets.
 
-The final run used Python 3.12.14, SQLite 3.53.1, 32 workers, 10,000 source records,
-10,000 identical retries, and 1,000 HTTP write/read pairs. It completed in 31.04 s.
+## Audit workload, 2026-10-10
 
-| Measurement | Result |
+An independent AI reviewer tested commit `0a48497` (source tree
+`2b9dab2072ba5495852587c3c2795974c5d9b20d`) on macOS 26.6.2 arm64,
+Python 3.11.14 and SQLite 3.50.4. All stores were disposable and all records
+synthetic. The vector workloads used fixed normalized 384-dimensional vectors,
+so their timings exclude model inference, HTTP and external clients.
+
+| Workload | Observed result |
 | --- | --- |
-| Direct store writes, p95 / p99 | 107.53 / 637.08 ms |
-| HTTP write/read pairs, p95 / p99 | 691.37 / 778.95 ms |
-| HTTP service peak RSS, embeddings disabled | 62,120 KiB (about 61 MiB) |
-| Harness peak RSS, separate from the service | 173,944 KiB |
-| Concurrent conflicting updates accepted | Exactly one |
-| Duplicate records from retries | Zero |
-| SQLite integrity and foreign-key checks | Passed |
+| 50,000 valid chunks | Search median 147 ms (3 samples); idle index pass median 30 ms (5 samples). |
+| 100,000 valid chunks | Search median 388 ms (3 samples, range 302–503 ms); idle index pass median 62 ms (5 samples). |
+| 50,000 / 100,000 invalid chunks | Search 81 / 137 ms, no result and one summary warning per call. One repair pass repaired exactly 4 records in 34 / 68 ms. Each is one sample. |
+| 100,000 stale retry entries, limit 16 | 18 SELECT statements, exactly 16 stale entries removed in one pass (0.144 ms, one sample). |
+| 256 deferred failures | A new healthy record was indexed first; the last due failure was reached within 16 bounded passes. |
+| Forget followed by a new revision-1 record, unchanged total count | The replacement was indexed and returned by search. |
 
-The run also checked project isolation, explicit HTTP 401 after credential
-revocation, restart persistence, deletion, and suppression of forgotten sources.
-Four project-search samples are recorded in the raw report; this sample is too
-small to characterize search latency.
+The review caught a lossy count/revision shortcut that missed replacements, an
+unbounded retry-deadline loop, and invalid embedding shapes that could enter a
+repair loop. The final source removes the shortcut, rotates a bounded set of
+retry entries, and validates vector shape before publication. Deterministic
+regressions live in `tests/test_semantic_regressions.py`.
 
-Raw output: [storage and HTTP](benchmarks/2026-10-02/storage-http.json).
-
-## Local multilingual embeddings
-
-A second run used the pinned CPU model with 200 synthetic memories, eight
-concurrent clients, and 96 queries cycling through six Czech/English prompts.
-
-| Measurement | Result |
-| --- | --- |
-| Startup and background indexing | 11.20 s |
-| Query latency, p95 / p99 | 301.04 / 383.62 ms |
-| Service peak RSS, embeddings enabled | 700,212 KiB (about 684 MiB) |
-| Expected synthetic fact in the top three | 96 / 96 queries |
-
-This checks a narrow bilingual scenario. It does not establish representative
-retrieval quality, large-vector-index performance, or parity with Cortex.
-The model used two ONNX CPU threads and performed no paid API inference.
-
-Raw output: [local embeddings](benchmarks/2026-10-02/semantic.json).
-
-## Failures found and fixed
-
-- A waiting SQLite writer blocked unrelated MCP reads for 2.92 s. Synchronous
-  tool work now runs outside the network event loop, with separate bounded read
-  and write workers. A regression test holds the write lock for up to three
-  seconds and requires reads to complete before that lock is released.
-- The first 10,000-record / 32-worker storage run hit SQLite's lock timeout.
-  New records unnecessarily scanned the full-text table to delete an entry that
-  did not exist. Skipping that scan for inserts removed the observed failure.
-- The first embedding run took 105.78 s to index the same 200 records, mainly
-  because the worker slept between every four-record batch. It now uses short
-  bounded batches while a backlog exists, and retains idle/error backoff.
-- Crash recovery occasionally tried to reuse the canonical port before all
-  killed worker threads had released their sockets. Startup now waits briefly
-  for that port without changing the endpoint or stopping an unrelated process.
-
-## Reproduce without touching personal memory
-
-The harnesses create and clean up their own temporary stores and loopback
-services. They do not accept an existing database or remote stress target.
-
-```sh
-uv sync --frozen --all-extras
-uv run python scripts/stress.py --records 10000 --workers 32 --http-calls 1000 \
-  --output /tmp/brain-storage-report.json
-
-uv run dots-brain --data-dir /tmp/brain-model-cache model prepare
-uv run python scripts/stress_semantic.py \
-  --model-dir /tmp/brain-model-cache/models/faf4aa4225822f3bc6376869cb1164e8e3feedd0 \
-  --records 200 --workers 8 --queries 96 --output /tmp/brain-semantic-report.json
-```
-
-The embedding harness never downloads a model implicitly. Both scripts cap their
-requested workload. Keep resource measurements separate from correctness checks:
-network proxies, filesystem caches, CPU quotas, and concurrent work affect timing.
+Search remains linear in stored chunks, and an idle indexing pass still scans
+the source table for pending records. Cancellation during embedding occurs
+between records. These warm, bounded measurements do not establish production
+capacity, model relevance, concurrent workload headroom, provider-log freshness,
+or long-running service limits. CI separately exercises the pinned real model
+and an actual Chromium OAuth callback.

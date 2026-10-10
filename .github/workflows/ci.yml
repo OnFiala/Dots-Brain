@@ -2,27 +2,89 @@ name: CI
 
 on:
   push:
+    branches: [main]
   pull_request:
 
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   verify:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        python: ['3.11', '3.12']
+        python: ['3.11', '3.12', '3.13']
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           python-version: ${{ matrix.python }}
           enable-cache: true
-      - run: uv sync --frozen --all-extras
+      - run: uv sync --locked --all-extras
+      - name: Export historical source for upgrade and rollback acceptance
+        run: |
+          git fetch --no-tags --depth=1 origin 263c38617aa17ae1ebaea84c8938065c131cfae1
+          mkdir -p "$RUNNER_TEMP/dots-historical-v1"
+          git archive 263c38617aa17ae1ebaea84c8938065c131cfae1 src | tar -x -C "$RUNNER_TEMP/dots-historical-v1"
+          git fetch --no-tags --depth=1 origin c9637003f365f184751a3825013b2c425efd1517
+          mkdir -p "$RUNNER_TEMP/dots-historical-v2"
+          git archive c9637003f365f184751a3825013b2c425efd1517 src | tar -x -C "$RUNNER_TEMP/dots-historical-v2"
       - run: uv run ruff check src tests scripts
       - run: uv run ruff format --check src tests scripts
-      - run: uv run pytest -q
+      - run: uv run pytest -q --ignore=tests/test_runtime_latency.py
+        env:
+          BRAIN_TEST_OLD_V1_SRC: ${{ runner.temp }}/dots-historical-v1/src
+          BRAIN_TEST_OLD_V2_SRC: ${{ runner.temp }}/dots-historical-v2/src
+      - name: Compare managed and direct HTTP latency
+        run: uv run pytest -q -s tests/test_runtime_latency.py
       - run: uv run python scripts/validate_project.py
       - run: uv build
+      - name: Test the installed wheel
+        run: |
+          uv venv --python ${{ matrix.python }} "$RUNNER_TEMP/artifact-venv"
+          uv pip install --python "$RUNNER_TEMP/artifact-venv/bin/python" dist/*.whl
+          (cd "$RUNNER_TEMP" && "$RUNNER_TEMP/artifact-venv/bin/python" "$GITHUB_WORKSPACE/scripts/verify_wheel.py")
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          python-version: '3.12'
+          enable-cache: true
+      - run: uv sync --locked --group browser
+      - name: Verify the OAuth callback in Chromium
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/dots-browsers
+        run: |
+          uv run playwright install --with-deps chromium
+          uv run pytest -q tests/test_oauth_browser.py
+  semantic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          python-version: '3.12'
+          enable-cache: true
+      - run: uv sync --locked --extra semantic
+      - name: Verify the pinned local embedding model
+        run: |
+          uv run dots-brain --data-dir "$RUNNER_TEMP/model-fixture" model prepare
+          revision="$(uv run python -c 'from dots_brain.semantic import MODEL_REVISION; print(MODEL_REVISION)')"
+          BRAIN_TEST_MODEL_DIR="$RUNNER_TEMP/model-fixture/models/$revision" uv run pytest -q tests/test_semantic.py tests/test_semantic_regressions.py
+  gateway:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - run: sudo apt-get update && sudo apt-get install -y nginx
+      - run: python3 scripts/validate_deploy.py --nginx /usr/sbin/nginx

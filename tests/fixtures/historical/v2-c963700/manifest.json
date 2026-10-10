@@ -1,0 +1,14 @@
+{
+  "source_commit": "c9637003f365f184751a3825013b2c425efd1517",
+  "schema_version": 2,
+  "generator": "tests/fixtures/historical/generate.py",
+  "files": {
+    "service-probe.json": "54aa2e09e5c8c714f0bbaa6777d94466e5d995dfdf924509ab67490701a72c99",
+    "brain.sqlite3": "e83f4ae427d6a9cc81058d4e4b7026fe15a1f93f5ec1e5744d543dedb8375deb",
+    "oauth.json": "1bb06af979c93d267d69b62f2ff1fbe133146309f719e15d1e3582f3e5f617c0"
+  },
+  "memory_id": "19856f05-3f47-47e4-9d76-50549688b11c",
+  "revision": 2,
+  "probe_id": "ae20bfbb-e3cf-4871-8310-0c15ee513ef8",
+  "oauth_grant_id": "fixture-grant"
+}

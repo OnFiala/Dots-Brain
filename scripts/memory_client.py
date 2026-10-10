@@ -1,14 +1,14 @@
 """Use the existing MCP memory from an agent shell, without exposing credentials."""
 
-import argparse
 import asyncio
 import json
 import sys
 from pathlib import Path
 
-from dots_brain.bridge import connect
-from dots_brain.runtime import up
-from dots_brain.store import Store
+from dots_brain.bridge import connect, resume_local_connection
+from dots_brain.cli import ArgumentParser
+from dots_brain.errors import InputError
+from dots_brain.protocol import safe_error
 
 
 async def request(credential: Path, tool: str | None, arguments: dict) -> tuple[dict, int]:
@@ -21,7 +21,7 @@ async def request(credential: Path, tool: str | None, arguments: dict) -> tuple[
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = ArgumentParser(description=__doc__)
     parser.add_argument("--credential-file", type=Path, required=True)
     parser.add_argument(
         "--local-data-dir", type=Path, help="Resume an existing enabled local service if needed."
@@ -32,29 +32,30 @@ def main() -> int:
         arguments = {}
         if args.tool:
             if sys.stdin.isatty():
-                raise ValueError("Provide a JSON object on stdin.")
-            raw = sys.stdin.buffer.read(131073)
-            if len(raw) > 131072:
-                raise ValueError("Arguments exceed the MCP request limit.")
-            arguments = json.loads(raw)
+                raise InputError("Provide a JSON object on stdin, or empty input for no arguments.")
+            raw = sys.stdin.buffer.read(1048577)
+            if len(raw) > 1048576:
+                raise InputError("Arguments exceed the MCP request limit.")
+            try:
+                arguments = json.loads(raw) if raw.strip() else {}
+            except (ValueError, UnicodeError):
+                raise InputError("Arguments must be a valid JSON object.") from None
             if not isinstance(arguments, dict):
-                raise ValueError("Arguments must be an object.")
+                raise InputError("Arguments must be an object.")
         if args.local_data_dir is not None:
-            store = Store(args.local_data_dir)
-            store.status()  # Never initialize another canonical memory implicitly.
-            up(store)
+            resume_local_connection(args.credential_file, args.local_data_dir)
         result, status = asyncio.run(
             asyncio.wait_for(request(args.credential_file, args.tool, arguments), timeout=45)
         )
         print(json.dumps(result, ensure_ascii=False))
         return status
-    except Exception:
+    except Exception as exc:
         # SDK/transport exceptions may include secret request headers or URLs.
         print(
             json.dumps(
                 {
                     "state": "error",
-                    "message": "Check JSON arguments, the existing service, and client access.",
+                    **safe_error(exc),
                 }
             ),
             file=sys.stderr,

@@ -1,58 +1,113 @@
-# Upgrading an installation
+# Upgrading and recovery
 
-Keep the same canonical data directory. Read the target release's changelog and
-use its immutable GitHub tag; do not treat a moving development branch as a release.
-An agent can do these steps within an already authorized installation request.
+Keep one canonical data directory. Read the target changelog and use an immutable
+release tag for a production upgrade. A development branch is not a release.
 
-1. Record the installed version, actual interpreter, data directory, connected
-   client paths, and whether semantic search is enabled. Do not print credentials.
-2. Review user changes in the checkout before updating it. Never reset or overwrite
-   them to force an upgrade.
-3. Close or pause connected clients, stop the managed service with `down`, and
-   stop any separately supervised processes. Client bridges can restart a stopped
-   service, so they must stay closed during backup and dependency replacement.
-4. If a recovery copy is needed, make an access-restricted filesystem copy of the
-   complete data directory while all writers are stopped. Preserve SQLite journal
-   files if present. A JSONL export is not a complete database backup. Backup/restore
-   automation and deletion-aware restore are not implemented.
-5. Update the existing checkout to the chosen release, preserving its path, then
-   run `uv sync --frozen` (add `--extra semantic` if used). Keeping the interpreter
-   path stable preserves generated client entries. For a packaged installation,
-   install the target package in the same existing environment.
-6. Run `up` with the original data directory and runtime options, then `doctor`.
-   Repeat `connect <provider>` with each actual custom `--config` path when needed.
-   Verify the bridge and the application's own health check before reporting success.
+## Routine upgrade
 
-For 0.2.0-alpha.1 to 0.2.0-alpha.2, the SQLite schema is unchanged. The newer
-release adds an integration registry and per-configuration credentials; it
-recognizes unchanged alpha.1 generated entries and can retain their existing
-credential. Re-running `connect` registers a legacy custom path for later removal.
+1. Record the running version, executable path, data directory, supervisor and
+   client configuration paths. Do not copy credentials into the record.
+2. Stop clients and every writer, including the managed service and any external
+   supervisor.
+3. With the old process stopped, copy the database and any committed `-wal` and
+   `-shm` files to a private backup location. Keep that full copy unchanged.
+4. For a published release, check out its tag in the existing checkout or install
+   it in the environment already referenced by managed client configuration.
+5. Run the offline migration below before starting the new binary. Then start
+   the supervisor, run `doctor`, reload each client and make a real MCP read.
 
-The OAuth milestone adds optional `oauth_*` tables to the same database only when
-`oauth configure` is run. Existing memories and local credentials are preserved;
-an upgrade does not turn on OAuth or publish a public endpoint automatically.
-Run `oauth disable` with an OAuth-aware release before downgrading: older removal
-commands cannot clear OAuth grants they do not know about. A complete private
-database backup contains confidential-client registration secrets as well as memory.
+Use a reviewed commit or published tag. This unreleased candidate is not a normal
+upgrade path and this documentation makes no production-upgrade claim.
 
-An intentionally uninstalled instance stays disabled during ordinary `up`. Use
-`up --resume` or the bootstrap only when the user intends to reinstall. Updating
-files alone should not silently reactivate a removed integration.
+## Schema v1 or v2 to v3
 
-If the interpreter or checkout moved, the old client entry points to its old path.
-Remove that recorded connection with the old installation before connecting from
-the new path. A conflicting entry is preserved rather than automatically replaced.
-See [troubleshooting](troubleshooting.md) and [uninstall](uninstall.md).
+The current candidate requires schema v3. Both published v1 stores and older v2
+stores need this migration. `setup`, `serve` and OAuth configuration do not add
+missing tables. `doctor` reports `migration_required` until migration completes.
 
-## Failed upgrade or rollback
+Stop the old process with its original supervisor and interpreter. Keep that
+interpreter and the installation configuration for rollback. The new `down`
+recognizes the exact managed command from 0.3.0-alpha.2 and
+0.4.0-alpha.1 using PID start time, data path and port. It never adopts a different
+release during `up`: stop it explicitly, migrate, then start. Startup replaces only
+the old installation probe with a read-only credential; ordinary client scope
+changes still require explicit replacement.
 
-Stop the new service and inspect the specific error. Never delete the database to
-fix startup. Use a compatible release for the schema; future schema migrations
-may prevent an older binary from opening a newer database. No general automated
-rollback is provided in this alpha.
+Use the new interpreter for these commands, with all writers stopped. Choose a
+new backup filename in an existing private directory. `migrate --apply` takes a
+second validated, standalone snapshot before changing the database; it does not
+replace the full pre-upgrade copy made above.
 
-Reverting files to alpha.1 would also remove enforcement of the new disable marker.
-Do not use an old binary to operate an uninstalled instance. Restoring an old
-database can restore revoked credentials or forgotten content; recovery requires
-reapplying revocations and deletions. Keep backups private and do not claim a
-restore is deletion-safe until its contents have been reconciled.
+```sh
+dots-brain --data-dir /absolute/private/memory migrate
+dots-brain --data-dir /absolute/private/memory migrate --apply --writers-stopped --backup /absolute/private/backup.sqlite3
+dots-brain --data-dir /absolute/private/memory doctor
+```
+
+The plan includes `from_version` and `to_version` and does not checkpoint the
+database. Apply makes a verified standalone backup including committed WAL data,
+under SQLite's writer lock, then upgrades in one transaction. Another writer cannot
+commit between the backup and migration. It preserves revisions, deletion barriers,
+static credentials, OAuth grants and tokens. It rebuilds the derived full-text
+index. OAuth configuration does not need to be repeated for the same issuer.
+Historical grants keep unknown provenance fields empty.
+
+If migration fails, keep the backup and error result. Repeating a completed
+migration returns `already_current`. Old v2 binaries reject the new v3 database.
+
+## Rollback before accepting new writes
+
+Stop the candidate and every client. Copy the standalone snapshot produced by
+`migrate --apply` to `brain.sqlite3` in a **new** private directory. If instead
+using the manual pre-upgrade copy, restore the database together with its saved
+WAL companions under their original names; copying only the main file can lose
+committed writes. Restore `oauth.json` for the same issuer and, if configured,
+`cortex.json`. Preserve any credential files referenced
+by clients in their private locations; never include them in Git or terminal output.
+Do not copy `service.json`, PID or lock files, `disabled.json`, restore markers or
+capture cursors into the rollback directory. Recreate runtime state with the old
+interpreter and supervisor after checking paths. Open the database copy with the
+pinned old interpreter. First run
+`doctor` and verify the expected record counts and permissions before changing
+any client endpoint. Keep the migrated store for inspection.
+
+This rollback is safe only before the candidate accepts new writes or deletions.
+An older backup cannot reconcile those changes. Do not overwrite the current
+database or remove recovery markers to force startup.
+
+## Restore within the current schema
+
+Backup and restore use staged directories. A restored copy is disabled until an
+offline cutover validates current deletion and history state. Do not use a backup
+as host-loss recovery: a surviving current store is required for reconciliation.
+If validation fails, preserve both stores and follow the command's recovery result;
+do not overwrite the current store or delete markers to force startup.
+
+With every writer stopped, these are the current-schema commands. The source is
+still canonical until activation succeeds:
+
+```sh
+dots-brain --data-dir /absolute/private/memory backup --output /absolute/private/current.sqlite3
+dots-brain --data-dir /absolute/private/memory restore --backup /absolute/private/current.sqlite3 --target /absolute/private/restored
+dots-brain --data-dir /absolute/private/memory activate-restore --target /absolute/private/restored --writers-stopped
+```
+
+After successful activation, point the supervisor at the restored directory and
+reconnect clients with newly approved credentials. The old directory stays
+disabled. Do not start it as a second writable copy.
+
+The partial abort-recovery path cancels only a pending cutover and keeps the staged
+target disabled. It does not undo a committed cutover. Use it after a failed
+cutover only when all writers are stopped:
+
+```sh
+dots-brain --data-dir /absolute/private/memory abort-restore --target /absolute/private/restored --writers-stopped
+```
+
+Preserve both stores and inspect the command result before resuming service. This
+candidate has not been deployed or accepted.
+
+New databases and migrations carry Dots Brain's SQLite `application_id`. Migration
+accepts historical ID zero only after checking the known table layouts. Foreign
+or unknown formats are rejected before any schema or journal write. This marker
+identifies the format; it cannot protect against a local owner editing the file.

@@ -1,11 +1,14 @@
 import asyncio
 import json
 import socket
+import socketserver
 import subprocess
 import sys
+import threading
 import time
 
 import httpx
+import pytest
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
@@ -14,7 +17,93 @@ from dots_brain.bridge import verify_connection
 from dots_brain.store import Store
 
 
-def test_real_http_process_and_stdio_bridge_share_one_store(tmp_path):
+def _monitoring_proxy():
+    """Start a disposable proxy that records every attempted request."""
+    requests = []
+
+    class Proxy(socketserver.BaseRequestHandler):
+        def handle(self):
+            requests.append(self.request.recv(8192))
+            self.request.sendall(b"HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n")
+
+    server = socketserver.ThreadingTCPServer(("127.0.0.1", 0), Proxy)
+    server.daemon_threads = True
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    host, port = server.server_address
+    return f"http://{host}:{port}", requests, server, thread
+
+
+def test_local_resume_rejects_missing_store_before_startup(tmp_path, monkeypatch):
+    from dots_brain.bridge import resume_local_connection
+    from dots_brain.errors import InputError
+
+    monkeypatch.setattr("dots_brain.runtime.up", lambda *_: pytest.fail("Must not start"))
+    missing = tmp_path / "must-not-create"
+    with pytest.raises(InputError):
+        resume_local_connection(tmp_path / "no-credential.json", missing)
+    assert not missing.exists()
+
+
+@pytest.mark.parametrize("problem", ["other-store", "url", "revoked", "state", "disabled"])
+def test_local_resume_rejects_mismatched_connection_before_startup(tmp_path, monkeypatch, problem):
+    from dots_brain.bridge import resume_local_connection
+    from dots_brain.errors import InputError, StoreDisabledError
+    from dots_brain.local import write_json
+
+    store = Store(tmp_path / "memory")
+    store.initialize()
+    other = Store(tmp_path / "other")
+    other.initialize()
+    path = tmp_path / "client.json"
+    url = "http://127.0.0.1:8765/mcp"
+    client = issue_client(
+        other if problem == "other-store" else store,
+        name="test",
+        scopes=["memory:read"],
+        projects=None,
+        days=1,
+        output=path,
+        url="http://127.0.0.1:9999/mcp" if problem == "url" else url,
+    )
+    if problem != "state":
+        write_json(store.directory / "service.json", {"url": url, "port": 8765})
+    if problem == "revoked":
+        revoke_client(store, client["client_id"])
+    if problem == "disabled":
+        write_json(store.directory / "disabled.json", {"disabled": True})
+    monkeypatch.setattr("dots_brain.runtime.up", lambda *_: pytest.fail("Must not start"))
+    with pytest.raises((InputError, StoreDisabledError)):
+        resume_local_connection(path, store.directory)
+    assert store.status()["memories"] == 0
+    assert not (store.directory / "probe.connection.json").exists()
+
+
+def test_local_resume_accepts_an_existing_matching_store(tmp_path, monkeypatch):
+    from dots_brain.bridge import resume_local_connection
+    from dots_brain.local import write_json
+
+    store = Store(tmp_path / "memory")
+    store.initialize()
+    path = tmp_path / "client.json"
+    url = "http://127.0.0.1:8765/mcp"
+    issue_client(
+        store,
+        name="test",
+        scopes=["memory:read"],
+        projects=["work"],
+        days=1,
+        output=path,
+        url=url,
+    )
+    write_json(store.directory / "service.json", {"url": url, "port": 8765})
+    calls = []
+    monkeypatch.setattr("dots_brain.runtime.up", lambda selected: calls.append(selected.path))
+    resume_local_connection(path, store.directory)
+    assert calls == [store.path]
+
+
+def test_real_http_process_and_stdio_bridge_share_one_store(tmp_path, monkeypatch):
     store = Store(tmp_path / "memory")
     store.initialize()
     with socket.socket() as reservation:
@@ -31,6 +120,11 @@ def test_real_http_process_and_stdio_bridge_share_one_store(tmp_path):
         output=credential,
         url=endpoint,
     )
+    proxy, proxy_requests, proxy_server, proxy_thread = _monitoring_proxy()
+    for name in ("HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy"):
+        monkeypatch.setenv(name, proxy)
+    for name in ("NO_PROXY", "no_proxy"):
+        monkeypatch.setenv(name, "")
     process = subprocess.Popen(
         [
             sys.executable,
@@ -106,3 +200,10 @@ def test_real_http_process_and_stdio_bridge_share_one_store(tmp_path):
         except subprocess.TimeoutExpired:
             process.kill()
             process.wait(timeout=5)
+        finally:
+            if process.stderr is not None:
+                process.stderr.close()
+            proxy_server.shutdown()
+            proxy_server.server_close()
+            proxy_thread.join(timeout=5)
+    assert proxy_requests == []

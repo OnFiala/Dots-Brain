@@ -1,131 +1,84 @@
 # Installation and operation
 
-This alpha runs on Python 3.11+ on a supported local host. Linux with Python 3.12
-is the environment exercised during development and installation on one
-user-confirmed shared Work/Dot VM. See the [deployment evidence](vm-deployment.md).
-This does not certify all Dot VM configurations, macOS, Windows, or individual
-AI clients. VM boot recovery and public ingress remain unverified.
+## Supported environment
 
-## Source installation
+Managed deployment is supported on Linux with Python 3.11, 3.12, or 3.13 and
+SQLite 3.42 or newer. SQLite must support FTS secure deletion. Older SQLite
+builds are not a supported upgrade or rollback path for a schema-v3 store.
+macOS can run local source checks and stdio experiments, but managed lifecycle
+behavior is not accepted there. Windows is not supported.
 
-From a writable checkout, use `uv sync --frozen`. To include local semantic search,
-use `uv sync --frozen --extra semantic`. For deterministic agent setup:
-
-```sh
-python scripts/bootstrap.py --data-dir /absolute/path/to/personal-memory --semantic
-```
-
-Replace the data directory with a real private path on the memory host. Do not
-place it inside a shared repository. The script installs dependencies and prepares
-the database and model, starts the local background service, and verifies MCP
-readiness. Add `--connect claude-code`, `--connect cursor`, or `--connect codex`
-for automatic client configuration. See [autonomous setup](autonomy.md).
-It does not configure a persistent supervisor or tunnel.
-
-For later lifecycle operations, see [upgrading](upgrading.md),
-[uninstall and reinstall](uninstall.md), and [troubleshooting](troubleshooting.md).
-The bootstrap is an explicit install/reinstall action and re-enables an instance
-previously disabled by `uninstall`. Use `doctor` for inspection without resuming it.
-
-## Basic commands
-
-The following commands assume the installed executable is on PATH. In a source
-checkout, use `.venv/bin/dots-brain` on Linux. `--data-dir` precedes the subcommand.
+Use a writable checkout and `uv`; this alpha has no supported `pip install` path.
+Put the data directory and every backup or export destination on a local POSIX
+filesystem that supports hard links. Dots Brain refuses atomic publication on an
+unsupported destination with `capability_unavailable`; use a local directory rather
+than weakening the publication step.
 
 ```sh
-dots-brain --data-dir /absolute/path/to/personal-memory setup
-dots-brain --data-dir /absolute/path/to/personal-memory doctor
-dots-brain --data-dir /absolute/path/to/personal-memory serve
+uv sync --locked
+uv run dots-brain --data-dir /absolute/private/memory setup
+uv run dots-brain --data-dir /absolute/private/memory doctor
 ```
 
-The default `serve` transport is stdio. It runs as the local owner and should only
-be launched on the machine holding the canonical store. Stdout is MCP protocol
-traffic, not a human-readable log. Exit the client to stop its stdio process.
+Choose a private directory outside the checkout. `setup` initializes or reuses the
+selected current-schema store. Older stores require the explicit
+[offline upgrade](upgrading.md). `doctor` reports local state and does not prove public ingress,
+another device, or client UI activation.
 
-For multiple clients on the same host, run one service:
+## Local MCP
+
+For one local client, run a stdio server:
 
 ```sh
-dots-brain --data-dir /absolute/path/to/personal-memory up
+uv run dots-brain --data-dir /absolute/private/memory serve
 ```
 
-The default listener is `http://127.0.0.1:8765/mcp`; startup selects an available
-port if the default is occupied on first installation. The JSON result contains
-the actual endpoint. Every request requires a credential.
-It is loopback-only and is not a public HTTPS deployment. Keep it behind the
-current local boundary until a supported HTTPS ingress is available. The
-[VM-local OAuth service](oauth.md) is optional and tested over local HTTP;
-public deployment and specific web-provider setup remain unverified.
-
-## Scoped client connection
-
-Create a private destination directory first. The following command writes a
-credential directly to a new file, without printing its value:
+For several local clients, start the managed loopback HTTP service and configure a
+supported adapter on the same host:
 
 ```sh
-dots-brain --data-dir /absolute/path/to/personal-memory client create \
-  --name local-assistant --project my-project \
-  --scope memory:read --scope memory:write \
-  --credential-file /absolute/private/path/client.json
-
-dots-brain verify --credential-file /absolute/private/path/client.json
+uv run dots-brain --data-dir /absolute/private/memory up
+uv run dots-brain --data-dir /absolute/private/memory connect codex
 ```
 
-Credentials expire after 30 days by default. `--days` accepts 1–365. Omitting
-`--scope` grants read only; omitting `--project` grants the chosen scopes across
-all projects. Deletion requires the separate `memory:forget` scope. Do not grant
-it implicitly. `client revoke <client-id>` invalidates subsequent HTTP requests.
-
-`verify` tests discovery and a real status read. It does not certify writes,
-capture, complete history, a specific vendor client, or restart persistence.
-
-A stdio-only client can use the bridge, which holds no separate database:
-
-```sh
-dots-brain bridge --credential-file /absolute/private/path/client.json
-```
-
-Configure the actual executable and arguments through that client's supported
-installation interface. The path must exist on the client machine. This alpha
-does not securely transfer credentials between machines or modify web account
-configuration. `connect` automates supported client configuration on the current
-machine and verifies the generated bridge before saving it.
-
-The credential file is intentionally private but readable by its OS owner. It is
-not an isolated vault. Do not open it in chat, copy it into a plugin, or commit it.
+`up` returns the selected loopback endpoint. It does not provision a public route.
+`connect` verifies its generated bridge with a synthetic probe; reload the actual
+client and make a real MCP read before claiming conversation-level activation.
 
 ## Local semantic search
 
-Install the semantic extra, then prepare the pinned model explicitly:
+The default installation uses full-text search. To prepare local CPU embeddings:
 
 ```sh
-dots-brain --data-dir /absolute/path/to/personal-memory model prepare
-dots-brain --data-dir /absolute/path/to/personal-memory index
-dots-brain --data-dir /absolute/path/to/personal-memory serve --transport http --semantic
+uv sync --locked --extra semantic
+uv run dots-brain --data-dir /absolute/private/memory model prepare
+uv run dots-brain --data-dir /absolute/private/memory down
+uv run dots-brain --data-dir /absolute/private/memory up --semantic
 ```
 
-Only `model prepare` downloads model files. Model loading verifies pinned hashes;
-inference runs locally on CPU with two ONNX threads. The enabled server indexes
-pending records in small background batches. Pending records remain available to
-full-text search, and `memory_status` reports the semantic backlog.
+`model prepare` downloads the pinned, integrity-checked multilingual MiniLM
+artifact for local CPU use: about 241 MiB for the model and tokenizer files.
+Runtime memory is higher than download size and depends on workload.
+Full-text search remains available while semantic
+indexing catches up. Run `index --retry-failed` after fixing a failed model or
+environment. There is no paid API fallback. Semantic work is bounded to at most
+128 chunks per memory and 16 query chunks, so unusually large records can have
+incomplete semantic coverage while full-text search remains available.
 
-The initial model is Apache-2.0 licensed, with approximately 241 MiB of downloaded
-artifacts. See [verification](verification.md) for measured memory use. Long records
-use overlapping text chunks and a mean embedding; chunk-level citations and large
-corpus performance are not established. No inference API is used as a fallback.
+## Boundaries
 
-## Export, deletion, and recovery
+Remote OAuth needs an already-operated HTTPS route and explicit owner approval;
+it is documented in [OAuth](oauth.md). The bootstrap script is an explicit install
+or reinstall action. It can resume an intentionally disabled instance, so use
+`doctor` for inspection alone.
 
-`export --output <new-private-file>` exports live memories and all their revisions
-as JSON Lines. It does not export credentials, deleted memories, or suppression
-records. This export is not a complete disaster-recovery backup.
+An optional CORTEX connection requires its own endpoint, credential file, project
+map, and live verification. It is neither configured nor verified by installation.
+See [autonomy](autonomy.md) and [troubleshooting](troubleshooting.md).
 
-`memory_forget` removes a record, its revisions, search entries, and vectors, and
-retains a hash of source identity to block accidental reimport. It does not erase
-copies held by other assistants, old exports, or host backups. SQLite secure deletion
-is enabled, but physical media erasure is not guaranteed.
+## Codex plugin package
 
-Stop the service before taking a filesystem-level database backup and preserve
-SQLite's journal state. Close connected clients too, because a bridge can restart
-a stopped service; also stop separately supervised processes. A supported online
-backup/restore command and deletion-aware
-restore policy are future work. A backup on the same disk cannot survive loss of that disk.
+`plugin.json` describes this repository's Codex package: its display metadata and
+the onboarding skill at `skills/setup/SKILL.md`. It does not install a service,
+create a store, grant access to data, or verify an MCP connection. Run the setup
+and verification commands above on the host that will own the store.
