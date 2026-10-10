@@ -26,8 +26,9 @@ from .errors import (
     StoreDisabledError,
     SuppressedError,
 )
-from .local import locked, sync_directory, sync_file_and_parent
-from .schema import APPLICATION_ID, SCHEMA_VERSION, create_schema
+from .installation_state import marker_path
+from .local import locked, publish_new, sync_directory, sync_file_and_parent
+from .schema import APPLICATION_ID, SCHEMA_VERSION, create_schema, validate_schema
 
 MIN_SQLITE_VERSION = (3, 42, 0)
 WAL_LOCK_TIMEOUT = 10.0
@@ -65,6 +66,14 @@ def validate_integer(value: int, name: str, minimum: int = 1, maximum: int = 2**
     if type(value) is not int or not minimum <= value <= maximum:
         raise InputError(f"{name} must be a positive integer between {minimum} and {maximum}.")
     return value
+
+
+def fulltext_terms(query: str) -> list[str]:
+    """Prefer informative words when a natural-language task exceeds the FTS budget."""
+    words = list(
+        dict.fromkeys(re.findall(r"[^\W_]+", unicodedata.normalize("NFC", query).casefold()))
+    )
+    return sorted(words, key=len, reverse=True)
 
 
 def normalize_projects(projects) -> tuple[str, ...] | None:
@@ -139,7 +148,7 @@ class Store:
 
     def initialize(self) -> None:
         require_sqlite()
-        if (self.directory / "disabled.json").exists():
+        if marker_path(self).exists():
             raise StoreDisabledError("This installation is disabled; inspect its recovery state.")
         self.directory.mkdir(parents=True, exist_ok=True, mode=0o700)
         # A distinct schema lock avoids reentering installation/service locks held by callers.
@@ -152,6 +161,7 @@ class Store:
         if not self.path.exists():
             self._create_database()
         with self.connection() as db:
+            validate_schema(db, SCHEMA_VERSION)
             enable_wal(db)
 
     def _create_database(self) -> None:
@@ -169,7 +179,7 @@ class Store:
                     create_schema(db)
                     secure_fts(db)
             sync_file_and_parent(temporary)
-            os.link(temporary, self.path)
+            publish_new(temporary, self.path)
             sync_directory(self.directory)
         finally:
             temporary.unlink(missing_ok=True)
@@ -224,13 +234,6 @@ class Store:
         if not projects:
             return " AND 0", []
         return f" AND m.project IN ({','.join('?' for _ in projects)})", list(projects)
-
-    @staticmethod
-    def _record(row: sqlite3.Row) -> dict:
-        record = dict(row)
-        record.pop("identity_key", None)
-        record.pop("digest", None)
-        return record
 
     def remember(
         self,
@@ -364,14 +367,8 @@ class Store:
                 ),
             )
             if existing:
-                fts_row = db.execute(
-                    "SELECT fts_rowid FROM memory_fts_rows WHERE memory_id=?", (memory_id,)
-                ).fetchone()
-                if fts_row is None:
-                    raise IntegrityError(
-                        "The derived full-text index mapping is incomplete; run setup."
-                    )
-                db.execute("DELETE FROM memory_fts WHERE rowid=?", (fts_row["fts_rowid"],))
+                # A derived rowid mapping cannot authorize deletion of another memory's text.
+                db.execute("DELETE FROM memory_fts WHERE memory_id=?", (memory_id,))
             inserted = db.execute(
                 "INSERT INTO memory_fts(memory_id,title,content) VALUES (?,?,?)",
                 (memory_id, title, content),
@@ -406,7 +403,7 @@ class Store:
             ).fetchone()
         if row is None:
             raise NotFoundError("Memory is not available.")
-        return self._record(row)
+        return dict(row)
 
     def search(
         self,
@@ -418,9 +415,7 @@ class Store:
     ) -> list[dict]:
         validate_text(query, "query", 2000)
         validate_integer(limit, "limit", maximum=50)
-        terms = list(dict.fromkeys(re.findall(r"[^\W_]+", unicodedata.normalize("NFC", query))))
-        if len(terms) > 32:
-            raise InputError("query must contain at most 32 distinct full-text terms.")
+        terms = fulltext_terms(query)[:32]
         if not terms:
             return []
         expression = " OR ".join('"' + term + '"' for term in terms)
@@ -436,7 +431,7 @@ class Store:
                 "WHERE memory_fts MATCH ?" + clause + " ORDER BY rank,m.id LIMIT ?",
                 [expression, *args, limit],
             ).fetchall()
-        return [self._record(row) for row in rows]
+        return [dict(row) for row in rows]
 
     def forget(
         self,
@@ -454,8 +449,8 @@ class Store:
             self.ensure_writable()
             secure_fts(db)
             row = db.execute(
-                "SELECT m.project,m.identity_key,m.current_revision,f.fts_rowid FROM memories m "
-                "LEFT JOIN memory_fts_rows f ON f.memory_id=m.id WHERE m.id=?" + clause,
+                "SELECT m.project,m.identity_key,m.current_revision FROM memories m "
+                "WHERE m.id=?" + clause,
                 [memory_id, *args],
             ).fetchone()
             if row is None:
@@ -466,18 +461,14 @@ class Store:
                 "INSERT OR IGNORE INTO scoped_suppressions VALUES (?,?,?,?,?)",
                 (row["project"], row["identity_key"], expected_revision, writer_principal, now()),
             )
-            if row["fts_rowid"] is None:
-                raise IntegrityError(
-                    "The derived full-text index mapping is incomplete; run setup."
-                )
-            db.execute("DELETE FROM memory_fts WHERE rowid=?", (row["fts_rowid"],))
+            db.execute("DELETE FROM memory_fts WHERE memory_id=?", (memory_id,))
             db.execute("DELETE FROM memories WHERE id=?", (memory_id,))
         return {"deleted": True, "reimport_suppressed": True}
 
     def ensure_writable(self) -> None:
         # Check after acquiring the SQLite writer lock: a recovery cutover may
         # have disabled this store while this request was waiting for that lock.
-        if (self.directory / "disabled.json").exists():
+        if marker_path(self).exists():
             raise StoreDisabledError(
                 "This installation is disabled; memory writes are unavailable."
             )
@@ -517,4 +508,4 @@ class Store:
                 args,
             )
             for row in rows:
-                yield self._record(row)
+                yield dict(row)

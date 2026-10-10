@@ -66,7 +66,7 @@ def providers() -> dict:
             "state": "blocked",
             "reason": "OAuth is available; public ingress and web-app setup are not automated.",
         },
-        "capture": "not_implemented",
+        "capture": "not_enabled_by_connection",
     }
 
 
@@ -316,7 +316,7 @@ def _connect_client(store, *, provider, config, connection, projects):
         "configuration_changed": changed,
         "read": check["read"],
         "write": check["write"],
-        "capture": "not_implemented",
+        "capture": "not_enabled_by_connection",
         "application_activation": "not_verified",
         "secret_isolation": False,
         "memory_host": "this_machine" if local else "existing_remote_connection",

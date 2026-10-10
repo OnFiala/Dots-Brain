@@ -19,7 +19,7 @@ from . import __version__
 from .auth import authenticate, issue_client, read_connection, revoke_client
 from .bridge import verify_connection
 from .errors import InputError, StateError, StoreDisabledError
-from .installation_state import resume_uninstalled
+from .installation_state import marker_path, resume_uninstalled
 from .local import lock_status, locked, read_json, write_json
 from .store import Store
 
@@ -285,7 +285,7 @@ def serve_locks(store: Store, *, http: bool):
 
 
 def ensure_enabled(store: Store) -> None:
-    if (store.directory / "disabled.json").exists():
+    if marker_path(store).exists():
         raise StoreDisabledError(
             "This installation is disabled. Inspect its recovery or removal state."
         )

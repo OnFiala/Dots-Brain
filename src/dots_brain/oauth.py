@@ -29,6 +29,7 @@ from pydantic import AnyHttpUrl
 
 from .auth import MEMORY_SCOPES, SCOPES, Policy, validate_endpoint
 from .errors import InputError, StateError
+from .installation_state import marker_path
 from .local import read_json, sync_directory, write_json
 from .store import Store, normalize_projects
 
@@ -249,9 +250,10 @@ class OAuthStore:
 
     def enabled(self) -> bool:
         try:
-            return not (self.store.directory / "disabled.json").exists() and configuration(
-                self.store
-            ) == {"version": 1, "issuer": self.issuer}
+            return not marker_path(self.store).exists() and configuration(self.store) == {
+                "version": 1,
+                "issuer": self.issuer,
+            }
         except (InputError, StateError, OSError, ValueError):
             return False
 

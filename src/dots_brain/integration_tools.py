@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 import uuid
 from dataclasses import replace
+from pathlib import Path
 from typing import Annotated, Any, Literal
 
 from mcp.types import ToolAnnotations
@@ -293,7 +294,6 @@ def register_tools(
 
 def load_cortex(store):
     """Load private connection references; this does not contact CORTEX or read its token."""
-    from pathlib import Path
 
     from .cortex_connector import CortexConnectionConfig, CortexConnector, SqliteCortexLedger
     from .local import read_json

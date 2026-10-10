@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import errno
 import fcntl
 import json
 import os
@@ -10,7 +11,20 @@ import tempfile
 import time
 from pathlib import Path
 
-from .errors import BusyError, InputError
+from .errors import BusyError, CapabilityError, InputError
+
+
+def publish_new(temporary: Path, target: Path) -> None:
+    """Publish a complete file without replacing a concurrent writer's output."""
+    try:
+        os.link(temporary, target)
+    except OSError as exc:
+        if exc.errno in {errno.EPERM, errno.ENOTSUP, errno.EOPNOTSUPP, errno.EXDEV}:
+            raise CapabilityError(
+                "Atomic publication requires hard links on the destination filesystem. "
+                "Use a local POSIX filesystem for the database, backup or export."
+            ) from None
+        raise
 
 
 def lock_status(path: Path) -> dict:

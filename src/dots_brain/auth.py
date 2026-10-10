@@ -1,4 +1,4 @@
-"""Scoped local credentials. This module is not an OAuth server or a secret vault."""
+"""Local credential files and the HTTP boundary for static and OAuth grants."""
 
 from __future__ import annotations
 
@@ -16,7 +16,8 @@ from urllib.parse import urlsplit
 import anyio
 
 from .errors import ForbiddenError, InputError
-from .local import sync_directory
+from .installation_state import marker_path
+from .local import publish_new, sync_directory
 from .store import Store, normalize_projects, validate_identifier, validate_integer
 
 MEMORY_SCOPES = frozenset({"memory:read", "memory:write", "memory:forget"})
@@ -66,6 +67,7 @@ def issue_client(
     output: Path,
     url: str,
 ) -> dict:
+    store.ensure_writable()
     validate_identifier(name, "name", 200)
     if not scopes or not set(scopes) <= SCOPES:
         raise InputError("Choose explicitly supported memory, audit, or CORTEX scopes.")
@@ -87,9 +89,10 @@ def issue_client(
             json.dump(payload, stream)
             stream.flush()
             os.fsync(stream.fileno())
-        os.link(temporary, output)
+        publish_new(Path(temporary), output)
         sync_directory(output.parent)
         with store.connection(write=True) as db:
+            store.ensure_writable()
             db.execute(
                 "INSERT INTO clients VALUES (?,?,?,?,?,?,0)",
                 (
@@ -104,7 +107,13 @@ def issue_client(
     except FileExistsError as exc:
         raise InputError("Credential output already exists; it was preserved.") from exc
     except BaseException:
-        output.unlink(missing_ok=True)
+        try:
+            published = output.stat(follow_symlinks=False)
+            prepared = Path(temporary).stat()
+            if (published.st_dev, published.st_ino) == (prepared.st_dev, prepared.st_ino):
+                output.unlink()
+        except FileNotFoundError:
+            pass
         raise
     finally:
         Path(temporary).unlink(missing_ok=True)
@@ -120,7 +129,7 @@ def issue_client(
 
 
 def authenticate(store: Store, token: str) -> Policy | None:
-    if (store.directory / "disabled.json").exists():
+    if marker_path(store).exists():
         return None
     if len(token) > 1024:
         return None

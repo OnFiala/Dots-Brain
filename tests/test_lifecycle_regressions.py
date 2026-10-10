@@ -1,5 +1,5 @@
 import json
-import time
+import threading
 from argparse import Namespace
 
 import pytest
@@ -103,18 +103,14 @@ def test_preflight_parser_exposes_optional_policy_and_run_rejects_unknown_comman
 
 def test_background_reaper_waits_for_the_managed_child():
     class Process:
-        waited = False
+        waited = threading.Event()
 
         def wait(self):
-            self.waited = True
+            self.waited.set()
 
     process = Process()
     schedule_reap(process)
-    for _ in range(100):
-        if process.waited:
-            break
-        time.sleep(0.001)
-    assert process.waited
+    assert process.waited.wait(timeout=5)
 
 
 def test_normalized_client_path_has_one_registration_identity(tmp_path):

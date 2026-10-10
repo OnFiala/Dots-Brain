@@ -68,10 +68,6 @@ class AuditContinuityError(ReviewError):
     code = "audit_continuity_failure"
 
 
-class AuditTransportError(ReviewError):
-    code = "audit_transport_failure"
-
-
 def canonical(value):
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
@@ -569,9 +565,6 @@ def main():
 if __name__ == "__main__":
     try:
         main()
-    except AuditTransportError as error:
-        print(canonical({"state": "incomplete", "error_code": error.code}))
-        raise SystemExit(1) from None
     except (OSError, subprocess.SubprocessError):
         print(canonical({"state": "incomplete", "error_code": "audit_transport_failure"}))
         raise SystemExit(1) from None

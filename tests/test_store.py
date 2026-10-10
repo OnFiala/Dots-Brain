@@ -125,21 +125,19 @@ def test_journal_mode_contention_has_a_deadline_and_can_resume(tmp_path, monkeyp
 
     memory = Store(tmp_path / "contended")
     memory.initialize()
+    saved = remember(memory, content="preserve me")
     with closing(sqlite3.connect(memory.path)) as reader, reader:
         reader.execute("PRAGMA journal_mode=DELETE")
-        reader.execute("CREATE TABLE existing_data (value TEXT)")
-        reader.execute("INSERT INTO existing_data VALUES ('preserve me')")
-        reader.commit()
         reader.execute("BEGIN")
-        reader.execute("SELECT * FROM existing_data").fetchall()
+        reader.execute("SELECT * FROM revisions").fetchall()
         monkeypatch.setattr(store_module, "WAL_LOCK_TIMEOUT", 0.05)
         with pytest.raises(sqlite3.OperationalError, match="locked"):
             memory.initialize()
         reader.rollback()
     memory.initialize()
-    assert memory.status()["memories"] == 0
+    assert memory.status()["memories"] == 1
+    assert memory.get(saved["id"])["content"] == "preserve me"
     with memory.connection() as db:
-        assert db.execute("SELECT value FROM existing_data").fetchone()[0] == "preserve me"
         assert db.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
 
 
@@ -148,17 +146,15 @@ def test_journal_mode_retries_a_temporary_reader_lock(tmp_path):
 
     memory = Store(tmp_path / "temporary-lock")
     memory.initialize()
+    saved = remember(memory, content="preserve me")
     with (
         closing(sqlite3.connect(memory.path)) as reader,
         reader,
         ThreadPoolExecutor(max_workers=1) as executor,
     ):
         reader.execute("PRAGMA journal_mode=DELETE")
-        reader.execute("CREATE TABLE existing_data (value TEXT)")
-        reader.execute("INSERT INTO existing_data VALUES ('preserve me')")
-        reader.commit()
         reader.execute("BEGIN")
-        reader.execute("SELECT * FROM existing_data").fetchall()
+        reader.execute("SELECT * FROM revisions").fetchall()
         future = executor.submit(memory.initialize)
         try:
             with pytest.raises(TimeoutError):
@@ -166,7 +162,8 @@ def test_journal_mode_retries_a_temporary_reader_lock(tmp_path):
         finally:
             reader.rollback()
         future.result(timeout=5)
-    assert memory.status()["memories"] == 0
+    assert memory.status()["memories"] == 1
+    assert memory.get(saved["id"])["content"] == "preserve me"
 
 
 def test_search_handles_czech_and_query_syntax_without_sql_execution(store):

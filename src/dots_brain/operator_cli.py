@@ -10,7 +10,8 @@ from pathlib import Path
 
 from . import __version__
 from .errors import BrainError, InputError, StateError
-from .local import locked, read_json, sync_directory
+from .installation_state import marker_path
+from .local import locked, publish_new, read_json, sync_directory
 from .protocol import safe_error
 
 
@@ -73,7 +74,7 @@ def run_oauth(store, args):
         return {
             "state": "configured" if config else "not_configured",
             "issuer": config["issuer"] if config else None,
-            "service_disabled": (store.directory / "disabled.json").exists(),
+            "service_disabled": marker_path(store).exists(),
             "public_ingress": "not_verified",
             "secret_isolation": False,
         }
@@ -125,12 +126,19 @@ def run_oauth(store, args):
 
 def doctor(store):
     """Return independent diagnoses, including an unreadable or older database."""
+    from .database_checks import validate_snapshot
     from .oauth import configuration
     from .runtime import managed_status
+    from .schema import SCHEMA_VERSION
+
+    def database():
+        with store.connection() as db:
+            validate_snapshot(db, SCHEMA_VERSION)
+        return store.status()
 
     checks = {}
     for name, probe in {
-        "database": store.status,
+        "database": database,
         "oauth": lambda: {"state": "configured" if configuration(store) else "not_configured"},
         "managed_service": lambda: managed_status(store),
     }.items():
@@ -142,10 +150,10 @@ def doctor(store):
     blocked = any(value.get("state") == "error" for value in checks.values())
     return {
         "state": "diagnosis_completed",
-        "healthy": not blocked and not (store.directory / "disabled.json").exists(),
+        "healthy": not blocked and not marker_path(store).exists(),
         "version": __version__,
         "sqlite_version": sqlite3.sqlite_version,
-        "service_disabled": (store.directory / "disabled.json").exists(),
+        "service_disabled": marker_path(store).exists(),
         "checks": checks,
         "vm_persistence": "not_verified",
         "public_ingress": "not_verified",
@@ -167,7 +175,7 @@ def export_store(store, output: Path):
                 count += 1
             stream.flush()
             os.fsync(stream.fileno())
-        os.link(temporary, output)
+        publish_new(Path(temporary), output)
         sync_directory(output.parent)
     finally:
         Path(temporary).unlink(missing_ok=True)

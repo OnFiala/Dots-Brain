@@ -10,7 +10,7 @@ from pathlib import Path
 
 from .database_checks import validate_snapshot
 from .errors import InputError
-from .local import sync_file_and_parent
+from .local import publish_new, sync_file_and_parent
 
 
 def open_readonly(path: Path, *, immutable: bool = False) -> sqlite3.Connection:
@@ -36,7 +36,7 @@ def snapshot(source: sqlite3.Connection, output: Path, version: int) -> Path:
             target.execute("PRAGMA journal_mode=DELETE")
         sync_file_and_parent(temporary)
         try:
-            os.link(temporary, output)  # Atomic no-clobber publication on the same filesystem.
+            publish_new(temporary, output)
         except FileExistsError:
             raise InputError("Backup already exists; choose a new output path.") from None
         sync_file_and_parent(output)

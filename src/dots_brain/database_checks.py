@@ -3,9 +3,12 @@
 import sqlite3
 
 from .errors import IntegrityError
+from .schema import SCHEMA_VERSION, validate_schema
 
 
 def validate_snapshot(db: sqlite3.Connection, version: int) -> dict[str, int]:
+    if version == SCHEMA_VERSION:
+        validate_schema(db, version)
     if db.execute("PRAGMA user_version").fetchone()[0] != version:
         raise IntegrityError("Database schema does not match the requested recovery operation.")
     if db.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
@@ -30,7 +33,17 @@ def validate_snapshot(db: sqlite3.Connection, version: int) -> dict[str, int]:
         raise IntegrityError("Memory revision counts are inconsistent.")
     tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     # Derived indexes can be rebuilt and must not block migration of canonical records.
-    tracked = {"memories", "revisions", "vectors", "suppressions", "clients"}
+    tracked = tables & {
+        "memories",
+        "revisions",
+        "vectors",
+        "suppressions",
+        "scoped_suppressions",
+        "clients",
+        "audit_events",
+        "cortex_operations",
+        "semantic_chunks",
+    }
     tracked.update(table for table in tables if table.startswith("oauth_"))
     return {
         table: db.execute('SELECT COUNT(*) FROM "' + table.replace('"', '""') + '"').fetchone()[0]

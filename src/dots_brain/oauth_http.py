@@ -23,7 +23,6 @@ from mcp.server.auth.routes import (
 from mcp.server.auth.settings import ClientRegistrationOptions, RevocationOptions
 from mcp.server.transport_security import RequestBodyLimitMiddleware
 from pydantic import AnyHttpUrl
-from pydantic_core import PydanticSerializationError
 from starlette.formparsers import MultiPartException
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette.requests import Request
@@ -114,7 +113,7 @@ def routes_app(state: OAuthStore):
             )
         try:
             response = await RegistrationHandler(provider, registration_options).handle(request)
-        except (InputError, ValueError, TypeError, RecursionError, PydanticSerializationError):
+        except (InputError, ValueError, TypeError, RecursionError):
             return JSONResponse(
                 {"error": "invalid_client_metadata"}, status_code=400, headers=NO_STORE
             )
@@ -364,7 +363,6 @@ def routes_app(state: OAuthStore):
             ValueError,
             TypeError,
             RecursionError,
-            PydanticSerializationError,
             MultiPartException,
         ):
             if not started:

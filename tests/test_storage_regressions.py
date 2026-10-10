@@ -135,30 +135,55 @@ def test_backup_is_standalone_and_restore_does_not_modify_it(store, tmp_path):
     assert not list(tmp_path.glob("backup.sqlite3-*"))
 
 
-def test_backup_is_consistent_while_a_wal_writer_holds_an_uncommitted_change(store, tmp_path):
+def test_backup_rejects_incomplete_current_schema_before_publication(store, tmp_path):
     with store.connection(write=True) as db:
-        db.execute("CREATE TABLE writer_probe(value TEXT NOT NULL)")
+        db.execute("DROP TABLE oauth_codes")
+    output = tmp_path / "incomplete.sqlite3"
+    with pytest.raises(BrainError):
+        backup_store(store, output)
+    assert not output.exists()
+    assert not list(tmp_path.glob("*.partial*"))
+
+
+def test_restore_rejects_incomplete_current_schema_without_creating_target(store, tmp_path):
+    output = tmp_path / "complete.sqlite3"
+    backup_store(store, output)
+    with closing(sqlite3.connect(output)) as db:
+        db.execute("DROP TABLE oauth_codes")
+        db.commit()
+    target = Store(tmp_path / "restore")
+    with pytest.raises(BrainError):
+        restore_store(output, target, latest_deletions=store)
+    assert not target.directory.exists()
+
+
+def test_backup_is_consistent_while_a_wal_writer_holds_an_uncommitted_change(store, tmp_path):
+    record = put(store, title="committed")
     writer_ready = threading.Event()
     release_writer = threading.Event()
 
     def writer():
         with store.connection(write=True) as db:
-            db.execute("INSERT INTO writer_probe VALUES ('uncommitted')")
+            db.execute(
+                "UPDATE revisions SET title='uncommitted' WHERE memory_id=?", (record["id"],)
+            )
             writer_ready.set()
             assert release_writer.wait(timeout=5)
 
     active = threading.Thread(target=writer)
     active.start()
     assert writer_ready.wait(timeout=5)
-    snapshot = tmp_path / "live-wal.sqlite3"
-    assert backup_store(store, snapshot)["state"] == "verified_backup"
-    with closing(sqlite3.connect(snapshot)) as db:
-        assert db.execute("SELECT COUNT(*) FROM writer_probe").fetchone()[0] == 0
-    release_writer.set()
-    active.join(timeout=5)
+    try:
+        snapshot = tmp_path / "live-wal.sqlite3"
+        assert backup_store(store, snapshot)["state"] == "verified_backup"
+        with closing(sqlite3.connect(snapshot)) as db:
+            assert db.execute("SELECT title FROM revisions").fetchone()[0] == "committed"
+    finally:
+        release_writer.set()
+        active.join(timeout=5)
     assert not active.is_alive()
     with store.connection() as db:
-        assert db.execute("SELECT COUNT(*) FROM writer_probe").fetchone()[0] == 1
+        assert db.execute("SELECT title FROM revisions").fetchone()[0] == "uncommitted"
 
 
 @pytest.mark.parametrize("name", ["my#backup.sqlite3", "what?backup.sqlite3", "percent%25.sqlite3"])
@@ -255,3 +280,120 @@ def test_current_schema_rejects_a_missing_application_id(tmp_path):
         db.execute("PRAGMA application_id=0")
     with pytest.raises(IntegrityError, match="another application"):
         store.initialize()
+
+
+@pytest.mark.parametrize("operation", ["setup", "backup", "export", "credential"])
+def test_unsupported_hard_links_report_capability_without_partial_output(
+    store, tmp_path, monkeypatch, operation
+):
+    import errno
+
+    from dots_brain.auth import issue_client
+    from dots_brain.errors import CapabilityError
+    from dots_brain.operator_cli import export_store
+
+    destination = tmp_path / "output"
+
+    def unsupported(*args, **kwargs):
+        raise OSError(errno.ENOTSUP, "synthetic unsupported filesystem")
+
+    monkeypatch.setattr(os, "link", unsupported)
+    with pytest.raises(CapabilityError, match="hard links"):
+        if operation == "setup":
+            Store(destination).initialize()
+        elif operation == "backup":
+            backup_store(store, destination)
+        elif operation == "export":
+            export_store(store, destination)
+        else:
+            issue_client(
+                store,
+                name="test",
+                scopes=["memory:read"],
+                projects=None,
+                days=1,
+                output=destination,
+                url="http://127.0.0.1:8765/mcp",
+            )
+    assert not (destination / "brain.sqlite3").exists()
+    assert not destination.is_file()
+    assert not list(tmp_path.rglob("*.partial"))
+    with store.connection() as db:
+        assert db.execute("SELECT COUNT(*) FROM clients").fetchone()[0] == 0
+
+
+def test_doctor_detects_current_schema_damage_without_repairing(store):
+    from dots_brain.operator_cli import doctor
+
+    with store.connection(write=True) as db:
+        db.execute("DROP TABLE oauth_codes")
+    before = store.path.read_bytes()
+    result = doctor(store)
+    assert result["healthy"] is False
+    assert result["checks"]["database"]["error"]["code"] == "integrity_error"
+    assert store.path.read_bytes() == before
+    with pytest.raises(IntegrityError):
+        store.initialize()
+    assert store.path.read_bytes() == before
+
+
+@pytest.mark.parametrize("operation", ["credential", "cortex"])
+def test_disabled_store_refuses_new_credentials_and_connector_config(store, tmp_path, operation):
+    from dots_brain.auth import issue_client
+    from dots_brain.errors import StoreDisabledError
+    from dots_brain.local import write_json
+    from dots_brain.operations import configure_cortex
+
+    write_json(store.directory / "disabled.json", {"reason": "synthetic stop"})
+    output = tmp_path / "client.json"
+    with pytest.raises(StoreDisabledError):
+        if operation == "credential":
+            issue_client(
+                store,
+                name="test",
+                scopes=["memory:read"],
+                projects=None,
+                days=1,
+                output=output,
+                url="http://127.0.0.1:8765/mcp",
+            )
+        else:
+            configure_cortex(
+                store,
+                endpoint="https://example.test/mcp",
+                token_file=tmp_path / "token",
+                projects=["shared=shared"],
+            )
+    assert not output.exists()
+    assert not (store.directory / "cortex.json").exists()
+    with store.connection() as db:
+        assert db.execute("SELECT COUNT(*) FROM clients").fetchone()[0] == 0
+
+
+def test_failed_credential_publication_preserves_concurrent_replacement(
+    store, tmp_path, monkeypatch
+):
+    from dots_brain.auth import issue_client
+
+    output = tmp_path / "client.json"
+
+    def replaced(temporary, target):
+        os.link(temporary, target)
+        target.unlink()
+        target.write_text("another writer's output")
+        raise OSError("synthetic publication failure")
+
+    monkeypatch.setattr("dots_brain.auth.publish_new", replaced)
+    with pytest.raises(OSError, match="synthetic publication failure"):
+        issue_client(
+            store,
+            name="test",
+            scopes=["memory:read"],
+            projects=None,
+            days=1,
+            output=output,
+            url="http://127.0.0.1:8765/mcp",
+        )
+    assert output.read_text() == "another writer's output"
+    with store.connection() as db:
+        assert db.execute("SELECT COUNT(*) FROM clients").fetchone()[0] == 0

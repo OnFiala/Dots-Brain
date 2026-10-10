@@ -1,4 +1,4 @@
-"""Append-only, scoped audit metadata stored beside the memory database."""
+"""Append-only, scoped audit metadata stored in the canonical memory database."""
 
 from __future__ import annotations
 

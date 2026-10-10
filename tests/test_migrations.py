@@ -149,3 +149,25 @@ def test_migration_rejects_missing_current_revision(tmp_path):
         migrate_store(store, apply=True, stop_guard=lambda: None)
     with closing(sqlite3.connect(store.path)) as db, db:
         assert db.execute("PRAGMA user_version").fetchone()[0] == 1
+
+
+def test_checkpoint_failure_does_not_hide_a_committed_migration(tmp_path, monkeypatch):
+    store = legacy_store(tmp_path)
+    connect = sqlite3.connect
+
+    class DeferredCheckpoint(sqlite3.Connection):
+        def execute(self, sql, *args, **kwargs):
+            if sql == "PRAGMA wal_checkpoint(TRUNCATE)":
+                raise sqlite3.OperationalError("synthetic checkpoint failure")
+            return super().execute(sql, *args, **kwargs)
+
+    monkeypatch.setattr(
+        sqlite3,
+        "connect",
+        lambda *args, **kwargs: connect(*args, **kwargs, factory=DeferredCheckpoint),
+    )
+    result = migrate_store(store, apply=True, stop_guard=lambda: None)
+    assert result["state"] == "migrated"
+    assert result["wal_checkpoint"] == "deferred"
+    assert store.get(LEGACY_ID)["revision"] == 2
+    assert migrate_store(store, apply=False)["state"] == "already_current"

@@ -75,25 +75,26 @@ def test_cortex_ledger_does_not_block_event_loop():
         def require(self, scope):
             assert scope == "cortex:write"
 
+    entered, release, finished = threading.Event(), threading.Event(), threading.Event()
+
     class SlowLedger:
         def __init__(self):
             self.row = None
 
         def get(self, operation_id):
-            time.sleep(0.25)
+            entered.set()
+            release.wait(timeout=5)
+            finished.set()
             return self.row
 
         def create_planned(self, record):
-            time.sleep(0.25)
             self.row = {**record, "state": "planned", "receipt_json": None}
 
         def claim_sending(self, operation_id, request_digest):
-            time.sleep(0.25)
             self.row["state"] = "sending"
             return True
 
         def mark_acknowledged(self, operation_id, *, receipt, upstream_object_id):
-            time.sleep(0.25)
             self.row.update(
                 state="acknowledged",
                 receipt_json='{"event_id":"synthetic"}',
@@ -130,9 +131,11 @@ def test_cortex_ledger_does_not_block_event_loop():
                 title="Synthetic",
             )
         )
-        started = time.monotonic()
-        await asyncio.sleep(0.05)
-        assert time.monotonic() - started < 0.15
-        await write
+        try:
+            assert await asyncio.to_thread(entered.wait, 2)
+            assert not finished.is_set(), "The synchronous ledger blocked the event loop"
+        finally:
+            release.set()
+            await write
 
     asyncio.run(exercise())

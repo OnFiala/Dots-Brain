@@ -7,6 +7,8 @@ import logging
 import os
 import tempfile
 import threading
+import time
+from itertools import islice
 from pathlib import Path
 from urllib.request import Request, urlopen
 
@@ -18,6 +20,9 @@ logger = logging.getLogger(__name__)
 MIN_SEMANTIC_SCORE = 0.20
 MAX_CHUNKS_PER_MEMORY = 128
 MAX_QUERY_CHUNKS = 16
+FAILED_RETRY_DELAY_SECONDS = 30
+MODEL_VECTOR_DIMENSION = 384
+REPAIR_SCAN_BATCH_SIZE = 4
 
 MODEL_NAME = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 MODEL_REPO = "qdrant/paraphrase-multilingual-MiniLM-L12-v2-onnx-Q"
@@ -128,7 +133,7 @@ class SemanticIndex:
             raise CapabilityError("Install the semantic extra to enable local embeddings.") from exc
         self.np = numpy
         self.store = store
-        self.lock = threading.Lock()
+        self.lock = threading.RLock()
         self.model = TextEmbedding(
             model_name=MODEL_NAME,
             cache_dir=str(directory),
@@ -137,15 +142,46 @@ class SemanticIndex:
             threads=2,
             providers=["CPUExecutionProvider"],
         )
-        from tokenizers import Tokenizer
+        # FastEmbed already owns the tokenizer used by its ONNX model.  Loading
+        # tokenizer.json again doubles a large native allocation on this model.
+        self.tokenizer = self.model.model.tokenizer
+        if self.tokenizer is None:
+            raise CapabilityError("The embedding model did not load its tokenizer.")
+        self._failed_retry_deadlines: dict[tuple[str, int], float] = {}
+        self._failed_cursor = ""
+        self._repair_cursor = ""
+        self._repair_requested: set[tuple[str, int]] = set()
 
-        self.tokenizer = Tokenizer.from_file(str(directory / "tokenizer.json"))
-        self.tokenizer.no_truncation()
-        self.tokenizer.no_padding()
+    def _vector_dimension(self) -> int:
+        return getattr(self, "vector_dimension", MODEL_VECTOR_DIMENSION)
+
+    def _valid_vector(self, vector: bytes | None, dimension: int | None) -> bool:
+        expected = self._vector_dimension()
+        if dimension != expected:
+            return False
+        try:
+            values = self.np.frombuffer(vector, dtype="<f4")
+        except (TypeError, ValueError):
+            return False
+        return len(values) == expected and self.np.isfinite(values).all()
+
+    def _encode_for_chunks(self, text: str, *, add_special_tokens: bool):
+        """Use FastEmbed's tokenizer without changing its embedding configuration."""
+        with self.lock:
+            truncation, padding = self.tokenizer.truncation, self.tokenizer.padding
+            self.tokenizer.no_truncation()
+            self.tokenizer.no_padding()
+            try:
+                return self.tokenizer.encode(text, add_special_tokens=add_special_tokens)
+            finally:
+                if truncation:
+                    self.tokenizer.enable_truncation(**truncation)
+                if padding:
+                    self.tokenizer.enable_padding(**padding)
 
     def _chunks(self, text: str) -> list[tuple[int, int]]:
         """Token offsets keep every passage within the model's 128-token limit."""
-        offsets = self.tokenizer.encode(text, add_special_tokens=False).offsets
+        offsets = self._encode_for_chunks(text, add_special_tokens=False).offsets
         if not offsets:
             return [(0, len(text))]
         chunks = []
@@ -159,28 +195,153 @@ class SemanticIndex:
         return chunks
 
     def _embed(self, text: str):
-        if len(self.tokenizer.encode(text, add_special_tokens=True).ids) > 128:
-            raise CapabilityError("The passage exceeds the embedding token limit.")
         with self.lock:
+            if len(self._encode_for_chunks(text, add_special_tokens=True).ids) > 128:
+                raise CapabilityError("The passage exceeds the embedding token limit.")
             vector = next(iter(self.model.embed([text]))).astype("<f4")
+        if vector.shape != (self._vector_dimension(),):
+            raise CapabilityError("The embedding model returned the wrong vector dimension.")
         norm = self.np.linalg.norm(vector)
-        if not self.np.isfinite(vector).all() or norm == 0:
+        if not self.np.isfinite(vector).all() or not self.np.isfinite(norm) or norm == 0:
             raise CapabilityError("The embedding model returned an invalid vector.")
         return vector / norm
 
-    def index(self, *, batch_size: int = 16) -> dict:
-        validate_integer(batch_size, "batch_size", maximum=128)
-        with self.store.connection() as db:
-            rows = db.execute(
-                "SELECT m.id,m.current_revision AS revision,r.title,r.content "
-                "FROM memories m JOIN revisions r "
-                "ON r.memory_id=m.id AND r.revision=m.current_revision WHERE NOT EXISTS "
-                "(SELECT 1 FROM semantic_chunks v WHERE v.memory_id=m.id AND v.model=? "
-                "AND v.revision=m.current_revision) AND NOT EXISTS "
-                "(SELECT 1 FROM semantic_state s WHERE s.memory_id=m.id AND s.model=? "
-                "AND s.revision=m.current_revision) ORDER BY m.id LIMIT ?",
-                (MODEL_ID, MODEL_ID, batch_size),
+    def _repair_candidates(self, db, *, limit: int) -> list:
+        """Bounded integrity sweep; background indexing never scans every vector."""
+        requested = getattr(self, "_repair_requested", set())
+        candidates = []
+        for memory_id, revision in list(islice(requested, limit)):
+            row = db.execute(
+                "SELECT m.id,m.current_revision AS revision,r.title,r.content,s.state "
+                "FROM memories m "
+                "JOIN revisions r ON r.memory_id=m.id AND r.revision=m.current_revision "
+                "JOIN semantic_state s ON s.memory_id=m.id AND s.model=? "
+                "AND s.revision=m.current_revision WHERE m.id=? AND s.state='indexed'",
+                (MODEL_ID, memory_id),
+            ).fetchone()
+            if row is not None and row["revision"] == revision:
+                candidates.append(row)
+            else:
+                requested.discard((memory_id, revision))
+        if len(candidates) == limit:
+            return candidates
+
+        cursor = getattr(self, "_repair_cursor", "")
+
+        def scan(after: str):
+            return db.execute(
+                "SELECT m.id,m.current_revision AS revision,r.title,r.content,s.state "
+                "FROM memories m "
+                "JOIN revisions r ON r.memory_id=m.id AND r.revision=m.current_revision "
+                "JOIN semantic_state s ON s.memory_id=m.id AND s.model=? "
+                "AND s.revision=m.current_revision WHERE s.state='indexed' AND m.id>? "
+                "ORDER BY m.id LIMIT ?",
+                (MODEL_ID, after, limit - len(candidates)),
             ).fetchall()
+
+        scanned = scan(cursor)
+        if not scanned and cursor:
+            scanned = scan("")
+        if scanned:
+            self._repair_cursor = scanned[-1]["id"]
+        for row in scanned:
+            if row["id"] in {candidate["id"] for candidate in candidates}:
+                continue
+            vectors = db.execute(
+                "SELECT dimension,vector FROM semantic_chunks WHERE memory_id=? AND model=? "
+                "AND revision=?",
+                (row["id"], MODEL_ID, row["revision"]),
+            ).fetchall()
+            invalid = not vectors or any(
+                not self._valid_vector(vector["vector"], vector["dimension"]) for vector in vectors
+            )
+            if invalid:
+                candidates.append(row)
+        return candidates
+
+    def _failed_candidates(
+        self, db, deadlines: dict[tuple[str, int], float], *, now: float, limit: int
+    ) -> list:
+        """Return due failures without letting deferred rows block new source work."""
+        candidates = []
+        seen = set()
+        # Rotate a bounded slice, including stale entries. A long failure backlog
+        # must not become one SQL lookup per failed memory on every idle tick.
+        for key in list(islice(deadlines, limit)):
+            deadline = deadlines.pop(key)
+            row = db.execute(
+                "SELECT m.id,m.current_revision AS revision,r.title,r.content,s.state "
+                "FROM memories m JOIN revisions r ON r.memory_id=m.id "
+                "AND r.revision=m.current_revision JOIN semantic_state s "
+                "ON s.memory_id=m.id AND s.model=? AND s.revision=m.current_revision "
+                "WHERE m.id=? AND s.state='failed'",
+                (MODEL_ID, key[0]),
+            ).fetchone()
+            if row is None or row["revision"] != key[1]:
+                continue
+            deadlines[key] = deadline
+            if deadline <= now:
+                candidates.append(row)
+                seen.add(key)
+
+        if len(candidates) == limit:
+            return candidates
+        cursor = getattr(self, "_failed_cursor", "")
+
+        def scan(after: str):
+            return db.execute(
+                "SELECT m.id,m.current_revision AS revision,r.title,r.content,s.state "
+                "FROM memories m JOIN revisions r ON r.memory_id=m.id "
+                "AND r.revision=m.current_revision JOIN semantic_state s "
+                "ON s.memory_id=m.id AND s.model=? AND s.revision=m.current_revision "
+                "WHERE s.state='failed' AND m.id>? ORDER BY m.id LIMIT ?",
+                (MODEL_ID, after, limit),
+            ).fetchall()
+
+        discovered = scan(cursor)
+        if not discovered and cursor:
+            discovered = scan("")
+        if discovered:
+            self._failed_cursor = discovered[-1]["id"]
+        for row in discovered:
+            key = (row["id"], row["revision"])
+            deadline = deadlines.setdefault(key, now)
+            if key not in seen and deadline <= now and len(candidates) < limit:
+                candidates.append(row)
+                seen.add(key)
+        return candidates
+
+    def index(self, *, batch_size: int = 16, summary: bool = True) -> dict:
+        validate_integer(batch_size, "batch_size", maximum=128)
+        self.store.ensure_writable()
+        now = time.monotonic()
+        deadlines = getattr(self, "_failed_retry_deadlines", None)
+        if deadlines is None:
+            deadlines = self._failed_retry_deadlines = {}
+        with self.store.connection() as db:
+            # This bounded query is the source-of-truth change detector.  Do not
+            # collapse it to an aggregate: a same-size revision-one replacement
+            # has the same count and revision sum, but still needs indexing.
+            rows = db.execute(
+                "SELECT m.id,m.current_revision AS revision,r.title,r.content,s.state "
+                "FROM memories m JOIN revisions r ON r.memory_id=m.id "
+                "AND r.revision=m.current_revision LEFT JOIN semantic_state s "
+                "ON s.memory_id=m.id AND s.model=? AND s.revision=m.current_revision "
+                "WHERE s.state IS NULL ORDER BY m.id LIMIT ?",
+                (MODEL_ID, batch_size),
+            ).fetchall()
+            known = {(row["id"], row["revision"]) for row in rows}
+            if len(rows) < batch_size:
+                failed = self._failed_candidates(
+                    db, deadlines, now=now, limit=batch_size - len(rows)
+                )
+                rows.extend(row for row in failed if (row["id"], row["revision"]) not in known)
+                known.update((row["id"], row["revision"]) for row in rows)
+            if len(rows) < batch_size:
+                repair = self._repair_candidates(
+                    db, limit=min(REPAIR_SCAN_BATCH_SIZE, batch_size - len(rows))
+                )
+                rows.extend(row for row in repair if (row["id"], row["revision"]) not in known)
         indexed = 0
         for row in rows:
             failed = False
@@ -197,20 +358,19 @@ class SemanticIndex:
                     for field, start, end in passages[:MAX_CHUNKS_PER_MEMORY]
                 ]
             except Exception as exc:
-                # Record a terminal attempt for this revision; explicit retry or a
-                # new revision can try again without starving subsequent memories.
+                # Retain the failed state for truthful status, then retry it after
+                # a bounded in-process delay without starving later memories.
                 logger.warning("Embedding failed exception_type=%s", type(exc).__name__)
                 chunks, truncated, failed = [], False, True
             with self.store.connection(write=True) as db:
+                self.store.ensure_writable()
                 current = db.execute(
                     "SELECT current_revision AS revision FROM memories WHERE id=?", (row["id"],)
                 ).fetchone()
                 if current is None or current["revision"] != row["revision"]:
+                    deadlines.pop((row["id"], row["revision"]), None)
                     continue
-                db.execute(
-                    "DELETE FROM semantic_chunks WHERE memory_id=?",
-                    (row["id"],),
-                )
+                db.execute("DELETE FROM semantic_chunks WHERE memory_id=?", (row["id"],))
                 db.executemany(
                     "INSERT INTO semantic_chunks VALUES (?,?,?,?,?,?,?,?,?)",
                     [
@@ -230,9 +390,8 @@ class SemanticIndex:
                 )
                 db.execute(
                     "INSERT INTO semantic_state(memory_id,model,revision,state,truncated) "
-                    "VALUES (?,?,?,?,?) "
-                    "ON CONFLICT(memory_id,model) DO UPDATE SET revision=excluded.revision,"
-                    "state=excluded.state,truncated=excluded.truncated",
+                    "VALUES (?,?,?,?,?) ON CONFLICT(memory_id,model) DO UPDATE SET "
+                    "revision=excluded.revision,state=excluded.state,truncated=excluded.truncated",
                     (
                         row["id"],
                         MODEL_ID,
@@ -242,15 +401,24 @@ class SemanticIndex:
                     ),
                 )
                 indexed += int(bool(chunks))
-        return {"indexed_now": indexed, "examined": len(rows), **self.status()}
+                key = (row["id"], row["revision"])
+                if failed:
+                    deadlines[key] = time.monotonic() + FAILED_RETRY_DELAY_SECONDS
+                else:
+                    deadlines.pop(key, None)
+                    getattr(self, "_repair_requested", set()).discard(key)
+        result = {"indexed_now": indexed, "examined": len(rows)}
+        return {**result, **self.status()} if summary else result
 
     def retry_failed(self) -> int:
         """Operator-requested retry; keep successful and older model indexes intact."""
         with self.store.connection(write=True) as db:
             self.store.ensure_writable()
-            return db.execute(
+            retried = db.execute(
                 "DELETE FROM semantic_state WHERE model=? AND state='failed'", (MODEL_ID,)
             ).rowcount
+        getattr(self, "_failed_retry_deadlines", {}).clear()
+        return retried
 
     def status(self, *, projects: tuple[str, ...] | None = None) -> dict:
         clause, args = self.store._filter(projects)
@@ -259,12 +427,13 @@ class SemanticIndex:
                 "SELECT COUNT(*) FROM memories m WHERE 1" + clause,
                 args,
             ).fetchone()[0]
-            indexed = db.execute(
-                "SELECT COUNT(DISTINCT m.id) FROM memories m "
-                "JOIN semantic_chunks v ON v.memory_id=m.id "
-                "AND v.revision=m.current_revision WHERE v.model=?" + clause,
+            indexed_rows = db.execute(
+                "SELECT m.id,m.current_revision AS revision,v.dimension,v.vector FROM memories m "
+                "JOIN semantic_state s ON s.memory_id=m.id AND s.model=? "
+                "AND s.revision=m.current_revision JOIN semantic_chunks v ON v.memory_id=m.id "
+                "AND v.model=s.model AND v.revision=s.revision WHERE s.state='indexed'" + clause,
                 [MODEL_ID, *args],
-            ).fetchone()[0]
+            ).fetchall()
             attempts = db.execute(
                 "SELECT s.state,COUNT(*),SUM(s.truncated) FROM semantic_state s "
                 "JOIN memories m ON m.id=s.memory_id AND m.current_revision=s.revision "
@@ -273,6 +442,14 @@ class SemanticIndex:
             ).fetchall()
         counts = {row[0]: row[1] for row in attempts}
         failed, empty = counts.get("failed", 0), counts.get("empty", 0)
+        indexed_ids = {row["id"] for row in indexed_rows}
+        invalid_ids = {
+            row["id"]
+            for row in indexed_rows
+            if not self._valid_vector(row["vector"], row["dimension"])
+        }
+        indexed = len(indexed_ids - invalid_ids)
+        repair_pending = max(0, counts.get("indexed", 0) - indexed)
         truncated = sum(row[2] for row in attempts)
         pending = max(0, count - indexed - failed - empty)
         return {
@@ -282,6 +459,7 @@ class SemanticIndex:
             "pending": pending,
             "failed": failed,
             "empty": empty,
+            "repair_pending": repair_pending,
             "truncated": truncated,
             "inference": "local_cpu",
         }
@@ -299,9 +477,14 @@ class SemanticIndex:
         vectors = [
             self._embed(query[start:end]) for start, end in self._chunks(query)[:MAX_QUERY_CHUNKS]
         ]
+        if not vectors or any(len(vector) != self._vector_dimension() for vector in vectors):
+            raise CapabilityError("The embedding model returned an unexpected vector dimension.")
         clause, args = self.store._filter(projects, project)
         best = {}
         invalid_vectors = 0
+        requested = getattr(self, "_repair_requested", None)
+        if requested is None:
+            requested = self._repair_requested = set()
         with self.store.connection() as db:
             cursor = db.execute(
                 "SELECT m.id,m.current_revision AS revision,v.dimension,v.vector,"
@@ -310,17 +493,11 @@ class SemanticIndex:
                 [MODEL_ID, *args],
             )
             for row in cursor:
-                try:
-                    other = self.np.frombuffer(row["vector"], dtype="<f4")
-                except (TypeError, ValueError):
+                if not self._valid_vector(row["vector"], row["dimension"]):
                     invalid_vectors += 1
+                    requested.add((row["id"], row["revision"]))
                     continue
-                if row["dimension"] != len(vectors[0]) or len(other) != len(vectors[0]):
-                    invalid_vectors += 1
-                    continue
-                if not self.np.isfinite(other).all():
-                    invalid_vectors += 1
-                    continue
+                other = self.np.frombuffer(row["vector"], dtype="<f4")
                 score = max(float(self.np.dot(vector, other)) for vector in vectors)
                 if score < MIN_SEMANTIC_SCORE:
                     continue
@@ -331,20 +508,29 @@ class SemanticIndex:
                     row["end_char"],
                     row["field"],
                 )
-                if row["id"] not in best or candidate > best[row["id"]]:
-                    best[row["id"]] = candidate
+                passages = best.setdefault(row["id"], {"overall": candidate, "body": None})
+                if candidate > passages["overall"]:
+                    passages["overall"] = candidate
+                if row["field"] == "content" and (
+                    passages["body"] is None or candidate > passages["body"]
+                ):
+                    passages["body"] = candidate
                 if len(best) > limit * 2:
                     best = dict(
-                        sorted(best.items(), key=lambda pair: pair[1], reverse=True)[:limit]
+                        sorted(best.items(), key=lambda pair: pair[1]["overall"], reverse=True)[
+                            :limit
+                        ]
                     )
         if invalid_vectors:
             logger.warning("Skipped %d invalid semantic vectors in this search", invalid_vectors)
         records = []
         from .errors import NotFoundError
 
-        for memory_id, (score, revision, start, end, field) in sorted(
-            best.items(), key=lambda pair: pair[1], reverse=True
+        for memory_id, passages in sorted(
+            best.items(), key=lambda pair: pair[1]["overall"], reverse=True
         )[:limit]:
+            score, revision, start, end, field = passages["body"] or passages["overall"]
+            overall_score = passages["overall"][0]
             try:
                 record = self.store.get(memory_id, projects=projects)
             except NotFoundError:
@@ -354,6 +540,6 @@ class SemanticIndex:
             record["excerpt"] = record[field][start:end][:800]
             record.pop("content")
             record["passage"] = {"field": field, "start_char": start, "end_char": end}
-            record["semantic_score"] = score
+            record["semantic_score"] = overall_score
             records.append(record)
         return records

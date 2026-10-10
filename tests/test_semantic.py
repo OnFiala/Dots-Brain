@@ -1,4 +1,5 @@
 import hashlib
+import json
 import os
 import time
 from pathlib import Path
@@ -27,6 +28,7 @@ def index(tmp_path):
     store.initialize()
     result = SemanticIndex.__new__(SemanticIndex)
     result.store, result.np = store, np
+    result.vector_dimension = 2
     result._chunks = lambda text: [(0, len(text))]
     result._embed = lambda text: np.array([1.0, 0.0], dtype="<f4")
     return result
@@ -173,6 +175,12 @@ def test_real_local_model_retrieves_english_memory_from_czech_question(tmp_path)
     ):
         store.remember(content=content, source="synthetic", account="test", event_id=event_id)
     model = SemanticIndex(store)
+    assert model.tokenizer is model.model.model.tokenizer
+    truncation = dict(model.tokenizer.truncation)
+    padding = dict(model.tokenizer.padding)
+    model._chunks("token " * 300)
+    assert model.tokenizer.truncation == truncation
+    assert model.tokenizer.padding == padding
     assert model.index()["indexed"] == 3
     assert model.search("Kterému jídlu se mám vyhnout?", limit=1)[0]["event_id"] == "food"
 
@@ -195,3 +203,82 @@ def test_real_local_model_retrieves_english_memory_from_czech_question(tmp_path)
             assert time.monotonic() < deadline, "Background indexing did not complete."
             time.sleep(0.05)
     assert model.status()["indexed"] == 4
+
+
+@pytest.mark.skipif(
+    not os.environ.get("BRAIN_TEST_MODEL_DIR"),
+    reason="Requires an explicitly prepared local model; never downloads in tests.",
+)
+def test_real_local_model_calibration_corpus_has_measured_recall_and_ood_bound(tmp_path):
+    """Pinned 24-fact Czech/English regression corpus; 11 forms × 24 facts."""
+    from dots_brain.semantic import MODEL_REVISION
+
+    corpus = json.loads(
+        (Path(__file__).parent / "fixtures" / "semantic_calibration.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    store = Store(tmp_path / "memory")
+    store.initialize()
+    target = store.directory / "models" / MODEL_REVISION
+    target.parent.mkdir()
+    target.symlink_to(Path(os.environ["BRAIN_TEST_MODEL_DIR"]))
+    filler = corpus["filler"]
+    projects = {
+        "en": lambda fact: fact[0],
+        "cz": lambda fact: fact[1],
+        "en_long": lambda fact: filler["en"] + fact[0] + " " + filler["en2"],
+        "cz_long": lambda fact: filler["cz"] + fact[1] + " " + filler["cz2"],
+    }
+    expected = {}
+    for project, content_for in projects.items():
+        for number, fact in enumerate(corpus["facts"]):
+            record = store.remember(
+                content=content_for(fact),
+                source="calibration",
+                account="test",
+                event_id=f"{project}-{number}",
+                project=project,
+            )
+            expected[project, number] = record["id"]
+    model = SemanticIndex(store)
+    while model.index(batch_size=128, summary=False)["examined"]:
+        pass
+
+    def long_en(question):
+        return (
+            "We are in the middle of a longer working session and I need to recall something "
+            "before I continue with the task. " + question + " Please give me everything you "
+            "remember about this so that I can decide the next step."
+        )
+
+    def long_cz(question):
+        return (
+            "Jsme uprostřed delší pracovní relace a potřebuji si něco připomenout, než budu "
+            "pokračovat v úkolu. " + question + " Dej mi prosím vše, co si o tom pamatuješ, "
+            "abych se mohl rozhodnout, jak dál."
+        )
+
+    query_forms = (
+        ("en", lambda fact: fact[3]),
+        ("cz", lambda fact: fact[2]),
+        ("en", lambda fact: fact[5]),
+        ("cz", lambda fact: fact[4]),
+        ("en", lambda fact: fact[7]),
+        ("cz", lambda fact: fact[6]),
+        ("en", lambda fact: long_cz(fact[3])),
+        ("cz", lambda fact: long_en(fact[2])),
+        ("en_long", lambda fact: fact[3]),
+        ("cz_long", lambda fact: fact[2]),
+        ("en_long", lambda fact: fact[7]),
+    )
+    relevant = 0
+    for project, query_for in query_forms:
+        for number, fact in enumerate(corpus["facts"]):
+            ids = {
+                record["id"] for record in model.search(query_for(fact), project=project, limit=10)
+            }
+            relevant += expected[project, number] in ids
+    ood_candidates = sum(bool(model.search(query, limit=1)) for query in corpus["ood"])
+    assert relevant >= 231, f"recall@10={relevant}/264"
+    assert ood_candidates <= 14, f"OOD candidates={ood_candidates}/24"

@@ -12,6 +12,7 @@ from pathlib import Path
 
 from . import __version__
 from .auth import SCOPES
+from .clients import PROVIDERS
 from .errors import InputError
 from .store import Store
 
@@ -55,58 +56,154 @@ def managed_port(value):
 
 def parser() -> argparse.ArgumentParser:
     root = ArgumentParser(description="One source-aware memory for your AI tools.")
-    root.add_argument("--version", action="version", version=__version__)
-    root.add_argument("--data-dir", type=Path)
+    root.add_argument(
+        "--version", action="version", version=__version__, help="Print the installed version."
+    )
+    root.add_argument(
+        "--data-dir",
+        type=Path,
+        help="Canonical private memory directory; defaults to the user data directory.",
+    )
     commands = root.add_subparsers(dest="command", required=True)
+    _add_storage_commands(commands)
+    _add_audit_commands(commands)
+    _add_clients_commands(commands)
+    _add_oauth_commands(commands)
+    _add_service_commands(commands)
+    return root
+
+
+def _add_storage_commands(commands):
     commands.add_parser("setup", help="Initialize or reuse the local memory database.")
-    migration = commands.add_parser("migrate", help="Plan or apply the offline v1 to v2 migration.")
-    migration.add_argument("--apply", action="store_true")
-    migration.add_argument("--writers-stopped", action="store_true")
-    migration.add_argument("--backup", type=Path)
+    migration = commands.add_parser("migrate", help="Plan or apply the offline database migration.")
+    migration.add_argument(
+        "--apply",
+        action="store_true",
+        help="Apply the planned migration after making its validated backup.",
+    )
+    migration.add_argument(
+        "--writers-stopped",
+        action="store_true",
+        help="Confirm all clients, servers and other database writers are stopped.",
+    )
+    migration.add_argument("--backup", type=Path, help="Standalone SQLite backup path.")
     backup = commands.add_parser("backup", help="Write a consistent private SQLite backup.")
-    backup.add_argument("--output", type=Path, required=True)
+    backup.add_argument(
+        "--output", type=Path, required=True, help="New output file; existing files are preserved."
+    )
     restore = commands.add_parser("restore", help="Restore into a new disabled directory.")
-    restore.add_argument("--backup", type=Path, required=True)
-    restore.add_argument("--target", type=Path, required=True)
+    restore.add_argument(
+        "--backup", type=Path, required=True, help="Standalone SQLite backup path."
+    )
+    restore.add_argument(
+        "--target",
+        type=Path,
+        required=True,
+        help="Restored data directory for this recovery operation.",
+    )
     activate = commands.add_parser(
         "activate-restore", help="Freeze the old store and activate a reviewed restored copy."
     )
-    activate.add_argument("--target", type=Path, required=True)
-    activate.add_argument("--writers-stopped", action="store_true")
+    activate.add_argument(
+        "--target",
+        type=Path,
+        required=True,
+        help="Restored data directory for this recovery operation.",
+    )
+    activate.add_argument(
+        "--writers-stopped",
+        action="store_true",
+        help="Confirm all clients, servers and other database writers are stopped.",
+    )
     abort = commands.add_parser(
         "abort-restore", help="Cancel a pending cutover; keep the restored target disabled."
     )
-    abort.add_argument("--target", type=Path, required=True)
-    abort.add_argument("--writers-stopped", action="store_true")
+    abort.add_argument(
+        "--target",
+        type=Path,
+        required=True,
+        help="Restored data directory for this recovery operation.",
+    )
+    abort.add_argument(
+        "--writers-stopped",
+        action="store_true",
+        help="Confirm all clients, servers and other database writers are stopped.",
+    )
     cortex = commands.add_parser("cortex", help="Configure a dedicated CORTEX MCP connection.")
     cortex.add_argument(
-        "action", nargs="?", choices=["configure", "operations", "resolve"], default="configure"
+        "action",
+        nargs="?",
+        choices=["configure", "operations", "resolve"],
+        default="configure",
+        help="Operation to perform.",
     )
-    cortex.add_argument("--endpoint")
-    cortex.add_argument("--token-file", type=Path)
-    cortex.add_argument("--project-map", action="append")
-    cortex.add_argument("--project")
-    cortex.add_argument("--operation-id")
-    cortex.add_argument("--resolution", choices=["retry", "recover-sending"])
+    cortex.add_argument("--endpoint", help="Dedicated CORTEX MCP URL.")
+    cortex.add_argument(
+        "--token-file",
+        type=Path,
+        help="Existing private credential file; its contents are never printed.",
+    )
+    cortex.add_argument(
+        "--project-map",
+        action="append",
+        help="Local-to-CORTEX mapping LOCAL=REMOTE; repeat for each project.",
+    )
+    cortex.add_argument(
+        "--project", help="Project boundary; only explicitly granted projects are accessible."
+    )
+    cortex.add_argument("--operation-id", help="Stored CORTEX operation to inspect or resolve.")
+    cortex.add_argument(
+        "--resolution",
+        choices=["retry", "recover-sending"],
+        help="Explicit operator recovery action; retry may duplicate an uncertain upstream write.",
+    )
     cortex.add_argument(
         "--writers-stopped", action="store_true", help="Confirm all CORTEX writers are stopped."
     )
+
+
+def _add_audit_commands(commands):
     audit = commands.add_parser("audit", help="Inspect sanitized audit events on the memory host.")
-    audit.add_argument("action", choices=["report", "events"])
-    audit.add_argument("--project")
-    audit.add_argument("--since")
-    audit.add_argument("--until")
-    audit.add_argument("--after-id", type=int)
-    audit.add_argument("--limit", type=int, default=100)
+    audit.add_argument("action", choices=["report", "events"], help="Operation to perform.")
+    audit.add_argument(
+        "--project", help="Project boundary; only explicitly granted projects are accessible."
+    )
+    audit.add_argument("--since", help="Inclusive lower bound for server-recorded UTC time.")
+    audit.add_argument("--until", help="Exclusive upper bound for server-recorded UTC time.")
+    audit.add_argument("--after-id", type=int, help="Return events after this server audit ID.")
+    audit.add_argument(
+        "--limit", type=int, default=100, help="Maximum events in this page (default: 100)."
+    )
     capture = commands.add_parser(
         "capture", help="Collect one bounded pass from provider JSONL snapshots."
     )
-    capture.add_argument("--kind", choices=["audit", "transcript"], required=True)
-    capture.add_argument("--path", type=Path, action="append", required=True)
-    capture.add_argument("--cursor", type=Path, required=True)
-    capture.add_argument("--credential-file", type=Path, required=True)
-    capture.add_argument("--project", required=True)
-    capture.add_argument("--account", required=True)
+    capture.add_argument(
+        "--kind", choices=["audit", "transcript"], required=True, help="Source schema to collect."
+    )
+    capture.add_argument(
+        "--path",
+        type=Path,
+        action="append",
+        required=True,
+        help="Provider JSONL snapshot path; repeat for each source.",
+    )
+    capture.add_argument(
+        "--cursor",
+        type=Path,
+        required=True,
+        help="Private durable cursor file for this source set.",
+    )
+    capture.add_argument(
+        "--credential-file", type=Path, required=True, help="Private connection JSON file."
+    )
+    capture.add_argument(
+        "--project",
+        required=True,
+        help="Project boundary; only explicitly granted projects are accessible.",
+    )
+    capture.add_argument(
+        "--account", required=True, help="Source account identifier retained as provenance."
+    )
     capture.add_argument(
         "--recover-pending",
         action="store_true",
@@ -120,27 +217,47 @@ def parser() -> argparse.ArgumentParser:
         type=Path,
         help="Optional JSON network-policy file to inspect; no provider path is assumed.",
     )
+
+
+def _add_clients_commands(commands):
     start = commands.add_parser("up", help="Start or reuse and verify the local HTTP service.")
-    start.add_argument("--port", type=managed_port)
-    start.add_argument("--semantic", action=argparse.BooleanOptionalAction, default=None)
+    start.add_argument(
+        "--port",
+        type=managed_port,
+        help="Loopback TCP port; up also accepts 0 to choose a free port.",
+    )
+    start.add_argument(
+        "--semantic",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Enable the prepared local embedding model.",
+    )
     start.add_argument(
         "--resume", action="store_true", help="Explicitly re-enable a removed installation."
     )
     commands.add_parser("down", help="Stop the managed local service and preserve its data.")
     commands.add_parser("providers", help="List implemented client adapters and their limits.")
     connect = commands.add_parser("connect", help="Configure and verify a supported MCP client.")
-    connect.add_argument("provider")
-    connect.add_argument("--config", type=Path)
-    connect.add_argument("--credential-file", type=Path)
-    connect.add_argument("--project", action="append")
+    connect.add_argument("provider", choices=sorted(PROVIDERS), help="Supported client adapter.")
+    connect.add_argument("--config", type=Path, help="Actual provider configuration path.")
+    connect.add_argument("--credential-file", type=Path, help="Private connection JSON file.")
+    connect.add_argument(
+        "--project",
+        action="append",
+        help="Project boundary; only explicitly granted projects are accessible.",
+    )
     disconnect = commands.add_parser("disconnect", help="Remove one managed client connection.")
-    disconnect.add_argument("provider")
-    disconnect.add_argument("--config", type=Path)
-    disconnect.add_argument("--dry-run", action="store_true")
+    disconnect.add_argument("provider", choices=sorted(PROVIDERS), help="Supported client adapter.")
+    disconnect.add_argument("--config", type=Path, help="Actual provider configuration path.")
+    disconnect.add_argument(
+        "--dry-run", action="store_true", help="Describe changes without applying them."
+    )
     uninstall = commands.add_parser(
         "uninstall", help="Disable the service and detach clients; keep memories."
     )
-    uninstall.add_argument("--dry-run", action="store_true")
+    uninstall.add_argument(
+        "--dry-run", action="store_true", help="Describe changes without applying them."
+    )
     uninstall.add_argument(
         "--config",
         action="append",
@@ -151,7 +268,12 @@ def parser() -> argparse.ArgumentParser:
     commands.add_parser(
         "doctor", help="Report local capabilities without assuming remote readiness."
     )
-    oauth = commands.add_parser("oauth", help="Manage VM-local OAuth without printing credentials.")
+
+
+def _add_oauth_commands(commands):
+    oauth = commands.add_parser(
+        "oauth", help="Manage host-local OAuth without printing credentials."
+    )
     oauth_actions = oauth.add_subparsers(dest="oauth_action", required=True)
     oauth_setup = oauth_actions.add_parser("configure")
     oauth_setup.add_argument(
@@ -179,37 +301,69 @@ def parser() -> argparse.ArgumentParser:
     )
     onboarding_actions = onboarding.add_subparsers(dest="onboarding_action", required=True)
     window = onboarding_actions.add_parser("open")
-    window.add_argument("--minutes", type=int, default=10)
+    window.add_argument(
+        "--minutes", type=int, default=10, help="Pairing window length, 1–60 minutes (default: 10)."
+    )
     onboarding_actions.add_parser("close")
     onboarding_actions.add_parser("status")
     approve = oauth_actions.add_parser("approve")
-    approve.add_argument("request_id")
+    approve.add_argument("request_id", help="Exact pending OAuth request approved by the owner.")
     approve.add_argument(
         "--redirect-host",
         required=True,
         help="Expected callback hostname from the client you deliberately connected.",
     )
     projects = approve.add_mutually_exclusive_group(required=True)
-    projects.add_argument("--project", action="append")
-    projects.add_argument("--all-projects", action="store_true")
-    approve.add_argument("--allow-forget", action="store_true")
-    approve.add_argument("--scope", action="append", choices=sorted(SCOPES))
+    projects.add_argument(
+        "--project",
+        action="append",
+        help="Project boundary; only explicitly granted projects are accessible.",
+    )
+    projects.add_argument(
+        "--all-projects",
+        action="store_true",
+        help="Grant access to every project; use only when intended.",
+    )
+    approve.add_argument(
+        "--allow-forget", action="store_true", help="Explicitly permit permanent memory deletion."
+    )
+    approve.add_argument(
+        "--scope",
+        action="append",
+        choices=sorted(SCOPES),
+        help="Allowed capability; repeat for each scope.",
+    )
     deny = oauth_actions.add_parser("deny")
-    deny.add_argument("request_id")
+    deny.add_argument("request_id", help="Exact pending OAuth request approved by the owner.")
     revoke_oauth = oauth_actions.add_parser("revoke")
-    revoke_oauth.add_argument("grant_id")
+    revoke_oauth.add_argument("grant_id", help="OAuth grant to revoke.")
+
+
+def _add_service_commands(commands):
     serve = commands.add_parser("serve", help="Run on the memory host; HTTP binds loopback only.")
-    serve.add_argument("--transport", choices=["stdio", "http"], default="stdio")
-    serve.add_argument("--port", type=port_number, default=8765)
+    serve.add_argument(
+        "--transport",
+        choices=["stdio", "http"],
+        default="stdio",
+        help="MCP transport (default: stdio).",
+    )
+    serve.add_argument(
+        "--port",
+        type=port_number,
+        default=8765,
+        help="Loopback TCP port; up also accepts 0 to choose a free port.",
+    )
     serve.add_argument("--listen-fd", type=int, help=argparse.SUPPRESS)
     serve.add_argument(
         "--public-gateway",
         action="store_true",
         help="Accept OAuth grants only on this HTTP listener.",
     )
-    serve.add_argument("--semantic", action="store_true")
+    serve.add_argument(
+        "--semantic", action="store_true", help="Enable the prepared local embedding model."
+    )
     model = commands.add_parser("model", help="Manage the pinned local embedding model.")
-    model.add_argument("action", choices=["prepare"])
+    model.add_argument("action", choices=["prepare"], help="Operation to perform.")
     index = commands.add_parser("index", help="Index pending memories with the local model.")
     index.add_argument(
         "--retry-failed",
@@ -217,28 +371,56 @@ def parser() -> argparse.ArgumentParser:
         help="Retry failed embeddings for their current revision.",
     )
     export = commands.add_parser("export", help="Export memories and revisions as JSON Lines.")
-    export.add_argument("--output", required=True, type=Path)
+    export.add_argument(
+        "--output", required=True, type=Path, help="New output file; existing files are preserved."
+    )
     for name in ("bridge", "verify"):
         command = commands.add_parser(name, help="Use an existing credential file; never print it.")
-        command.add_argument("--credential-file", required=True, type=Path)
+        command.add_argument(
+            "--credential-file", required=True, type=Path, help="Private connection JSON file."
+        )
         if name == "bridge":
-            command.add_argument("--local-data-dir", type=Path)
+            command.add_argument(
+                "--local-data-dir",
+                type=Path,
+                help="Resume only the managed local instance matching this credential.",
+            )
         else:
-            command.add_argument("--write", action="store_true")
-            command.add_argument("--project", default="default")
+            command.add_argument(
+                "--write",
+                action="store_true",
+                help="Write, read and remove a synthetic probe; requires read/write/forget.",
+            )
+            command.add_argument(
+                "--project",
+                default="default",
+                help="Project boundary; only explicitly granted projects are accessible.",
+            )
     client = commands.add_parser("client", help="Manage scoped credentials on the memory host.")
     actions = client.add_subparsers(dest="client_action", required=True)
     create = actions.add_parser("create")
-    create.add_argument("--name", required=True)
-    create.add_argument("--scope", action="append", choices=sorted(SCOPES))
-    create.add_argument("--project", action="append")
-    create.add_argument("--days", type=int, default=30)
-    create.add_argument("--credential-file", required=True, type=Path)
+    create.add_argument("--name", required=True, help="Human-readable credential label.")
+    create.add_argument(
+        "--scope",
+        action="append",
+        choices=sorted(SCOPES),
+        help="Allowed capability; repeat for each scope.",
+    )
+    create.add_argument(
+        "--project",
+        action="append",
+        help="Project boundary; only explicitly granted projects are accessible.",
+    )
+    create.add_argument(
+        "--days", type=int, default=30, help="Credential lifetime in days (default: 30)."
+    )
+    create.add_argument(
+        "--credential-file", required=True, type=Path, help="Private connection JSON file."
+    )
     create.add_argument("--url", help="MCP URL; defaults to the recorded managed service endpoint.")
     revoke = actions.add_parser("revoke")
-    revoke.add_argument("client_id")
+    revoke.add_argument("client_id", help="Local credential ID to revoke.")
     actions.add_parser("list")
-    return root
 
 
 def run(args) -> dict:
@@ -316,19 +498,15 @@ def run(args) -> dict:
             if args.command == "disconnect"
             else uninstall(store, dry_run=args.dry_run, extra_configs=args.config)
         )
-    if args.command in ("connect", "providers"):
-        from .clients import connect_client, providers
+    if args.command == "connect":
+        from .clients import connect_client
 
-        return (
-            providers()
-            if args.command == "providers"
-            else connect_client(
-                store,
-                provider=args.provider,
-                config=args.config,
-                connection=args.credential_file,
-                projects=args.project,
-            )
+        return connect_client(
+            store,
+            provider=args.provider,
+            config=args.config,
+            connection=args.credential_file,
+            projects=args.project,
         )
     if args.command in ("up", "down"):
         from .runtime import down, up
@@ -340,13 +518,12 @@ def run(args) -> dict:
         )
     if args.command == "setup":
         store.initialize()
-        disabled = (store.directory / "disabled.json").exists()
         return {
-            "state": "disabled" if disabled else "local_ready",
+            "state": "local_ready",
             "version": __version__,
             "data_dir": str(store.directory),
-            "read": "disabled" if disabled else "available",
-            "write": "disabled" if disabled else "available",
+            "read": "available",
+            "write": "available",
             "semantic": "not_enabled",
             "remote_connection": "not_verified",
             "capture": "opt_in_snapshot_collector",

@@ -7,6 +7,7 @@ import contextlib
 import logging
 from functools import partial
 from typing import Annotated, Any
+from urllib.parse import urlsplit
 
 import anyio
 from mcp.server.fastmcp import FastMCP
@@ -15,6 +16,7 @@ from pydantic import Field
 
 from .auth import Policy
 from .errors import ForbiddenError, StoreDisabledError
+from .installation_state import marker_path
 from .protocol import (
     BrainMCP,
     ContextLimit,
@@ -32,11 +34,13 @@ from .service import MemoryService
 async def indexing_lifespan(service: MemoryService):
     async def indexing():
         while True:
-            if (service.store.directory / "disabled.json").exists():
+            if marker_path(service.store).exists():
                 await asyncio.sleep(2)
                 continue
             try:
-                result = await asyncio.to_thread(service.semantic.index, batch_size=4)
+                result = await asyncio.to_thread(
+                    service.semantic.index, batch_size=4, summary=False
+                )
             except Exception:
                 logging.getLogger("dots_brain").warning("Local indexing failed; retrying.")
                 await asyncio.sleep(2)
@@ -78,7 +82,6 @@ def create_http_app(server: FastMCP, service: MemoryService, *, public_gateway: 
 
 
 def create_server(service: MemoryService, *, http: bool = False, port: int = 8765) -> FastMCP:
-    from urllib.parse import urlsplit
 
     from mcp.server.transport_security import TransportSecuritySettings
 
@@ -94,7 +97,7 @@ def create_server(service: MemoryService, *, http: bool = False, port: int = 876
         )
 
     async def write_call(function, *args, **kwargs):
-        # One in-process SQLite writer; blocked writers never consume read workers.
+        # Serialize memory tool writes; SQLite also arbitrates index and CORTEX writes.
         return await anyio.to_thread.run_sync(
             partial(function, *args, **kwargs), limiter=write_limiter
         )
@@ -144,7 +147,7 @@ def create_server(service: MemoryService, *, http: bool = False, port: int = 876
     )
 
     def policy(scope: str | None = None) -> Policy:
-        if (service.store.directory / "disabled.json").exists():
+        if marker_path(service.store).exists():
             raise StoreDisabledError("This memory installation has been disabled.")
         if http:
             request = server.get_context().request_context.request

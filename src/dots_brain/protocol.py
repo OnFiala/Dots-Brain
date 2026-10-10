@@ -119,13 +119,24 @@ def _classify_error(exc: BaseException) -> dict:
     }
 
 
-def safe_error(exc: BaseException, *, operation: str = "operation") -> dict:
+def safe_error(exc: BaseException, *, operation: str | None = None) -> dict:
+    """Return one safe error; only server boundaries also write a diagnostic log."""
     value = _classify_error(exc)
     chain = list(causes(exc))
     error_number = next(
         (error.errno for error in chain if isinstance(error, OSError) and type(error.errno) is int),
         None,
     )
+    if operation is None:
+        # CLI stderr is a single JSON document, also consumed by local clients.
+        if value["code"] == "internal_error":
+            value.pop("reference")
+            value.update(
+                message="The operation failed; report its exception type and error code.",
+                exception_type=type(chain[-1]).__name__,
+                errno=error_number,
+            )
+        return value
     # Known operation names, codes, class names and errno are sufficient to locate
     # the failure. Tracebacks, exception messages, paths and arguments are omitted.
     logging.getLogger("dots_brain").warning(

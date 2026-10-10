@@ -117,5 +117,17 @@ def migrate_store(
                 store.path, backup_path or _default_backup(store.path, version), version
             )
             _migrate(db)
-        db.execute("PRAGMA wal_checkpoint(TRUNCATE)")
-    return {"state": "migrated", **result, "writes": True, "backup": str(backup)}
+        try:
+            checkpoint = db.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+            checkpoint_state = "deferred" if checkpoint[0] else "complete"
+        except sqlite3.Error:
+            # The schema transaction already committed. A checkpoint failure is
+            # housekeeping still to do, not a rolled-back migration.
+            checkpoint_state = "deferred"
+    return {
+        "state": "migrated",
+        **result,
+        "writes": True,
+        "backup": str(backup),
+        "wal_checkpoint": checkpoint_state,
+    }

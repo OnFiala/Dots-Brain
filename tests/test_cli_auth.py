@@ -59,6 +59,28 @@ def test_setup_is_repeatable_and_cli_never_prints_issued_token(tmp_path):
     assert credential.read_bytes() == existing
 
 
+def test_disabled_setup_returns_one_json_error_without_log_prefix(tmp_path):
+    directory = tmp_path / "memory"
+    store = Store(directory)
+    store.initialize()
+    (directory / "disabled.json").write_text("{}")
+    result = cli(directory, "setup")
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert json.loads(result.stderr)["code"] == "store_disabled"
+
+
+def test_unexpected_cli_failure_has_safe_diagnostics_without_log_reference(caplog):
+    from dots_brain.protocol import safe_error
+
+    result = safe_error(RuntimeError("PRIVATE_FAILURE_CANARY"))
+    assert result["code"] == "internal_error"
+    assert result["exception_type"] == "RuntimeError"
+    assert "reference" not in result
+    assert "PRIVATE_FAILURE_CANARY" not in json.dumps(result)
+    assert not caplog.records
+
+
 def test_expired_credential_is_rejected_and_only_hash_is_stored(tmp_path):
     store = Store(tmp_path / "memory")
     store.initialize()

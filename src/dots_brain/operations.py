@@ -22,6 +22,8 @@ def migrate(store: Store, *, apply: bool, writers_stopped: bool, backup: Path | 
     from .runtime import active, state_path
 
     if not apply:
+        if backup is not None or writers_stopped:
+            raise InputError("--backup and --writers-stopped require migrate --apply.")
         return migrate_store(store, apply=False)
 
     def stopped():
@@ -197,7 +199,7 @@ def activate_restore(source: Store, target: Store, *, writers_stopped: bool) -> 
             locks.enter_context(locked(directory / "installation.lock"))
             locks.enter_context(locked(directory / "service.lock"))
             locks.enter_context(locked(directory / "writers.lock", timeout=0))
-        marker = target.directory / "disabled.json"
+        marker = marker_path(target)
         state = read_json(marker) if marker.exists() else {}
         if (
             state.get("reason") != "restored_requires_review"
@@ -327,14 +329,16 @@ def configure_cortex(store: Store, *, endpoint: str, token_file: Path, projects:
         endpoint, token_file.expanduser().absolute(), tuple(mapping.items())
     )
     store.status()
-    write_json(
-        store.directory / "cortex.json",
-        {
-            "endpoint": config.endpoint,
-            "token_file": str(config.token_file),
-            "project_mapping": mapping,
-        },
-    )
+    with locked(store.directory / "installation.lock"):
+        store.ensure_writable()
+        write_json(
+            store.directory / "cortex.json",
+            {
+                "endpoint": config.endpoint,
+                "token_file": str(config.token_file),
+                "project_mapping": mapping,
+            },
+        )
     return {
         "state": "configured_pending_verification",
         "projects": list(mapping),
