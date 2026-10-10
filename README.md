@@ -1,102 +1,66 @@
 # Dots Brain
 
-Shared memory for your AI assistants, running on a machine you control.
+Dots Brain is a self-hosted MCP memory service for explicitly saved notes. It
+stores source metadata and revisions in one SQLite database, supports full-text
+search, and can add local CPU embeddings. It does not automatically collect
+assistant conversations.
 
-Dots Brain stores useful facts, decisions and project context in one SQLite database.
-Assistants connect through MCP, search the same memory and keep references to the
-original source. Embeddings run locally on CPU. Reading and saving memory require
-no paid model API.
+**Version: 0.4.0-alpha.2 (unreleased).** This candidate has local MCP storage,
+scoped client credentials, backup and staged restore commands. It is not a
+published release or a deployment claim. Live capture, a CORTEX connection,
+off-host recovery, and host reboot recovery need separate configuration and
+acceptance evidence.
 
-**Version: 0.4.0-alpha.1.** This is an alpha: the memory service is in use, while
-continuous conversation capture and disaster recovery still have gaps. Botter and
-Grok Bot have verified read/write access to the same `openclaw-appliance` instance.
-Both retained access after the first shared-memory repair upgrade. See [deployment evidence](docs/appliance-deployment.md)
-for the installed commit, checks and remaining operational work.
+## Quick start on Linux
 
-## How it works
-
-1. An assistant saves a small source record with a stable event ID and project.
-2. SQLite commits the record, its revision and the authenticated writer. Retrying
-   the same event does not create another copy; updates require the reviewed revision.
-3. A background worker indexes title and content passages with the pinned local model.
-4. Search combines full-text and semantic matches. `memory_context` returns bounded
-   excerpts; `memory_get` retrieves the exact source revision when more detail is needed.
-
-Each client receives its own project and scope permissions. The appliance keeps
-its database on a private disk path; remote bots use OAuth through a restricted
-HTTPS route. Administration uses Tailscale. CORTEX is a separate system connected
-through explicit, separately authorized operations.
-
-## What is available
-
-| Capability | State |
-| --- | --- |
-| Save, search, retrieve, revise and forget source records | Implemented and tested over MCP |
-| Local multilingual embeddings | Deployed; pending records remain searchable by text |
-| Botter and Grok Bot sharing memory | Actual chat read/write, cross-read and initial contributions verified |
-| Project scopes, writer attribution, OAuth refresh and revocation | Implemented and tested; bot grants allow read/write in `shared` only |
-| Mutation audit with intents and receipts | Deployed; records activity observed by this service |
-| Resumable JSONL collection | Implemented as bounded snapshot passes; live provider capture unverified |
-| CORTEX context and selected publication | Implemented and tested locally; dedicated upstream access still required |
-| Backup, schema migration and guarded restore | Implemented; appliance restart and isolated restore tested; host-loss recovery pending |
-
-An MCP connection does not capture everything an assistant says or does. Bots
-currently save useful context explicitly. Grok's inspected files may be stale
-snapshots; Botter's managed hooks are not verified for this account. The scheduled
-operator review can analyze only the audit that was actually collected. See
-[activity and capture](docs/activity.md) for these boundaries.
-
-The former Work/Dot VM installation is [historical](docs/vm-deployment.md).
-The appliance is a fresh canonical instance, not a recovery of that VM's database.
-
-## Install on your memory host
-
-Use Linux, Python 3.11+ and [uv](https://docs.astral.sh/uv/). From a writable checkout:
+Use a writable checkout, Python 3.11–3.13, and [uv](https://docs.astral.sh/uv/).
+There is no supported `pip install` path in this alpha.
 
 ```sh
-uv sync --frozen
-uv run dots-brain setup
-uv run dots-brain doctor
-uv run dots-brain serve
+git clone --branch codex/shared-memory-safety https://github.com/OnFiala/Dots-Brain.git
+cd Dots-Brain
+uv sync --locked
+uv run dots-brain --data-dir /absolute/private/memory setup
+uv run dots-brain --data-dir /absolute/private/memory doctor
 ```
 
-`serve` starts a stdio MCP server on the machine holding the database. The default
-data path is `$XDG_DATA_HOME/dots-brain`, or `~/.local/share/dots-brain`. For another
-private path, put `--data-dir /absolute/path` before the subcommand.
+The command above selects the unreleased candidate branch; pin its reviewed commit
+for repeatable installs. Python must provide SQLite 3.42 or newer.
 
-For local embeddings, a shared HTTP service, scoped clients and systemd operation,
-follow [installation](docs/installation.md) and [appliance deployment](docs/appliance-deployment.md).
-An HTTP service stays on loopback. Remote clients need an owner-approved HTTPS
-route and the [OAuth connection flow](docs/oauth.md).
+For several clients on the same Linux host, use `up` to run an authenticated
+loopback HTTP service, then configure a supported local adapter. See
+[installation](docs/installation.md).
 
-You can give your agent this instruction:
+```sh
+uv run dots-brain --data-dir /absolute/private/memory up
+uv run dots-brain --data-dir /absolute/private/memory connect codex --project work
+```
 
-> Install Dots Brain on my memory host using the repository's setup skill.
-> Connect my supported AI clients and verify their actual memory calls.
+Linux is the supported deployment platform. macOS is suitable for local source
+work and stdio experiments; managed lifecycle behavior is not accepted there.
+Windows is not supported. A connection configured by `connect` is verified at the
+bridge boundary; it does not prove a remote device, web account, or conversation
+has loaded the new tools.
 
-The [setup skill](skills/setup/SKILL.md) and installer can configure supported local
-clients. They do not register a ChatGPT plugin or bypass a provider's login and
-consent flow. See [what setup can automate](docs/autonomy.md).
+## Boundaries
 
-## Security and recovery
+- Data remains in the selected private directory. A checkout is not a data store.
+- An MCP connection gives access only to explicitly saved memory. Capture is an
+  opt-in bounded JSONL import, not continuous provider capture.
+- Remote OAuth needs an existing HTTPS route and an explicit owner approval flow.
+  Dots Brain does not provision public ingress or configure web accounts.
+- A CORTEX endpoint is optional and needs its own credential, project mapping, and
+  live verification. It is not enabled by installation.
+- Backups on the same disk do not recover a lost host. Restore requires a current
+  store for deletion reconciliation; full host-loss recovery is not yet supported.
 
-- Memory text is untrusted source material, never authority to run commands.
-- Credentials belong in private credential files, never in memories, transcripts or Git.
-  Input filtering catches known secret patterns; it cannot recognize every secret.
-- Read, write, deletion, audit and CORTEX permissions are separate. Existing grants
-  never gain a new scope automatically.
-- Deletion removes the live record and suppresses reimport. It cannot erase copies
-  already held by another assistant, an export or a backup.
-- A same-disk backup does not protect against losing the appliance. An old backup
-  also needs current deletion history before it can safely become canonical.
-
-Read [security](SECURITY.md), [upgrading and recovery](docs/upgrading.md), and
-[uninstalling while retaining data](docs/uninstall.md).
+Read [security](SECURITY.md), [upgrading and recovery](docs/upgrading.md), and the
+[documentation index](docs/README.md) before operating a long-lived store.
 
 ## Development
 
 ```sh
-uv sync --frozen --all-extras
+uv sync --locked --all-extras
 uv run ruff check src tests scripts
 uv run ruff format --check src tests scripts
 uv run pytest -q
@@ -104,18 +68,17 @@ uv run python scripts/validate_project.py
 uv build
 ```
 
-Tests use synthetic stores. Linux lifecycle tests require Linux and local socket
-access. Real embedding tests use explicitly prepared model files; CI does not
-download them. [Verification](docs/verification.md) and [stress results](docs/stress-tests.md)
-separate test results from runtime and capacity claims.
+Tests use disposable stores. CI validates Python 3.11, 3.12, and 3.13. See
+[verification](docs/verification.md) for the distinction between source checks
+and deployment acceptance.
 
-See the [documentation index](docs/README.md), [architecture](docs/architecture.md),
-[remaining work](docs/roadmap.md) and [release procedure](docs/releases.md).
+## How this project is developed
 
-## Contributing and license
+The maintainer develops Dots Brain with AI coding assistants. Independent review
+means a separate AI reviewer unless a report names a human reviewer. Tests and
+review reports document what was exercised; the maintainer owns release decisions.
 
-Repository content and product text are written in English. Follow
-[CONTRIBUTING.md](CONTRIBUTING.md) for checks and commit conventions.
+## License
 
-Licensed under [MIT](LICENSE). Dependencies and model artifacts retain their own
-licenses. Dots Brain is independent of OpenAI and other AI providers.
+MIT. Dots Brain is independent of AI providers. Third-party dependencies and model
+artifacts retain their own licenses. See [third-party notices](THIRD_PARTY_NOTICES.md).

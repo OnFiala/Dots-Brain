@@ -1,59 +1,11 @@
 # Roadmap
 
-## Implemented source milestones
+The next work items need separate design and acceptance:
 
-- Local memory, revisions, full-text/semantic search, MCP and scoped local clients.
-- Lifecycle, explicit reinstall, OAuth PKCE, refresh and revocation.
-- Schema v2, authenticated authorship, project identities and suppression.
-- Sanitized audit, explicit coverage gaps and bounded resumable snapshot collectors.
-- Scoped CORTEX context and selected publication with uncertain-write reconciliation.
-- Offline migration, verified backups and guarded restore/cutover.
+- validated off-host recovery and reboot behavior;
+- continuous provider capture with explicit consent and coverage proof;
+- live CORTEX transport acceptance against an authorized endpoint;
+- broader semantic quality and capacity measurement;
+- deployment templates with no operator-specific data.
 
-See [capabilities](capabilities.md) and [verification](verification.md) for evidence.
-The owner-approved internal appliance deployment passed synthetic acceptance on
-2026-10-09. Both bots subsequently verified actual chat read/write access and
-bidirectional cross-bot reads; their synthetic facts were removed by owner cleanup.
-
-## Next acceptance: canonical appliance and clients
-
-1. Complete encrypted off-host backup and host-loss recovery. The [internal
-   deployment](appliance-deployment.md), service restart, online backup and isolated
-   synthetic recovery are verified; a real appliance reboot is still untested.
-2. Provision dedicated CORTEX access over a supported authenticated boundary;
-   verify both original references and one authorized selected write/receipt.
-3. The constrained public MCP/OAuth route and both actual OAuth callbacks are
-   verified. Keep onboarding closed between owner-approved pairing sessions;
-   Tailscale remains the administration/private-client path.
-4. Both separate bot connections, each write/readback, bidirectional cross-read and
-   owner cleanup are verified. Project denial and isolated revocation passed
-   synthetic acceptance. The pairing provenance and deletion target repairs
-   (DBR-ONB-001 and DBR-CLEAN-001) are deployed; legacy unknowns remain explicit.
-5. Initial contributions are verified: 37 Botter and 8 Grok records with stable
-   identities, client readbacks and server write receipts. The title/body context
-   repair passed live acceptance and Botter's affected-query check. Both bots
-   confirmed their retained access and index state; demonstrate relevant recall
-   in a later session.
-6. Establish the available live capture mechanisms and a working unattended network
-   path for the registered twice-daily Codex review. The first scheduled attempt
-   failed to reach the appliance; manual complete-range reviews reached ID 166.
-   Submitted audit events cannot establish complete provider activity.
-
-## Capture and durability gaps
-
-Grok's inspected JSONL files may be stale snapshots; persistent live collection
-is unverified. Botter's enterprise hooks are unverified for the actual account.
-Neither model instructions nor MCP availability guarantee every action is captured.
-Preserve gaps instead of treating missing observations as safe activity.
-
-A backup can contain revoked credentials and forgotten content. Recovery revokes
-credentials and reconciles surviving deletion barriers. If the original store is
-lost, a trustworthy current deletion history is still required. Restoring an old
-backup after new facts/audit/CORTEX operations requires reconciliation; cutover
-refuses canonical divergence rather than silently discarding newer history.
-
-## Optional later work
-
-- Fixed bilingual quality/capacity evaluation and comparison with EmbeddingGemma.
-- Additional provider adapters with verified public-message visibility and live sources.
-- Budgeted Cerebras extraction proposals/triage, never canonical authority.
-- Native client views and MCP Events, without moving the canonical store.
+Items remain planned until source, artifact, runtime, and behavior evidence exist.

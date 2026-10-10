@@ -1,49 +1,17 @@
 # Troubleshooting
 
-Ask your agent to diagnose the existing instance using `preflight`, `doctor`, the
-command's JSON result, and the client's supported health check. Use the actual
-memory host and data directory. Never paste a connection file, bearer token, or
-private memory export into an issue or conversation.
+Use the actual host and data directory. Never paste a bearer token, connection
+file, database, or private export into an issue or conversation.
 
-| Symptom or result | Meaning and next step |
+| Result | Next step |
 | --- | --- |
-| `setup_required` | No database exists at the selected directory. Locate the existing canonical directory before creating a new instance. |
-| `disabled` | The instance was uninstalled. Only an intentional reinstall should use `up --resume` or the bootstrap. |
-| `blocked` for a web or unknown provider | The VM-local OAuth server is available, but public ingress and provider account setup are not automated. Use the OAuth guide with a real reachable origin. |
-| Local port is occupied | Stop or identify the specific competing process. Use `up --port 0` for a new free port and reconnect affected local clients. Do not kill arbitrary processes. |
-| Readiness or bridge verification fails | Check that the exact interpreter exists, dependencies match the release, the credential is private and valid, and the loopback service is running. Use `up` and then `connect` again. |
-| Another installation is running | Let its bounded operation finish, then retry the same command. Lock files may remain on disk without an active lock; deleting them is not a recovery step. |
-| A different Dots Brain entry already exists | Inspect its host and paths without exposing credentials. Remove or disconnect the known obsolete entry before connecting again. Other settings are preserved. |
-| Existing client permissions differ | The command refuses to silently broaden access. Disconnect a dedicated local connection, then reconnect with the explicitly intended projects. |
-| `partial` during removal | Service disabling may have succeeded while configuration cleanup or remote revocation remains. Read `clients` and `issues`, resolve those exact items, and rerun. |
-| HTTP 401 | The credential is missing, expired, revoked, or its host is disabled. Reconnect locally under the host owner's authority; remote clients need the issuer to provision access. |
-| OAuth pairing page is waiting | The owner must authorize the exact request ID from the initiated flow. Use `oauth pending` and `oauth approve`; do not approve by client name alone. |
-| OAuth `invalid_target` | The token request must include the canonical `/mcp` resource from discovery. Check the client and configured issuer. |
-| OAuth `invalid_grant` | Check PKCE, exact callback, expiry, and one-time code/refresh use. Reusing an already exchanged token is rejected. |
-| OAuth capacity reached | Registration and pending flows have bounded storage. Expired state is cleaned during registration; inspect ingress abuse controls before changing limits. |
-| Bridge verifies but the application cannot see tools | Reload its MCP configuration and check its own status. SDK verification does not establish activation in an existing conversation. Keep required application permissions enabled. |
-| A laptop cannot reach `127.0.0.1` on the VM | Loopback means the current machine. Public HTTPS ingress, secure credential delivery, and web OAuth are not automated in this release. Do not create a second memory as a workaround. |
-| Semantic search is unavailable | Install the semantic extra and run `model prepare`, then start with `--semantic`. Only explicit model preparation downloads weights; there is no paid API fallback. |
-| Newly saved text is not in semantic results yet | Indexing is asynchronous. Check the semantic backlog with `memory_status`; full-text retrieval remains available. |
-| The VM stopped or was replaced | The local launcher provides reconnect recovery. The appliance adds systemd supervision, but replacement-host recovery still needs an external backup and deletion history. Check the actual host and data path. |
+| `setup_required` | Locate the canonical directory before creating a store. |
+| `disabled` | Reinstall only intentionally with `up --resume` or bootstrap. |
+| Loopback connection fails | Check the exact interpreter, service state, and credential file. |
+| Client tools are absent | Reload the client configuration; bridge success is not UI activation. |
+| OAuth flow waits | Inspect and approve only the exact pending request from that flow. |
+| `partial` | Resolve each reported issue and rerun; do not declare success. |
+| Restore validation fails | Preserve both stores and follow the recovery result. |
 
-`service.log` and `service.json` reside in the private data directory. Logs can
-contain local paths or diagnostic details; inspect and redact before sharing.
-Connection credentials are stored separately and must never be pasted into a
-diagnostic transcript. File permissions do not isolate secrets from the OS owner.
-
-For a reproducible bug, report the release, Python/OS versions, transport, sanitized
-command result, and a synthetic reproduction in
-[GitHub issues](https://github.com/OnFiala/Dots-Brain/issues). Include whether the
-problem is a generated bridge failure or an actual application connection failure.
-See [verification](verification.md) for what has already been tested.
-
-
-## Cloudflare 403 with error 1010
-
-A final appliance check observed Python `urllib` denied at Cloudflare while `curl`
-reached the same discovery endpoint. [Cloudflare error 1010](https://developers.cloudflare.com/support/troubleshooting/http-status-codes/cloudflare-1xxx-errors/error-1010/)
-indicates a client browser-signature block. Record the failing client's status and
-check the Cloudflare security event before changing the application. A successful
-shell probe does not establish access from a provider's MCP backend. Do not turn
-off security checks globally merely to make a diagnostic client pass.
+`preflight` and `doctor` are read-only starting points. A remote device, public
+ingress, or missing external supervisor needs separate access and evidence.
