@@ -1394,6 +1394,34 @@ def test_revoked_grant_history_does_not_consume_live_authorization_capacity(
         assert state.policy(historical_tokens["access_token"]) is None
 
 
+def test_existing_client_can_reauthorize_at_live_client_capacity(installation, monkeypatch):
+    _, state, _, app = installation
+    monkeypatch.setattr("dots_brain.oauth.MAX_CLIENTS", 1)
+    with TestClient(app, base_url=ISSUER) as http:
+        existing = register(http)
+        tokens = http.post("/token", data=request_code(http, existing, state)).json()
+        assert state.policy(tokens["access_token"]) is not None
+        request_code(http, existing, state, approve=False)
+        candidate = register(http)
+        response = http.get(
+            "/authorize",
+            params={
+                "client_id": candidate["client_id"],
+                "redirect_uri": CALLBACK,
+                "response_type": "code",
+                "code_challenge": "x" * 43,
+                "code_challenge_method": "S256",
+                "scope": "memory:read",
+                "resource": state.resource,
+            },
+            follow_redirects=False,
+        )
+        assert parse_qs(urlsplit(response.headers["location"]).query)["error"] == [
+            "temporarily_unavailable"
+        ]
+        assert {row["client_id"] for row in state.pending()["requests"]} == {existing["client_id"]}
+
+
 def test_purge_removes_ungranted_pending_clients_before_selecting_other_clients(installation):
     _, state, _, app = installation
     with TestClient(app, base_url=ISSUER) as http:

@@ -404,15 +404,18 @@ class OAuthStore:
         capacity_reached = False
         with self.store.connection(write=True) as db:
             self._cleanup(db)
-            live_clients = db.execute(
-                "SELECT COUNT(DISTINCT client_id) FROM ("
-                "SELECT client_id FROM oauth_grants WHERE revoked=0 AND expires>? "
-                "UNION SELECT client_id FROM oauth_requests WHERE expires>? "
-                "UNION SELECT client_id FROM oauth_codes WHERE expires>?"
-                ")",
-                (time.time(), time.time(), time.time()),
-            ).fetchone()[0]
-            if live_clients >= MAX_CLIENTS:
+            live_clients = {
+                row[0]
+                for row in db.execute(
+                    "SELECT DISTINCT client_id FROM ("
+                    "SELECT client_id FROM oauth_grants WHERE revoked=0 AND expires>? "
+                    "UNION SELECT client_id FROM oauth_requests WHERE expires>? "
+                    "UNION SELECT client_id FROM oauth_codes WHERE expires>?"
+                    ")",
+                    (time.time(), time.time(), time.time()),
+                )
+            }
+            if len(live_clients) >= MAX_CLIENTS and client.client_id not in live_clients:
                 capacity_reached = True
             full = capacity_reached or (
                 db.execute("SELECT COUNT(*) FROM oauth_requests WHERE status='pending'").fetchone()[

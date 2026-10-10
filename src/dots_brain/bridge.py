@@ -1,7 +1,7 @@
 """A local stdio client for the same authenticated remote memory service."""
 
 import asyncio
-import hashlib
+import re
 from contextlib import asynccontextmanager
 from pathlib import Path
 from uuid import uuid4
@@ -17,7 +17,7 @@ from . import __version__
 from .auth import authenticate, read_connection
 from .errors import BrainError, BusyError, InputError
 from .local import read_json, write_json
-from .protocol import INSTRUCTIONS, error_result, safe_error
+from .protocol import INSTRUCTIONS, error_result, protect_tool_dispatch, safe_error
 
 PROBE_SOURCE = "dots-brain-probe"
 PROBE_ACCOUNT = "connection-verifier"
@@ -29,10 +29,16 @@ def _probe_receipt_path(path: Path) -> Path:
 
 
 def _probe_identity(path: Path) -> tuple[str, Path]:
-    """Derive a stable probe identity without retaining the credential token."""
-    token = read_connection(path)["token"]
-    digest = hashlib.sha256(token.encode()).hexdigest()
-    return "connection-probe-" + digest[:32], _probe_receipt_path(path)
+    """Reuse an unfinished probe; a completed verification gets a fresh identity."""
+    receipt = _probe_receipt_path(path)
+    if receipt.exists():
+        event_id = read_json(receipt).get("event_id", "")
+        if not isinstance(event_id, str) or not re.fullmatch(
+            r"connection-probe-[a-f0-9]{32,64}", event_id
+        ):
+            raise InputError("The unfinished probe receipt is invalid; preserve it for review.")
+        return event_id, receipt
+    return "connection-probe-" + uuid4().hex, receipt
 
 
 def _entry_credential_path(entry: dict) -> Path | None:
@@ -149,21 +155,45 @@ async def verify_command(entry: dict, **checks) -> dict:
         return await verify_session(session, **checks)
 
 
-async def _remove_probe(session, *, memory_id, revision, event_id, cleanup_store) -> bool:
+def _matches_probe(record, *, memory_id, revision, event_id, project) -> bool:
+    expected = {
+        "id": memory_id,
+        "revision": revision,
+        "event_id": event_id,
+        "project": project,
+        "source": PROBE_SOURCE,
+        "account": PROBE_ACCOUNT,
+    }
+    return isinstance(record, dict) and all(
+        record.get(key) == value for key, value in expected.items()
+    )
+
+
+async def _remove_probe(session, *, memory_id, revision, event_id, project, cleanup_store) -> bool:
     if cleanup_store is not None:
         record = cleanup_store.get(memory_id)
-        if record["event_id"] != event_id or record["source"] != PROBE_SOURCE:
-            raise InputError("Probe identity mismatch; no memory was removed.")
+    else:
+        checked = await session.call_tool("memory_get", {"memory_id": memory_id})
+        record = None if checked.isError else checked.structuredContent
+    if not _matches_probe(
+        record, memory_id=memory_id, revision=revision, event_id=event_id, project=project
+    ):
+        raise InputError("Probe identity mismatch; no memory was removed.")
+    if cleanup_store is not None:
         cleanup_store.forget(memory_id, expected_revision=revision)
         return True
     removed = await session.call_tool(
         "memory_forget", {"memory_id": memory_id, "expected_revision": revision}
     )
-    return not removed.isError
+    return bool(
+        not removed.isError
+        and removed.structuredContent
+        and removed.structuredContent.get("deleted") is True
+    )
 
 
 async def _remove_probe_on_fresh_session(
-    fresh_session, *, memory_id, revision, event_id, cleanup_store
+    fresh_session, *, memory_id, revision, event_id, project, cleanup_store
 ) -> bool:
     try:
         if cleanup_store is not None:
@@ -172,6 +202,7 @@ async def _remove_probe_on_fresh_session(
                 memory_id=memory_id,
                 revision=revision,
                 event_id=event_id,
+                project=project,
                 cleanup_store=cleanup_store,
             )
         if fresh_session is None:
@@ -182,6 +213,7 @@ async def _remove_probe_on_fresh_session(
                 memory_id=memory_id,
                 revision=revision,
                 event_id=event_id,
+                project=project,
                 cleanup_store=None,
             )
     except Exception:
@@ -213,7 +245,15 @@ async def verify_session(
     names = [tool.name for tool in tools.tools]
     check = "memory_status" if "memory_status" in names else "audit_report"
     if check not in names:
-        raise InputError("This client has no supported read tool for verification.")
+        if write or not names:
+            raise InputError("This client has no supported read tool for verification.")
+        return _verification_result(
+            state="verified_connection",
+            names=names,
+            read="not_available",
+            write="not_tested",
+            probe_removed="not_applicable",
+        )
     result = await session.call_tool(check, {})
     if result.isError:
         return _verification_result(
@@ -268,13 +308,13 @@ async def verify_session(
             probe_removed="unknown",
         )
     if saved.isError or not saved.structuredContent:
-        _clear_probe_receipt(probe_receipt_path)
+        # A server error can occur after a commit; retain the idempotency receipt.
         return _verification_result(
             state="verification_failed",
             names=names,
             read=True,
-            write=False,
-            probe_removed=False,
+            write="unknown",
+            probe_removed="unknown",
         )
     try:
         memory_id = saved.structuredContent["id"]
@@ -293,8 +333,13 @@ async def verify_session(
         checked = await session.call_tool("memory_get", {"memory_id": memory_id})
         verified_write = bool(
             not checked.isError
-            and checked.structuredContent
-            and checked.structuredContent.get("event_id") == event_id
+            and _matches_probe(
+                checked.structuredContent,
+                memory_id=memory_id,
+                revision=revision,
+                event_id=event_id,
+                project=project,
+            )
         )
     except Exception:
         verified_write = False
@@ -305,6 +350,7 @@ async def verify_session(
                 memory_id=memory_id,
                 revision=revision,
                 event_id=event_id,
+                project=project,
                 cleanup_store=cleanup_store,
             )
         except Exception:
@@ -316,6 +362,7 @@ async def verify_session(
             memory_id=memory_id,
             revision=revision,
             event_id=event_id,
+            project=project,
             cleanup_store=cleanup_store,
         )
     if removed:
@@ -336,88 +383,108 @@ class BridgeFailure(BrainError):
 
 
 class BridgeSession:
-    """Own the HTTP context in one task and reuse it until a transport failure.
+    """One owner for the HTTP context, with bounded concurrent tool calls.
 
-    A failed operation is never replayed. The next request opens a new session.
-    Keeping context entry and exit in the same task preserves AnyIO ownership.
+    Every request has one deadline including queue time. A failed transport ends
+    the session and fails its outstanding requests; no operation is replayed.
     """
+
+    MAX_PENDING = 128
+    MAX_CONCURRENT = 8
+    REQUEST_TIMEOUT = 30
 
     def __init__(self, path):
         self.path = path
-        self.queue = asyncio.Queue(maxsize=32)
+        self.queue = asyncio.Queue(maxsize=self.MAX_PENDING)
+        self.pending = set()
         self.closed = False
+        self.owner = None
 
     async def request(self, name, arguments=None):
         if self.closed:
             raise BridgeFailure(
                 {"code": "service_unavailable", "message": "The local bridge is closed."}
             )
+        if len(self.pending) >= self.MAX_PENDING:
+            raise BusyError("The local bridge capacity is full; retry later.")
         result = asyncio.get_running_loop().create_future()
+        self.pending.add(result)
         try:
-            # Admission is atomic with the closed check on this event loop.
-            # Waiting putters could otherwise enqueue behind the stop sentinel
-            # after close drained the queue and the worker had already exited.
             self.queue.put_nowait((name, arguments, result))
-            return await result
         except asyncio.QueueFull:
+            self.pending.discard(result)
             result.cancel()
-            raise BusyError("The local bridge queue is full; retry later.") from None
-        except asyncio.CancelledError:
-            # A canceled caller must not leave a result waiter behind in the
-            # bounded queue. The worker observes this before issuing the call.
-            result.cancel()
-            raise
+            raise BusyError("The local bridge capacity is full; retry later.") from None
+        try:
+            return await asyncio.wait_for(result, timeout=self.REQUEST_TIMEOUT)
+        except TimeoutError as exc:
+            raise BridgeFailure(safe_error(exc)) from None
+        finally:
+            self.pending.discard(result)
 
-    def _cancel_pending(self):
-        while True:
-            try:
-                request = self.queue.get_nowait()
-            except asyncio.QueueEmpty:
-                return
-            if request is not None and not request[2].done():
-                request[2].cancel()
+    def _settle_pending(self, error=None):
+        while not self.queue.empty():
+            self.queue.get_nowait()
+        for result in tuple(self.pending):
+            if not result.done():
+                if error is None:
+                    result.cancel()
+                else:
+                    result.set_exception(BridgeFailure(error))
 
     async def close(self):
         self.closed = True
-        self._cancel_pending()
+        self._settle_pending()
+        if self.owner is not None and not self.owner.done():
+            self.owner.cancel()
+
+    async def _call(self, session, slots, request):
+        name, arguments, result = request
+        task = asyncio.current_task()
+
+        def cancel_abandoned(future):
+            if future.cancelled():
+                task.cancel()
+
+        result.add_done_callback(cancel_abandoned)
         try:
-            self.queue.put_nowait(None)
-        except asyncio.QueueFull:
-            # The worker will receive its cancellation path during bridge
-            # shutdown, which drains the queue and resolves all callers.
-            pass
+            async with slots:
+                if result.done():
+                    return
+                value = (
+                    await session.list_tools()
+                    if name is None
+                    else await session.call_tool(name, arguments)
+                )
+                if not result.done():
+                    result.set_result(value)
+        finally:
+            result.remove_done_callback(cancel_abandoned)
 
     async def run(self):
-        request = None
+        self.owner = asyncio.current_task()
+        slots = asyncio.Semaphore(self.MAX_CONCURRENT)
         try:
-            while True:
+            while not self.closed:
                 request = await self.queue.get()
-                if request is None:
-                    return
+                if request[2].done():
+                    continue
                 try:
-                    async with connect(self.path) as session:
-                        while request is not None:
-                            name, arguments, result = request
-                            if not result.cancelled():
-                                value = (
-                                    await session.list_tools()
-                                    if name is None
-                                    else await session.call_tool(name, arguments)
-                                )
-                                if not result.done():
-                                    result.set_result(value)
+                    async with connect(self.path) as session, asyncio.TaskGroup() as calls:
+                        while not self.closed:
+                            if not request[2].done():
+                                calls.create_task(self._call(session, slots, request))
                             request = await self.queue.get()
-                        return
                 except asyncio.CancelledError:
                     raise
                 except Exception as exc:
-                    if request is not None and not request[2].done():
-                        request[2].set_exception(BridgeFailure(safe_error(exc)))
+                    self._settle_pending(safe_error(exc))
+        except asyncio.CancelledError:
+            if not self.closed:
+                raise
         finally:
             self.closed = True
-            if request is not None and not request[2].done():
-                request[2].cancel()
-            self._cancel_pending()
+            self._settle_pending()
 
 
 async def run_bridge(path: Path) -> None:
@@ -435,6 +502,7 @@ async def run_bridge(path: Path) -> None:
         except Exception as exc:
             return error_result(exc)
 
+    protect_tool_dispatch(server)
     worker = asyncio.create_task(remote.run())
     try:
         async with stdio_server() as (read, write):

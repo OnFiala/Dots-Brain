@@ -1,6 +1,7 @@
 """MCP boundary: strict inputs, safe errors, and shared client instructions.
 
-The one private SDK access lives here: FastMCP 1.30 has no version argument.
+SDK adaptations live here: FastMCP 1.30 has no version argument, and its
+cold-cache tool dispatch otherwise converts discovery failures to raw text.
 Keep the dependency pinned and test initialize/list/call when upgrading it.
 """
 
@@ -16,7 +17,7 @@ from uuid import uuid4
 import httpx
 import jsonschema
 from mcp.server.fastmcp import FastMCP
-from mcp.types import CallToolResult, TextContent
+from mcp.types import CallToolRequest, CallToolResult, ListToolsRequest, ServerResult, TextContent
 from pydantic import Field, ValidationError
 
 from . import __version__
@@ -53,7 +54,7 @@ def causes(exc: BaseException):
             pending.append(current.__cause__)
 
 
-def safe_error(exc: BaseException) -> dict:
+def _classify_error(exc: BaseException) -> dict:
     chain = list(causes(exc))
     for error in chain:
         if isinstance(error, BrainError):
@@ -111,10 +112,6 @@ def safe_error(exc: BaseException) -> dict:
                 "message": "The database operation failed; use doctor to inspect its state.",
             }
     reference = uuid4().hex
-    # Exception text, tracebacks, arguments, and local paths can contain secrets.
-    logging.getLogger("dots_brain").error(
-        "Operation failed reference=%s exception_type=%s", reference, type(chain[-1]).__name__
-    )
     return {
         "code": "internal_error",
         "message": "The operation failed. Consult the host log using the reference.",
@@ -122,13 +119,65 @@ def safe_error(exc: BaseException) -> dict:
     }
 
 
-def error_result(exc: BaseException) -> CallToolResult:
-    payload = {"error": safe_error(exc)}
+def safe_error(exc: BaseException, *, operation: str = "operation") -> dict:
+    value = _classify_error(exc)
+    chain = list(causes(exc))
+    error_number = next(
+        (error.errno for error in chain if isinstance(error, OSError) and type(error.errno) is int),
+        None,
+    )
+    # Known operation names, codes, class names and errno are sufficient to locate
+    # the failure. Tracebacks, exception messages, paths and arguments are omitted.
+    logging.getLogger("dots_brain").warning(
+        "Operation failed operation=%s code=%s exception_type=%s errno=%s reference=%s",
+        operation,
+        value["code"],
+        type(chain[-1]).__name__,
+        error_number,
+        value.get("reference"),
+    )
+    return value
+
+
+def error_result(exc: BaseException, *, operation: str = "tools/call") -> CallToolResult:
+    payload = {"error": safe_error(exc, operation=operation)}
     return CallToolResult(
         isError=True,
         structuredContent=payload,
         content=[TextContent(type="text", text=json.dumps(payload))],
     )
+
+
+def protect_tool_dispatch(server) -> None:
+    """Keep SDK discovery/validation failures inside the same safe error boundary.
+
+    The SDK looks up a tool before entering our callback. Resolve and validate
+    it here first; the original handler then uses its populated cache and keeps
+    ownership of result normalization and the MCP transport.
+    """
+    dispatch = server.request_handlers[CallToolRequest]
+
+    async def call(request):
+        try:
+            if request.params.name not in server._tool_cache:
+                await server.request_handlers[ListToolsRequest](None)
+            tool = server._tool_cache.get(request.params.name)
+            if tool is None:
+                raise InputError("Unknown or unavailable memory tool.")
+            arguments = request.params.arguments or {}
+            if set(arguments) - tool.inputSchema.get("properties", {}).keys():
+                raise InputError("Unknown tool argument; use the published input schema.")
+            jsonschema.Draft202012Validator(tool.inputSchema).validate(arguments)
+            result = await dispatch(request)
+            value = result.root
+            if isinstance(value, CallToolResult) and value.isError and not value.structuredContent:
+                # Legacy SDK errors can include arguments or exception text.
+                return ServerResult(error_result(RuntimeError("MCP dispatch failed")))
+            return result
+        except Exception as exc:
+            return ServerResult(error_result(exc))
+
+    server.request_handlers[CallToolRequest] = call
 
 
 class BrainMCP(FastMCP):
@@ -139,6 +188,7 @@ class BrainMCP(FastMCP):
         self.current_policy = None
         super().__init__(*args, instructions=INSTRUCTIONS, **kwargs)
         self._mcp_server.version = __version__
+        protect_tool_dispatch(self._mcp_server)
 
     async def list_tools(self):
         tools = await super().list_tools()
@@ -154,10 +204,6 @@ class BrainMCP(FastMCP):
 
     async def call_tool(self, name, arguments):
         try:
-            definitions = {tool.name: tool for tool in await super().list_tools()}
-            if name not in definitions:
-                raise InputError("Unknown memory tool.")
-            jsonschema.validate(arguments or {}, definitions[name].inputSchema)
             return await super().call_tool(name, arguments)
         except Exception as exc:
-            return error_result(exc)
+            return error_result(exc, operation=name if name in self.required_scopes else "unknown")

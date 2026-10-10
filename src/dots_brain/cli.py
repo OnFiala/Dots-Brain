@@ -412,6 +412,7 @@ def main() -> None:
                 "blocked",
                 "partial",
                 "capture_partial",
+                "capture_recovery_required",
             }:
                 raise SystemExit(1)
     except Exception as exc:

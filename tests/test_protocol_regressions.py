@@ -6,12 +6,14 @@ import httpx
 import pytest
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
+from mcp.server.lowlevel import Server
+from mcp.shared.memory import create_connected_server_and_client_session
 
 from dots_brain import __version__
 from dots_brain.auth import BearerAuth, issue_client
 from dots_brain.bridge import BridgeFailure, BridgeSession
 from dots_brain.errors import ConflictError, NotFoundError, StoreDisabledError, SuppressedError
-from dots_brain.protocol import INSTRUCTIONS, safe_error
+from dots_brain.protocol import INSTRUCTIONS, protect_tool_dispatch, safe_error
 from dots_brain.server import create_server
 from dots_brain.service import MemoryService
 from dots_brain.store import Store
@@ -200,3 +202,78 @@ def test_bridge_error_categories_do_not_render_credentials():
     assert safe_error(ExceptionGroup("unsafe", [error]))["code"] == "credential_rejected"
     assert safe_error(httpx.ReadTimeout("PRIVATE_CANARY"))["code"] == "timed_out"
     assert "PRIVATE_CANARY" not in json.dumps(safe_error(error))
+
+
+def test_cold_tool_call_after_disable_keeps_typed_error(tmp_path):
+    store = Store(tmp_path / "brain")
+    store.initialize()
+    server = create_server(MemoryService(store))
+
+    async def exercise():
+        async with create_connected_server_and_client_session(server) as session:
+            (store.directory / "disabled.json").write_text("{}")
+            # Deliberately omit tools/list: discovery itself now fails.
+            result = await session.call_tool("memory_status", {})
+            assert result.isError
+            assert result.structuredContent["error"]["code"] == "store_disabled"
+
+    asyncio.run(exercise())
+
+
+def test_cold_bridge_discovery_failure_is_typed_and_does_not_send_tool():
+    server = Server("Synthetic bridge")
+    calls = []
+
+    @server.list_tools()
+    async def unavailable():
+        raise httpx.ConnectError("PRIVATE_DISCOVERY_CANARY")
+
+    @server.call_tool(validate_input=False)
+    async def call(name, arguments):
+        calls.append(name)
+
+    protect_tool_dispatch(server)
+
+    async def exercise():
+        async with create_connected_server_and_client_session(server) as session:
+            result = await session.call_tool("memory_remember", {})
+            assert result.isError
+            assert result.structuredContent["error"]["code"] == "service_unavailable"
+            assert "PRIVATE_DISCOVERY_CANARY" not in result.model_dump_json()
+
+    asyncio.run(exercise())
+    assert calls == []
+
+
+def test_memory_context_mcp_returns_content_and_provenance(tmp_path):
+    store = Store(tmp_path / "brain")
+    store.initialize()
+    record = store.remember(
+        content="The alpine observatory sends temperature readings every Tuesday.",
+        source="contract-test",
+        account="synthetic",
+        event_id="context",
+        project="shared",
+    )
+
+    async def exercise():
+        async with client(store, tmp_path) as (session, _, __):
+            result = await session.call_tool(
+                "memory_context", {"task": "alpine observatory", "project": "shared"}
+            )
+            assert not result.isError
+            value = result.structuredContent
+            assert "temperature readings every Tuesday" in value["context"]
+            assert value["memories"] == 1
+            reference = json.loads(value["context"].splitlines()[1])
+            assert reference == {
+                "id": record["id"],
+                "revision": 1,
+                "source": "contract-test",
+                "project": "shared",
+            }
+            invalid = await session.call_tool("memory_status", {"unexpected": "PRIVATE_CANARY"})
+            assert invalid.structuredContent["error"]["code"] == "invalid_input"
+            assert "PRIVATE_CANARY" not in invalid.model_dump_json()
+
+    asyncio.run(exercise())
