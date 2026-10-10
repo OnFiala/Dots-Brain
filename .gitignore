@@ -21,4 +21,11 @@ build/
 *.pem
 credentials.json
 connection.json
+probe.connection.json
+connections/
+*.before-dots-brain
+service.json
+oauth.json
+integrations.json
+*.jsonl
 *.ses

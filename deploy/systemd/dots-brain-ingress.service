@@ -1,5 +1,5 @@
 [Unit]
-Description=Dots Brain bounded HTTP gateway for Cloudflare Tunnel
+Description=Dots Brain bounded HTTP gateway
 After=network-online.target docker.service dots-brain.service
 Wants=network-online.target
 StartLimitIntervalSec=300
@@ -20,6 +20,15 @@ KillSignal=SIGQUIT
 UMask=0077
 NoNewPrivileges=true
 PrivateTmp=true
+PrivateDevices=true
+ProtectKernelLogs=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+RestrictNamespaces=true
+RestrictRealtime=true
+LockPersonality=true
+SystemCallArchitectures=native
 ProtectSystem=strict
 ProtectHome=true
 ProtectKernelTunables=true
