@@ -19,7 +19,8 @@ from starlette.testclient import TestClient
 
 from dots_brain.cli import parser, run
 from dots_brain.errors import InputError
-from dots_brain.oauth import OAuthStore, configure
+from dots_brain.oauth import OAuthStore, configuration, configure
+from dots_brain.operator_cli import doctor
 from dots_brain.removal import uninstall
 from dots_brain.runtime import down, up
 from dots_brain.server import create_http_app, create_server
@@ -1029,7 +1030,7 @@ def test_registration_and_pending_capacity_fail_cleanly_and_expired_entries_reco
             },
         )
         assert response.status_code == 201
-        assert state.get_client(client["client_id"]) is None
+        assert state.get_client(client["client_id"]) is not None
         client = response.json()
         request_code(http, client, state, approve=False)
         response = http.get(
@@ -1123,9 +1124,9 @@ def test_supervised_oauth_configuration_never_starts_managed_process(tmp_path, m
 
     monkeypatch.setattr(runtime, "up", forbidden_start)
     base = ["--data-dir", str(store.directory), "oauth"]
-    configured = run(parser().parse_args(base + ["configure", "--issuer", ISSUER, "--no-start"]))
+    configured = run(parser().parse_args(base + ["configure", "--issuer", ISSUER]))
     assert configured["restart_required"] is True
-    disabled = run(parser().parse_args(base + ["disable", "--no-start"]))
+    disabled = run(parser().parse_args(base + ["disable"]))
     assert disabled["restart_required"] is True
     assert not (store.directory / "service.json").exists()
 
@@ -1164,7 +1165,7 @@ def test_issuer_replacement_requires_explicit_choice_and_keeps_grant_provenance(
 def test_public_ingress_rejects_local_static_credential(installation, tmp_path):
     from dots_brain.auth import issue_client
 
-    store, _, _, app = installation
+    store, state, server, _ = installation
     credential = tmp_path / "local.json"
     issue_client(
         store,
@@ -1176,7 +1177,10 @@ def test_public_ingress_rejects_local_static_credential(installation, tmp_path):
         url=ISSUER + "/mcp",
     )
     token = json.loads(credential.read_text())["token"]
-    with TestClient(app, base_url=ISSUER) as http:
+    with TestClient(
+        create_http_app(server, MemoryService(store), public_gateway=True),
+        base_url=ISSUER,
+    ) as http:
         result = http.post(
             "/mcp",
             json={},
@@ -1187,7 +1191,35 @@ def test_public_ingress_rejects_local_static_credential(installation, tmp_path):
         assert result.headers["cache-control"] == "no-store"
         assert (
             http.post("/mcp", json={}, headers={"Authorization": "Bearer " + token}).status_code
+            == 401
+        )
+        client = register(http)
+        tokens = http.post("/token", data=request_code(http, client, state)).json()
+        assert (
+            http.post(
+                "/mcp", json={}, headers={"Authorization": "Bearer " + tokens["access_token"]}
+            ).status_code
             != 401
+        )
+    local_server = create_server(MemoryService(store), http=True)
+    with TestClient(
+        create_http_app(local_server, MemoryService(store)),
+        base_url=ISSUER,
+    ) as http:
+        assert (
+            http.post("/mcp", json={}, headers={"Authorization": "Bearer " + token}).status_code
+            != 401
+        )
+        assert (
+            http.post(
+                "/mcp",
+                json={},
+                headers=[
+                    ("Authorization", "Bearer " + token),
+                    ("Authorization", "Bearer " + token),
+                ],
+            ).status_code
+            == 401
         )
 
 
@@ -1279,6 +1311,181 @@ def test_onboarding_limiter_bounds_many_peers_and_global_capacity():
     assert len(limiter.global_buckets) == 1
 
 
+def test_onboarding_limiter_commits_global_budget_only_for_admitted_peer():
+    from dots_brain.oauth_http import OnboardingLimiter
+
+    limiter = OnboardingLimiter()
+    saturated = {"path": "/register", "client": ("shared-peer", 1)}
+    assert sum(limiter.allow(saturated) for _ in range(6)) == 6
+    assert not limiter.allow(saturated)
+    # Rejections from the saturated peer must not consume the route's remaining
+    # 54-token global budget. Forwarded headers cannot create another peer.
+    assert all(not limiter.allow(saturated) for _ in range(100))
+    forwarded = [
+        {
+            "path": "/register",
+            "client": ("127.0.0.1", 1),
+            "headers": [
+                (b"x-dots-brain-public-gateway", b"1"),
+                (b"cf-connecting-ip", f"198.51.100.{index}".encode()),
+            ],
+        }
+        for index in range(1, 10)
+    ]
+    assert sum(limiter.allow(scope) for scope in forwarded) == 6
+    assert (
+        sum(
+            limiter.allow({"path": "/register", "client": (f"new-{index}", 1)})
+            for index in range(54)
+        )
+        == 48
+    )
+
+
+def test_pairing_csp_permits_the_validated_callback_origin(installation):
+    _, state, _, app = installation
+    with TestClient(app, base_url=ISSUER) as browser:
+        client = register(browser, scopes="memory:read")
+        request_id, pairing = request_code(
+            browser, client, state, approve=False, scopes="memory:read"
+        )
+        state.decide(request_id, projects=["work"], scopes=["memory:read"])
+        page = browser.get(pairing, follow_redirects=False)
+        assert page.status_code == 200
+        assert page.headers["content-security-policy"] == (
+            "default-src 'none'; base-uri 'none'; frame-ancestors 'none'; "
+            "form-action 'self' http://127.0.0.1:9999"
+        )
+
+
+def test_onboarding_treats_far_future_or_wrong_version_marker_as_closed(installation):
+    store, state, _, _ = installation
+    marker = store.directory / "oauth-onboarding.json"
+    marker.write_text(json.dumps({"version": 1, "expires_at": time.time() + 3601}))
+    assert state.onboarding_state() == {"state": "closed", "reason": "invalid_expiry"}
+    marker.write_text(json.dumps({"version": 2, "expires_at": time.time() + 60}))
+    assert state.onboarding_state() == {"state": "closed", "reason": "not_open"}
+
+
+def test_revoked_grant_history_does_not_consume_live_authorization_capacity(
+    installation, monkeypatch
+):
+    _, state, _, app = installation
+    monkeypatch.setattr("dots_brain.oauth.MAX_CLIENTS", 1)
+    with TestClient(app, base_url=ISSUER) as http:
+        historical = register(http)
+        historical_tokens = http.post("/token", data=request_code(http, historical, state)).json()
+        state.revoke_grant(state.grants()["grants"][0]["id"])
+        candidate = register(http)
+        response = http.get(
+            "/authorize",
+            params={
+                "client_id": candidate["client_id"],
+                "redirect_uri": CALLBACK,
+                "response_type": "code",
+                "code_challenge": "x" * 43,
+                "code_challenge_method": "S256",
+                "scope": "memory:read",
+                "resource": state.resource,
+            },
+            follow_redirects=False,
+        )
+        assert response.status_code == 302
+        assert state.policy(historical_tokens["access_token"]) is None
+
+
+def test_purge_removes_ungranted_pending_clients_before_selecting_other_clients(installation):
+    _, state, _, app = installation
+    with TestClient(app, base_url=ISSUER) as http:
+        ordinary = register(http, name="ordinary")
+        pending = register(http, name="pending")
+        request_code(http, pending, state, approve=False)
+    state.purge()
+    assert state.get_client(ordinary["client_id"]) is None
+    assert state.get_client(pending["client_id"]) is None
+    assert state.pending()["requests"] == []
+
+
+def _state_directory_bytes(directory):
+    return {
+        str(path.relative_to(directory)): path.read_bytes()
+        for path in sorted(directory.rglob("*"))
+        if path.is_file()
+    }
+
+
+def test_configuration_and_doctor_inspect_valid_journal_without_mutating_state(installation):
+    store, _, _, _ = installation
+    previous = json.loads((store.directory / "oauth.json").read_text())
+    transition = "a" * 32
+    (store.directory / "oauth-config-pending.json").write_text(
+        json.dumps({"version": 1, "id": transition, "previous": previous, "next": previous})
+    )
+    with store.connection(write=True) as db:
+        db.execute("INSERT INTO oauth_config_commits(id) VALUES (?)", (transition,))
+    before = _state_directory_bytes(store.directory)
+    assert configuration(store) == previous
+    assert _state_directory_bytes(store.directory) == before
+    assert doctor(store)["checks"]["oauth"] == {"state": "configured"}
+    assert _state_directory_bytes(store.directory) == before
+    assert configure(store, ISSUER)["state"] == "configured"
+    assert not (store.directory / "oauth-config-pending.json").exists()
+
+
+def test_ambiguous_uncommitted_journal_stays_fail_closed_until_owner_discards_it(installation):
+    from dots_brain.errors import StateError
+
+    store, _, _, _ = installation
+    original = json.loads((store.directory / "oauth.json").read_text())
+    journal = store.directory / "oauth-config-pending.json"
+    journal.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "id": "b" * 32,
+                "previous": {"version": 1, "issuer": "https://attacker.example"},
+                "next": original,
+            }
+        )
+    )
+    before = _state_directory_bytes(store.directory)
+    assert configuration(store) is None
+    assert doctor(store)["checks"]["oauth"] == {"state": "not_configured"}
+    assert _state_directory_bytes(store.directory) == before
+    with pytest.raises(StateError, match="ambiguous"):
+        configure(store, ISSUER)
+    assert (
+        configure(store, ISSUER, discard_journal=True, replace_issuer=True)["state"] == "configured"
+    )
+    assert not journal.exists()
+
+
+def test_corrupt_oauth_config_disables_oauth_but_keeps_local_static_http(installation, tmp_path):
+    from dots_brain.auth import issue_client
+
+    store, _, _, _ = installation
+    credential = tmp_path / "static.json"
+    issue_client(
+        store,
+        name="local",
+        scopes=["memory:read"],
+        projects=None,
+        days=1,
+        output=credential,
+        url=ISSUER + "/mcp",
+    )
+    token = json.loads(credential.read_text())["token"]
+    (store.directory / "oauth.json").write_text('{"version":')
+    service = MemoryService(store)
+    app = create_http_app(create_server(service, http=True), service)
+    with TestClient(app, base_url=ISSUER) as http:
+        assert (
+            http.post("/mcp", json={}, headers={"Authorization": "Bearer " + token}).status_code
+            != 401
+        )
+        assert http.get("/.well-known/oauth-authorization-server").status_code in {401, 404}
+
+
 @pytest.mark.parametrize("persistent_failure", [False, True])
 def test_failed_issuer_file_publication_preserves_grants_and_can_recover(
     installation, monkeypatch, persistent_failure
@@ -1304,8 +1511,117 @@ def test_failed_issuer_file_publication_preserves_grants_and_can_recover(
     with store.connection() as db:
         assert db.execute("SELECT COUNT(*) FROM oauth_grants WHERE revoked=0").fetchone()[0] == 1
         assert db.execute("SELECT COUNT(*) FROM oauth_tokens").fetchone()[0] == 2
-    assert state.enabled() is not persistent_failure
+    # The failed publication left the already-published previous configuration
+    # intact, so deterministic rollback can clear that unambiguous journal.
+    assert state.enabled()
     monkeypatch.setattr(oauth, "write_json", original)
     configure(store, ISSUER)
     assert state.policy(tokens["access_token"]) is not None
     assert not (store.directory / "oauth-config-pending.json").exists()
+
+
+@pytest.mark.parametrize(
+    "extra", [[], ["--transport", "stdio"], ["--transport", "http", "--listen-fd", "3"]]
+)
+def test_public_gateway_cannot_use_stdio_or_the_managed_probe_listener(tmp_path, extra):
+    data = tmp_path / "absent"
+    args = parser().parse_args(["--data-dir", str(data), "serve", "--public-gateway", *extra])
+    with pytest.raises(InputError, match="separately supervised HTTP"):
+        run(args)
+    assert not data.exists()
+
+
+def test_serve_cli_applies_public_gateway_policy(installation, monkeypatch, tmp_path):
+    import uvicorn
+
+    from dots_brain.auth import issue_client
+
+    store, _, _, _ = installation
+    credential = tmp_path / "local.json"
+    issue_client(
+        store,
+        name="local probe",
+        scopes=["memory:read"],
+        projects=None,
+        days=1,
+        output=credential,
+        url=ISSUER + "/mcp",
+    )
+    token = json.loads(credential.read_text(encoding="utf-8"))["token"]
+    observed = []
+
+    def inspect_app(app, **binding):
+        assert binding["host"] == "127.0.0.1"
+        with TestClient(app, base_url=ISSUER) as http:
+            response = http.post("/mcp", json={}, headers={"Authorization": "Bearer " + token})
+            observed.append(response.status_code)
+
+    monkeypatch.setattr(uvicorn, "run", inspect_app)
+    args = parser().parse_args(
+        ["--data-dir", str(store.directory), "serve", "--transport", "http", "--public-gateway"]
+    )
+    run(args)
+    assert observed == [401]
+
+
+def test_explicit_journal_recovery_revokes_the_uncommitted_previous_issuer(installation):
+    from dots_brain.errors import StateError
+
+    store, state, _, app = installation
+    with TestClient(app, base_url=ISSUER) as http:
+        client = register(http)
+        tokens = http.post("/token", data=request_code(http, client, state)).json()
+        assert state.policy(tokens["access_token"]) is not None
+    replacement = {"version": 1, "issuer": "https://replacement.example"}
+    journal = store.directory / "oauth-config-pending.json"
+    journal.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "id": "b" * 32,
+                "previous": {"version": 1, "issuer": ISSUER},
+                "next": replacement,
+            }
+        ),
+        encoding="utf-8",
+    )
+    (store.directory / "oauth.json").write_text(json.dumps(replacement), encoding="utf-8")
+    before = _state_directory_bytes(store.directory)
+    with pytest.raises(StateError, match="also pass --replace-issuer"):
+        configure(store, replacement["issuer"], discard_journal=True)
+    assert _state_directory_bytes(store.directory) == before
+    result = configure(store, replacement["issuer"], discard_journal=True, replace_issuer=True)
+    assert result["grants_revoked"] == 1
+    assert result["clients_invalidated"] == 1
+    assert not journal.exists()
+    replacement_state = OAuthStore(store)
+    assert replacement_state.get_client(client["client_id"]) is None
+    with store.connection() as db:
+        assert db.execute("SELECT COUNT(*) FROM oauth_grants WHERE revoked=0").fetchone()[0] == 0
+        assert db.execute("SELECT COUNT(*) FROM oauth_tokens").fetchone()[0] == 0
+
+
+@pytest.mark.parametrize("terminal", ["revoked", "expired"])
+def test_purge_retains_historical_grants_and_their_provenance(installation, terminal):
+    store, state, _, app = installation
+    with TestClient(app, base_url=ISSUER) as http:
+        granted = register(http)
+        http.post("/token", data=request_code(http, granted, state)).raise_for_status()
+        ungranted = register(http)
+        request_code(http, ungranted, state, approve=False)
+    with store.connection(write=True) as db:
+        db.execute(
+            "UPDATE oauth_grants SET " + ("revoked=1" if terminal == "revoked" else "expires=0")
+        )
+        grants = [tuple(row) for row in db.execute("SELECT * FROM oauth_grants")]
+        provenance = [tuple(row) for row in db.execute("SELECT * FROM oauth_grant_provenance")]
+    result = state.purge()
+    assert result["unused_clients_removed"] == 1
+    assert state.get_client(ungranted["client_id"]) is None
+    with store.connection() as db:
+        assert [tuple(row) for row in db.execute("SELECT * FROM oauth_grants")] == grants
+        assert [
+            tuple(row) for row in db.execute("SELECT * FROM oauth_grant_provenance")
+        ] == provenance
+        assert db.execute("SELECT COUNT(*) FROM oauth_clients").fetchone()[0] == 1
+        assert db.execute("SELECT COUNT(*) FROM oauth_tokens").fetchone()[0] == 0

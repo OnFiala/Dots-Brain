@@ -86,16 +86,31 @@ def issuer_url(value: str) -> str:
         raise InputError("OAuth issuer has an invalid host or port.") from None
 
 
-def configuration(store: Store) -> dict | None:
-    if (store.directory / "oauth-config-pending.json").exists():
-        raise StateError("OAuth configuration recovery is required; rerun oauth configure.")
-    path = store.directory / "oauth.json"
-    if not path.exists():
-        return None
+def _read_configuration_file(path) -> dict:
     config = read_json(path)
     if config.get("version") != 1 or not isinstance(config.get("issuer"), str):
         raise InputError("Unsupported OAuth configuration.")
     return {"version": 1, "issuer": issuer_url(config["issuer"])}
+
+
+def _read_configuration(store: Store) -> dict | None:
+    if (store.directory / "oauth-config-pending.json").exists():
+        return _inspect_pending_configuration(store)[0]
+    path = store.directory / "oauth.json"
+    return None if not path.exists() else _read_configuration_file(path)
+
+
+def configuration(store: Store) -> dict | None:
+    """Read OAuth without letting broken OAuth disable local static access.
+
+    A pending journal is inspected but never altered by a read. Corrupt or
+    ambiguous OAuth state stays unavailable to OAuth callers; the HTTP host can
+    still expose its separate local static-credential path.
+    """
+    try:
+        return _read_configuration(store)
+    except (InputError, StateError, OSError, ValueError):
+        return None
 
 
 def onboarding_path(store: Store):
@@ -124,11 +139,9 @@ def revoke_all(db) -> dict:
     return {"clients_invalidated": 0, "grants_revoked": 0}
 
 
-def _recover_configuration(store: Store) -> None:
-    """Finish or roll back a file publication according to its SQLite commit."""
+def _inspect_pending_configuration(store: Store) -> tuple[dict | None, bool]:
+    """Return an unambiguous pending configuration without changing on-disk state."""
     journal = store.directory / "oauth-config-pending.json"
-    if not journal.exists():
-        return
     pending = read_json(journal)
     if pending.get("version") != 1 or not re.fullmatch(r"[0-9a-f]{32}", str(pending.get("id", ""))):
         raise StateError("OAuth configuration journal is invalid; preserve it for inspection.")
@@ -144,32 +157,55 @@ def _recover_configuration(store: Store) -> None:
         )
     value = pending.get("next" if committed else "previous")
     if value is None:
-        (store.directory / "oauth.json").unlink(missing_ok=True)
+        expected = None
     elif isinstance(value, dict) and value.get("version") == 1:
-        write_json(
-            store.directory / "oauth.json", {"version": 1, "issuer": issuer_url(value["issuer"])}
-        )
+        expected = {"version": 1, "issuer": issuer_url(value.get("issuer"))}
     else:
         raise StateError("OAuth configuration journal is invalid; preserve it for inspection.")
+    path = store.directory / "oauth.json"
+    actual = None if not path.exists() else _read_configuration_file(path)
+    if actual != expected:
+        raise StateError(
+            "OAuth configuration journal is ambiguous; preserve it for explicit owner recovery."
+        )
+    return actual, bool(committed)
+
+
+def _recover_configuration(store: Store) -> None:
+    """Clear only an unambiguous journal during explicit owner configuration."""
+    journal = store.directory / "oauth-config-pending.json"
+    if not journal.exists():
+        return
+    _, committed = _inspect_pending_configuration(store)
     if committed:
         onboarding_path(store).unlink(missing_ok=True)
-    sync_directory(store.directory)
     journal.unlink()
     sync_directory(store.directory)
 
 
-def configure(store: Store, issuer: str, *, replace_issuer: bool = False) -> dict:
+def configure(
+    store: Store, issuer: str, *, replace_issuer: bool = False, discard_journal: bool = False
+) -> dict:
     config = {"version": 1, "issuer": issuer_url(issuer)}
     store.ensure_writable()
-    _recover_configuration(store)
-    previous = configuration(store)
+    journal = store.directory / "oauth-config-pending.json"
+    if discard_journal:
+        if not replace_issuer:
+            raise StateError(
+                "Discarding a journal revokes all OAuth grants; also pass --replace-issuer."
+            )
+        # The prior issuer is unknowable in a broken journal. Explicit recovery
+        # always revokes, even if the selected issuer matches the published file.
+        previous = None
+    else:
+        _recover_configuration(store)
+        previous = _read_configuration(store)
     if previous is not None and previous != config and not replace_issuer:
         raise StateError(
             "Replacing the issuer revokes existing grants; use --replace-issuer explicitly."
         )
     revoked = {"clients_invalidated": 0, "grants_revoked": 0}
     transition = uuid.uuid4().hex
-    journal = store.directory / "oauth-config-pending.json"
     write_json(journal, {"version": 1, "id": transition, "previous": previous, "next": config})
     try:
         with store.connection(write=True) as db:
@@ -237,8 +273,13 @@ class OAuthStore:
             or not math.isfinite(expires)
         ):
             return {"state": "closed", "reason": "not_open"}
-        if expires <= time.time():
+        if value.get("version") != 1:
+            return {"state": "closed", "reason": "not_open"}
+        now = time.time()
+        if expires <= now:
             return {"state": "closed", "reason": "expired"}
+        if expires > now + ONBOARDING_MAX_SECONDS:
+            return {"state": "closed", "reason": "invalid_expiry"}
         return {"state": "open", "expires_at": expires}
 
     def set_onboarding(self, *, open_for_seconds: int | None) -> dict:
@@ -338,30 +379,12 @@ class OAuthStore:
                 raise RegistrationError("invalid_redirect_uri", "Use HTTPS or a loopback callback.")
         with self.store.connection(write=True) as db:
             self._cleanup(db)
-            full = (
-                db.execute(
-                    "SELECT COUNT(*) FROM oauth_clients WHERE id NOT IN "
-                    "(SELECT client_id FROM oauth_client_revocations)"
-                ).fetchone()[0]
-                >= MAX_CLIENTS
+            # Registration itself grants no access. Keep it until the short
+            # cleanup TTL rather than evicting an arbitrary new client.
+            db.execute(
+                "INSERT INTO oauth_clients VALUES (?,?,?)",
+                (client.client_id, client.model_dump_json(), time.time()),
             )
-            if full:
-                # Never evict a grant, pending consent, or a client with an unspent code.
-                removed = db.execute(
-                    "DELETE FROM oauth_clients WHERE id=(SELECT id FROM oauth_clients "
-                    "WHERE id NOT IN (SELECT client_id FROM oauth_grants "
-                    "UNION SELECT client_id FROM oauth_requests "
-                    "UNION SELECT client_id FROM oauth_codes) ORDER BY created,id LIMIT 1)"
-                ).rowcount
-                full = not removed
-            if not full:
-                db.execute(
-                    "INSERT INTO oauth_clients VALUES (?,?,?)",
-                    (client.client_id, client.model_dump_json(), time.time()),
-                )
-        # SDK error dataclasses are frozen: raise outside generator context managers.
-        if full:
-            raise RegistrationError("invalid_client_metadata", "Registration capacity reached.")
 
     def authorize(self, client, params):
         self.require_enabled()
@@ -378,15 +401,26 @@ class OAuthStore:
             raise AuthorizeError("invalid_request", "A valid S256 PKCE challenge is required.")
         if not params.scopes or not set(params.scopes) <= SCOPES:
             raise AuthorizeError("invalid_scope", "Request explicit supported memory scopes.")
+        capacity_reached = False
         with self.store.connection(write=True) as db:
             self._cleanup(db)
-            full = (
+            live_clients = db.execute(
+                "SELECT COUNT(DISTINCT client_id) FROM ("
+                "SELECT client_id FROM oauth_grants WHERE revoked=0 AND expires>? "
+                "UNION SELECT client_id FROM oauth_requests WHERE expires>? "
+                "UNION SELECT client_id FROM oauth_codes WHERE expires>?"
+                ")",
+                (time.time(), time.time(), time.time()),
+            ).fetchone()[0]
+            if live_clients >= MAX_CLIENTS:
+                capacity_reached = True
+            full = capacity_reached or (
                 db.execute("SELECT COUNT(*) FROM oauth_requests WHERE status='pending'").fetchone()[
                     0
                 ]
                 >= MAX_PENDING
             )
-            client_full = (
+            client_full = capacity_reached or (
                 db.execute(
                     "SELECT COUNT(*) FROM oauth_requests WHERE client_id=? AND status='pending'",
                     (client.client_id,),
@@ -404,6 +438,10 @@ class OAuthStore:
                     "INSERT INTO oauth_request_provenance VALUES (?,?)",
                     (request_id, created_at),
                 )
+        if capacity_reached:
+            raise AuthorizeError(
+                "temporarily_unavailable", "Authorization client capacity reached."
+            )
         if full or client_full:
             raise AuthorizeError(
                 "temporarily_unavailable", "Pending authorization capacity reached."
@@ -464,10 +502,18 @@ class OAuthStore:
         self.require_enabled()
         with self.store.connection(write=True) as db:
             self._cleanup(db)
+            # Purge is an explicit owner action. Remove ungranted pending
+            # requests first, so attacker entries cannot protect themselves by
+            # staying pending while unrelated registrations are selected.
+            db.execute(
+                "DELETE FROM oauth_requests WHERE client_id NOT IN "
+                "(SELECT client_id FROM oauth_grants WHERE revoked=0 AND expires>?)",
+                (time.time(),),
+            )
             removed = db.execute(
                 "DELETE FROM oauth_clients WHERE id NOT IN (SELECT client_id FROM oauth_grants "
-                "UNION SELECT client_id FROM oauth_requests "
-                "UNION SELECT client_id FROM oauth_codes)"
+                "UNION SELECT client_id FROM oauth_codes WHERE expires>?)",
+                (time.time(),),
             ).rowcount
             record_auth_change(
                 self.store, db, "oauth_unused_clients_purged", details={"removed": removed}

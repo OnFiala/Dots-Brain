@@ -54,13 +54,15 @@ async def indexing_lifespan(service: MemoryService):
                 await worker
 
 
-def create_http_app(server: FastMCP, service: MemoryService):
+def create_http_app(server: FastMCP, service: MemoryService, *, public_gateway: bool = False):
     from .auth import BearerAuth
     from .oauth import OAuthStore, configuration
     from .oauth_http import routes_app
 
     oauth = OAuthStore(service.store) if configuration(service.store) else None
-    protected = BearerAuth(server.streamable_http_app(), service.store, oauth=oauth)
+    protected = BearerAuth(
+        server.streamable_http_app(), service.store, oauth=oauth, public_gateway=public_gateway
+    )
     authorization = routes_app(oauth) if oauth else None
 
     async def app(scope, receive, send):

@@ -80,7 +80,12 @@ def run_oauth(store, args):
     with locked(store.directory / "installation.lock"):
         if args.oauth_action == "configure":
             return {
-                **configure(store, args.issuer, replace_issuer=args.replace_issuer),
+                **configure(
+                    store,
+                    args.issuer,
+                    replace_issuer=args.replace_issuer,
+                    discard_journal=args.discard_journal,
+                ),
                 "restart_required": True,
             }
         if args.oauth_action == "disable":
@@ -195,6 +200,8 @@ def run_serve(store, args):
     from .server import create_http_app, create_server
     from .service import MemoryService
 
+    if args.public_gateway and (args.transport != "http" or args.listen_fd is not None):
+        raise InputError("Public gateway mode requires a separately supervised HTTP listener.")
     store.status()  # No lock files or new directories for an uninitialized store.
     with serve_locks(store, http=args.transport == "http"):
         ensure_enabled(store)
@@ -226,7 +233,10 @@ def run_serve(store, args):
                 else {"host": "127.0.0.1", "port": args.port}
             )
             uvicorn.run(
-                create_http_app(server, service), **binding, access_log=False, log_level="warning"
+                create_http_app(server, service, public_gateway=args.public_gateway),
+                **binding,
+                access_log=False,
+                log_level="warning",
             )
         else:
             server.run(transport="stdio")

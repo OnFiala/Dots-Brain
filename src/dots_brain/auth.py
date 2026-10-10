@@ -164,7 +164,7 @@ def list_clients(store: Store) -> list[dict]:
 
 def read_connection(path: Path) -> dict:
     try:
-        data = json.loads(path.read_text())
+        data = json.loads(path.read_text(encoding="utf-8"))
         validate_endpoint(data["url"])
         if (
             data.get("version") != 1
@@ -182,30 +182,31 @@ def read_connection(path: Path) -> dict:
 class BearerAuth:
     """Authenticate every HTTP request without exposing token values to tools."""
 
-    def __init__(self, app, store: Store, *, oauth=None):
+    def __init__(self, app, store: Store, *, oauth=None, public_gateway: bool = False):
         self.app, self.store = app, store
         self.oauth = oauth
+        # This setting is server-owned. It must be supplied by the listener or
+        # supervisor, never inferred from Host or forwarded request headers.
+        self.public_gateway = public_gateway
 
     async def __call__(self, scope, receive, send):
         if scope["type"] == "websocket":
             return await send({"type": "websocket.close", "code": 1008})
         if scope["type"] != "http":
             return await self.app(scope, receive, send)
-        headers = dict(scope["headers"])
+        raw_headers = scope["headers"]
+        if sum(key.lower() == b"authorization" for key, _ in raw_headers) > 1:
+            from starlette.responses import JSONResponse
+
+            return await JSONResponse(
+                {"error": "unauthorized"}, status_code=401, headers={"Cache-Control": "no-store"}
+            )(scope, receive, send)
+        headers = dict(raw_headers)
         value = headers.get(b"authorization", b"").decode("latin-1")
         bearer = value[:7].lower() == "bearer "
-        # The dedicated ingress overwrites this header. Public-origin Host is
-        # also treated as remote, so omitting the marker cannot enable a local key.
-        public = headers.get(b"x-dots-brain-public-gateway") == b"1"
-        if self.oauth is not None:
-            issuer = urlsplit(self.oauth.issuer)
-            public |= (
-                issuer.hostname not in {"127.0.0.1", "localhost", "::1"}
-                and headers.get(b"host", b"").decode("latin-1").lower() == issuer.netloc.lower()
-            )
         policy = (
             await anyio.to_thread.run_sync(authenticate, self.store, value[7:])
-            if bearer and not public
+            if bearer and not self.public_gateway
             else None
         )
         if policy is None and self.oauth is not None and bearer:

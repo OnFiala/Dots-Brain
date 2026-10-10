@@ -155,17 +155,16 @@ def parser() -> argparse.ArgumentParser:
         "--issuer", required=True, help="Existing HTTPS origin; does not create ingress."
     )
     oauth_setup.add_argument(
-        "--no-start", action="store_true", help="Leave startup to an external supervisor."
+        "--discard-journal",
+        action="store_true",
+        help="Discard an inspected, unrecoverable issuer-change journal.",
     )
     oauth_setup.add_argument(
         "--replace-issuer",
         action="store_true",
         help="Explicitly revoke old grants when changing the issuer.",
     )
-    oauth_disable = oauth_actions.add_parser("disable")
-    oauth_disable.add_argument(
-        "--no-start", action="store_true", help="Leave startup to an external supervisor."
-    )
+    oauth_actions.add_parser("disable")
     for name in ("status", "pending", "grants", "clients", "purge"):
         action = oauth_actions.add_parser(name)
         if name == "pending":
@@ -200,6 +199,11 @@ def parser() -> argparse.ArgumentParser:
     serve.add_argument("--transport", choices=["stdio", "http"], default="stdio")
     serve.add_argument("--port", type=port_number, default=8765)
     serve.add_argument("--listen-fd", type=int, help=argparse.SUPPRESS)
+    serve.add_argument(
+        "--public-gateway",
+        action="store_true",
+        help="Accept OAuth grants only on this HTTP listener.",
+    )
     serve.add_argument("--semantic", action="store_true")
     model = commands.add_parser("model", help="Manage the pinned local embedding model.")
     model.add_argument("action", choices=["prepare"])

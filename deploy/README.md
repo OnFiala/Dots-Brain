@@ -6,7 +6,8 @@ addresses, executable path, service user, and data directory before use.
 
 ## What the template provides
 
-- `systemd/dots-brain.service` runs a loopback HTTP MCP server.
+- `systemd/dots-brain.service` runs a loopback HTTP MCP server with
+  `--public-gateway`: only OAuth grants are accepted on this listener.
 - `systemd/dots-brain-ingress.service` starts a small dedicated nginx gateway.
 - `systemd/dots-brain-onboarding.service` opens the gateway pairing gate for ten
   minutes when explicitly started.
@@ -16,18 +17,26 @@ addresses, executable path, service user, and data directory before use.
 
 The nginx configuration permits MCP bodies up to 1 MiB and limits OAuth endpoint
 bodies to 16 KiB. It accepts only the expected methods, removes forwarded-header
-input, sets the public-gateway marker, and sends unknown paths to 404.
+input, and sends unknown paths to 404. The backend's command-line flag owns the
+authentication policy. No request header can enable or disable public mode.
 
 ## Prepare an instance
 
 1. Create a dedicated unprivileged service account and a private data directory.
 2. Check out a reviewed version and create its environment with `uv sync --locked
    --extra semantic` if semantic search is wanted.
-3. Initialize the store, prepare the model if selected, and stop any test service.
-4. Copy and edit the unit and nginx files to the host's system locations.
-5. Validate the final nginx configuration and systemd units with the host tools.
-6. Start the memory service, then the gateway. Verify a local MCP read before
-   enabling OAuth.
+3. Initialize the store and prepare the model if selected. Before exposing it,
+   run a private managed service with `up` and verify a read with its generated
+   `probe.connection.json`. `up` itself checks a real MCP read before reporting
+   readiness. Then run `down`; the public service cannot share its writer lease.
+4. With writers stopped, configure OAuth for the intended HTTPS origin as
+   described in [OAuth](../docs/oauth.md). Record the private backup and rollback.
+5. Copy and edit the unit and nginx files to the host's system locations. Preserve
+   `--public-gateway` in the memory unit. Validate both with the host tools.
+6. Start the memory service, then the gateway and the existing TLS route. A request
+   without a grant must return 401. This check proves access is closed, not that a
+   client is connected. Complete the onboarding flow below and verify a real MCP
+   read through that client's OAuth grant before declaring the connection ready.
 
 Do not run both `dots-brain up` and the systemd memory service for one data
 directory. The systemd unit owns the long-running HTTP process. Keep the service

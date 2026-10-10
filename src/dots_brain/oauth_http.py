@@ -57,30 +57,29 @@ class OnboardingLimiter:
         route = scope.get("path")
         if route not in {"/register", "/authorize"}:
             return True
+        # The ASGI peer is owned by the listening transport. Forwarded client-IP
+        # headers are caller input at this boundary and must never select a bucket.
         peer = (scope.get("client") or ("unknown",))[0]
-        headers = dict(scope.get("headers", []))
-        if peer in {"127.0.0.1", "::1"} and headers.get(b"x-dots-brain-public-gateway") == b"1":
-            import ipaddress
-
-            try:
-                peer = str(
-                    ipaddress.ip_address(headers.get(b"cf-connecting-ip", b"").decode("ascii"))
-                )
-            except (UnicodeError, ValueError):
-                peer = "unverified_gateway_peer"
         now = time.monotonic()
         per_peer = 6 if route == "/register" else 12
+        computed = []
         for buckets, key, capacity in (
             (self.global_buckets, route, per_peer * 10),
             (self.buckets, (route, peer), per_peer),
         ):
-            tokens, previous = buckets.pop(key, (float(capacity), now))
+            tokens, previous = buckets.get(key, (float(capacity), now))
             tokens = min(capacity, tokens + (now - previous) * capacity / 60)
-            buckets[key] = (max(0, tokens - 1), now)
-            while len(self.buckets) > 512:
-                self.buckets.popitem(last=False)
             if tokens < 1:
                 return False
+            computed.append((buckets, key, tokens))
+        # Commit neither bucket until the request fits both budgets. This prevents
+        # an already-limited peer from draining the shared route budget.
+        for buckets, key, tokens in computed:
+            buckets[key] = (tokens - 1, now)
+            if buckets is self.buckets:
+                buckets.move_to_end(key)
+        while len(self.buckets) > 512:
+            self.buckets.popitem(last=False)
         return True
 
 
@@ -259,8 +258,15 @@ def routes_app(state: OAuthStore):
             if result["browser_bound"]
             else "<p>Refresh this page in the browser that began this connection.</p>"
         )
+        refresh_note = (
+            "<p>This page checks again in ten seconds. "
+            "You can also refresh it after the owner approves.</p>"
+            if result["state"] == "pending"
+            else ""
+        )
         page = f"""<!doctype html><html lang="en"><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+{'<meta http-equiv="refresh" content="10">' if result["state"] == "pending" else ""}
 <title>Connect Dots Brain</title>
 <body><main><h1>Connect to your Dots Brain</h1>
 <p>{approval}</p>
@@ -269,6 +275,7 @@ def routes_app(state: OAuthStore):
 <p><strong>Requested scopes:</strong></p><ul>{requested}</ul>
 <p>Request ID: <code>{request_id_html}</code></p>
 <p>This request expires after five minutes. Never share memory credentials.</p>
+{refresh_note}
 {browser_note}{submit}
 </main></body></html>"""
         response = HTMLResponse(
@@ -276,7 +283,8 @@ def routes_app(state: OAuthStore):
             headers={
                 **NO_STORE,
                 "Content-Security-Policy": (
-                    "default-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+                    "default-src 'none'; base-uri 'none'; frame-ancestors 'none'; "
+                    f"form-action 'self' {origin}"
                 ),
                 "X-Frame-Options": "DENY",
                 "X-Content-Type-Options": "nosniff",
@@ -348,11 +356,6 @@ def routes_app(state: OAuthStore):
             nonlocal started
             if message["type"] == "http.response.start":
                 started = True
-                headers = dict(message.get("headers", []))
-                headers.update(
-                    {key.lower().encode(): value.encode() for key, value in NO_STORE.items()}
-                )
-                message = {**message, "headers": list(headers.items())}
             await send(message)
 
         try:
@@ -388,9 +391,11 @@ def routes_app(state: OAuthStore):
         async def response_send(message):
             if message["type"] == "http.response.start":
                 headers = dict(message.get("headers", []))
-                headers.update(
-                    {key.lower().encode(): value.encode() for key, value in NO_STORE.items()}
-                )
+                # This is the single response-header owner. Individual handlers
+                # may supply a stricter route-specific CSP, which must not be
+                # overwritten here.
+                for key, value in NO_STORE.items():
+                    headers.setdefault(key.lower().encode(), value.encode())
                 message = {**message, "headers": list(headers.items())}
             await send(message)
 

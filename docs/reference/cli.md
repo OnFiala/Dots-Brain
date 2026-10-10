@@ -89,14 +89,14 @@ checks a real connection and can add a synthetic write only with `--write`.
 ## OAuth
 
 ```sh
-dots-brain --data-dir /absolute/private/memory oauth configure --issuer https://memory.example --no-start
+dots-brain --data-dir /absolute/private/memory oauth configure --issuer https://memory.example
 dots-brain --data-dir /absolute/private/memory oauth onboarding open --minutes 10
 dots-brain --data-dir /absolute/private/memory oauth pending
 dots-brain --data-dir /absolute/private/memory oauth approve request-id --redirect-host client.example --project work --scope memory:read
 dots-brain --data-dir /absolute/private/memory oauth grants
 dots-brain --data-dir /absolute/private/memory oauth revoke grant-id
 dots-brain --data-dir /absolute/private/memory oauth onboarding close
-dots-brain --data-dir /absolute/private/memory oauth disable --no-start
+dots-brain --data-dir /absolute/private/memory oauth disable
 ```
 
 Changing issuer needs `oauth configure --replace-issuer` and revokes old OAuth

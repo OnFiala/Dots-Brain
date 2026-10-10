@@ -40,11 +40,11 @@ Report that evidence separately from remote access, capture, or host persistence
 
 `up` starts or reuses one managed loopback HTTP service. A manually supervised
 service may already own the store. `oauth configure` and `oauth disable` never
-start a service; use `--no-start` in supervised automation for an explicit stable
-command contract.
+start a service; use the existing supervisor for the subsequent restart. Run a
+backend exposed through a public route with `serve --transport http --public-gateway`.
 
 ```text
-dots-brain --data-dir /absolute/private/memory oauth configure --issuer https://memory.example --no-start
+dots-brain --data-dir /absolute/private/memory oauth configure --issuer https://memory.example
 ```
 
 ## Connect a local client
