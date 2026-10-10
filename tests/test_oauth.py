@@ -864,7 +864,7 @@ def test_official_oauth_client_completes_discovery_registration_and_pkce_over_li
         )
         assert disabled["state"] == "oauth_disabled" and disabled["grants_revoked"]
         assert len(before) == 1 and store.status()["memories"] == 1
-        assert httpx.get(issuer + "/.well-known/oauth-authorization-server").status_code == 401
+        assert httpx.get(issuer + "/.well-known/oauth-authorization-server").status_code == 503
     finally:
         down(store)
 

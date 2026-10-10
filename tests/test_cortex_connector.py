@@ -243,10 +243,14 @@ def test_same_operation_id_with_different_request_is_rejected():
 
 def test_parent_schema_helper_installs_only_the_distinct_ledger_table():
     connection = sqlite3.connect(":memory:")
-    setup_cortex_operations(connection)
-    names = {
-        row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")
-    }
+    try:
+        setup_cortex_operations(connection)
+        names = {
+            row[0]
+            for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        }
+    finally:
+        connection.close()
     assert names == {"cortex_operations"}
     assert "CREATE TABLE cortex_operations" in SCHEMA_SQL
 

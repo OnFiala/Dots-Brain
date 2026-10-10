@@ -1,4 +1,5 @@
 import sqlite3
+from contextlib import closing
 
 import pytest
 
@@ -49,7 +50,7 @@ def test_restore_merges_new_deletions_revokes_credentials_and_stays_disabled(tmp
     assert authenticate(target, json.loads(credentials.read_text())["token"]) is None
     with pytest.raises(InputError):
         restore_store(backup, target, latest_deletions=store)
-    with sqlite3.connect(f"file:{backup}?mode=ro", uri=True) as db:
+    with closing(sqlite3.connect(backup.resolve().as_uri() + "?mode=ro", uri=True)) as db:
         assert db.execute("SELECT COUNT(*) FROM memories").fetchone()[0] == 1
 
 
@@ -96,7 +97,7 @@ def test_backup_rejects_unsupported_or_logically_corrupt_database(tmp_path, dama
     source = Store(tmp_path / "live")
     source.initialize()
     source.remember(content="Fact", source="test", account="bot", event_id="a")
-    with sqlite3.connect(source.path) as db:
+    with closing(sqlite3.connect(source.path)) as db, db:
         if damage == "version":
             db.execute("PRAGMA user_version=99")
         else:

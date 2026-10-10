@@ -1,5 +1,6 @@
 import sqlite3
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import closing
 
 import pytest
 
@@ -124,7 +125,7 @@ def test_journal_mode_contention_has_a_deadline_and_can_resume(tmp_path, monkeyp
 
     memory = Store(tmp_path / "contended")
     memory.initialize()
-    with sqlite3.connect(memory.path) as reader:
+    with closing(sqlite3.connect(memory.path)) as reader, reader:
         reader.execute("PRAGMA journal_mode=DELETE")
         reader.execute("CREATE TABLE existing_data (value TEXT)")
         reader.execute("INSERT INTO existing_data VALUES ('preserve me')")
@@ -147,7 +148,11 @@ def test_journal_mode_retries_a_temporary_reader_lock(tmp_path):
 
     memory = Store(tmp_path / "temporary-lock")
     memory.initialize()
-    with sqlite3.connect(memory.path) as reader, ThreadPoolExecutor(max_workers=1) as executor:
+    with (
+        closing(sqlite3.connect(memory.path)) as reader,
+        reader,
+        ThreadPoolExecutor(max_workers=1) as executor,
+    ):
         reader.execute("PRAGMA journal_mode=DELETE")
         reader.execute("CREATE TABLE existing_data (value TEXT)")
         reader.execute("INSERT INTO existing_data VALUES ('preserve me')")
