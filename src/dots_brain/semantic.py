@@ -321,6 +321,7 @@ class SemanticIndex:
         ]
         clause, args = self.store._filter(projects, project)
         best = {}
+        invalid_vectors = 0
         with self.store.connection() as db:
             cursor = db.execute(
                 "SELECT m.id,m.current_revision AS revision,v.dimension,v.vector,"
@@ -332,13 +333,13 @@ class SemanticIndex:
                 try:
                     other = self.np.frombuffer(row["vector"], dtype="<f4")
                 except (TypeError, ValueError):
-                    logger.warning("Skipping invalid semantic vector encoding")
+                    invalid_vectors += 1
                     continue
                 if row["dimension"] != len(vectors[0]) or len(other) != len(vectors[0]):
-                    logger.warning("Skipping incompatible semantic vector for %s", row["id"])
+                    invalid_vectors += 1
                     continue
                 if not self.np.isfinite(other).all():
-                    logger.warning("Skipping non-finite semantic vector for %s", row["id"])
+                    invalid_vectors += 1
                     continue
                 score = max(float(self.np.dot(vector, other)) for vector in vectors)
                 if score < MIN_SEMANTIC_SCORE:
@@ -356,6 +357,8 @@ class SemanticIndex:
                     best = dict(
                         sorted(best.items(), key=lambda pair: pair[1], reverse=True)[:limit]
                     )
+        if invalid_vectors:
+            logger.warning("Skipped %d invalid semantic vectors in this search", invalid_vectors)
         records = []
         from .errors import NotFoundError
 

@@ -12,7 +12,7 @@ Use a private absolute data directory outside the checkout.
 | --- | --- |
 | `setup` | Initialize or reuse the local database. |
 | `doctor` | Diagnose the database, OAuth configuration, and managed-service record. |
-| `preflight` | Inspect host capabilities without changing state. |
+| `preflight [--network-policy PATH]` | Inspect host capabilities without changing state; only inspects a policy file explicitly supplied by the operator. |
 | `serve` | Run one stdio or loopback HTTP MCP server. |
 | `up` / `down` | Start or stop the managed loopback HTTP service. |
 | `providers` | List implemented client adapters. |
@@ -23,6 +23,7 @@ Use a private absolute data directory outside the checkout.
 dots-brain --data-dir /absolute/private/memory setup
 dots-brain --data-dir /absolute/private/memory doctor
 dots-brain preflight
+dots-brain preflight --network-policy /absolute/path/network-policy.json
 dots-brain --data-dir /absolute/private/memory serve
 dots-brain --data-dir /absolute/private/memory serve --transport http --port 8765
 dots-brain --data-dir /absolute/private/memory up

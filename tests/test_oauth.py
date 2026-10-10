@@ -795,7 +795,7 @@ def test_official_oauth_client_completes_discovery_registration_and_pkce_over_li
                                 "approve",
                                 request_id,
                                 "--redirect-host",
-                                "localhost",
+                                urlsplit(CALLBACK).hostname,
                                 "--project",
                                 "work",
                             ]

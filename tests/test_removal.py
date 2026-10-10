@@ -11,7 +11,7 @@ from mcp.client.stdio import stdio_client
 
 from dots_brain.auth import authenticate, issue_client, read_connection
 from dots_brain.clients import bridge_entry, configure, connect_client, integration_key
-from dots_brain.errors import InputError, SuppressedError
+from dots_brain.errors import StoreDisabledError, SuppressedError
 from dots_brain.local import read_json, write_json
 from dots_brain.removal import disconnect_client, remove_entry, uninstall
 from dots_brain.runtime import active, down, up
@@ -85,11 +85,11 @@ def test_complete_lifecycle_keeps_memories_and_blocks_restart_until_explicit_res
         assert not active(read_json(store.directory / "service.json"))
         assert read_json(config) == {"mcpServers": {}, "theme": "new preference after setup"}
         assert store.get(memory["id"])["content"] == "Keep this memory."
-        with pytest.raises(InputError, match="disabled"):
+        with pytest.raises(StoreDisabledError, match="disabled"):
             store.remember(content="Forget this.", source="test", account="a", event_id="2")
         assert authenticate(store, token) is None
         assert uninstall(store)["state"] == "uninstalled"
-        with pytest.raises(InputError, match="disabled"):
+        with pytest.raises(StoreDisabledError, match="disabled"):
             up(store)
         for command in ("setup", "doctor"):
             checked = subprocess.run(
@@ -105,7 +105,14 @@ def test_complete_lifecycle_keeps_memories_and_blocks_restart_until_explicit_res
                 text=True,
                 timeout=10,
             )
-            assert json.loads(checked.stdout)["state"] == "disabled"
+            if command == "setup":
+                assert checked.returncode == 1
+                assert json.loads(checked.stderr)["code"] == "store_disabled"
+            else:
+                assert checked.returncode == 0
+                diagnosis = json.loads(checked.stdout)
+                assert diagnosis["state"] == "diagnosis_completed"
+                assert diagnosis["service_disabled"] is True
         bridge = subprocess.run(
             [entry["command"], *entry["args"]], capture_output=True, text=True, timeout=10
         )

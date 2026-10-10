@@ -12,6 +12,7 @@ from pathlib import Path
 
 from . import __version__
 from .auth import SCOPES
+from .errors import InputError
 from .store import Store
 
 
@@ -108,8 +109,13 @@ def parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Quarantine an invalid or rejected pending coverage receipt before retrying.",
     )
-    commands.add_parser(
+    preflight = commands.add_parser(
         "preflight", help="Inspect host capabilities without changing configuration."
+    )
+    preflight.add_argument(
+        "--network-policy",
+        type=Path,
+        help="Optional JSON network-policy file to inspect; no provider path is assumed.",
     )
     start = commands.add_parser("up", help="Start or reuse and verify the local HTTP service.")
     start.add_argument("--port", type=managed_port)
@@ -224,12 +230,12 @@ def parser() -> argparse.ArgumentParser:
     return root
 
 
-def run(args) -> dict | None:
+def run(args) -> dict:
     # Host inventory and remote clients must not resolve or initialize a local store.
     if args.command == "preflight":
         from .runtime import preflight
 
-        return preflight()
+        return preflight(args.network_policy)
     if args.command == "providers":
         from .clients import providers
 
@@ -313,11 +319,9 @@ def run(args) -> dict | None:
                 projects=args.project,
             )
         )
-    if args.command in ("up", "down", "preflight"):
-        from .runtime import down, preflight, up
+    if args.command in ("up", "down"):
+        from .runtime import down, up
 
-        if args.command == "preflight":
-            return preflight()
         return (
             up(store, port=args.port, semantic=args.semantic, resume=args.resume)
             if args.command == "up"
@@ -381,7 +385,7 @@ def run(args) -> dict | None:
         if args.client_action == "revoke":
             return revoke_client(store, args.client_id)
         return {"clients": list_clients(store)}
-    return None
+    raise InputError("Unknown internal command.")
 
 
 def main() -> None:

@@ -1,5 +1,6 @@
 import json
 import time
+from argparse import Namespace
 
 import pytest
 
@@ -14,7 +15,7 @@ from dots_brain.clients import (
 from dots_brain.errors import InputError
 from dots_brain.local import read_json, write_json
 from dots_brain.removal import disconnect_client, uninstall
-from dots_brain.runtime import credential, daemon_environment, schedule_reap, up
+from dots_brain.runtime import credential, daemon_environment, preflight, schedule_reap, up
 from dots_brain.store import Store
 
 
@@ -66,6 +67,37 @@ def test_daemon_environment_drops_caller_import_and_proxy_state(monkeypatch):
     assert environment["LANG"] == "C.UTF-8"
     assert "PYTHONPATH" not in environment
     assert "HTTPS_PROXY" not in environment
+
+
+def test_preflight_uses_only_explicit_validated_network_policy(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "dots_brain.runtime.read_json", lambda _: pytest.fail("default must not read a vendor path")
+    )
+    assert preflight()["network_policy"] == "not_supplied"
+
+    policy = tmp_path / "network-policy.json"
+    policy.write_text(json.dumps({"version": 1, "tcp_network_access": {"domains": ["mcp"]}}))
+    monkeypatch.undo()
+    inspected = preflight(policy)
+    assert inspected["network_policy"] == "checked"
+    assert inspected["managed_network"] is True
+    assert inspected["tcp_destinations_configured"] is True
+
+    policy.write_text(json.dumps({"version": 1, "tcp_network_access": []}))
+    invalid = preflight(policy)
+    assert invalid["network_policy"] == "invalid"
+    assert invalid["managed_network"] == "unknown"
+
+
+def test_preflight_parser_exposes_optional_policy_and_run_rejects_unknown_command(tmp_path):
+    from dots_brain.cli import parser, run
+
+    policy = tmp_path / "policy.json"
+    policy.write_text(json.dumps({"version": 1, "tcp_network_access": {}}))
+    result = run(parser().parse_args(["preflight", "--network-policy", str(policy)]))
+    assert result["network_policy"] == "checked"
+    with pytest.raises(InputError, match="Unknown internal command"):
+        run(Namespace(command="unknown", data_dir=None))
 
 
 def test_background_reaper_waits_for_the_managed_child():

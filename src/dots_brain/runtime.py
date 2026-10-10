@@ -25,23 +25,57 @@ from .local import locked, read_json, write_json
 from .store import Store
 
 
-def preflight() -> dict:
-    policy_path = Path("/etc/codex/network-policy.json")
-    policy = read_json(policy_path) if policy_path.is_file() else {}
-    managed = policy.get("version") == 1
-    tcp = policy.get("tcp_network_access", {})
+def inspect_network_policy(path: Path | None) -> dict:
+    """Inspect an operator-supplied policy without assuming a host vendor layout."""
+    if path is None:
+        return {
+            "state": "not_supplied",
+            "managed": False,
+            "tcp_destinations_configured": "unknown",
+        }
+    if not path.is_file():
+        return {
+            "state": "unavailable",
+            "managed": "unknown",
+            "tcp_destinations_configured": "unknown",
+        }
+    try:
+        policy = read_json(path)
+        version = policy.get("version")
+        tcp = policy.get("tcp_network_access", {})
+        if type(version) is not int or version != 1 or not isinstance(tcp, dict):
+            raise ValueError
+        domains = tcp.get("domains", [])
+        ranges = tcp.get("ip_ranges", [])
+        if not isinstance(domains, list) or not isinstance(ranges, list):
+            raise ValueError
+    except (OSError, ValueError, InputError):
+        return {
+            "state": "invalid",
+            "managed": "unknown",
+            "tcp_destinations_configured": "unknown",
+        }
+    return {
+        "state": "checked",
+        "managed": True,
+        "tcp_destinations_configured": bool(domains or ranges),
+    }
+
+
+def preflight(network_policy: Path | None = None) -> dict:
+    policy = inspect_network_policy(network_policy)
+    managed = policy["managed"]
     systemd = Path("/run/systemd/system").is_dir() and shutil.which("systemctl") is not None
     return {
         "platform": sys.platform,
         "background_process": sys.platform == "linux",
         "systemd_detected": bool(systemd),
         "managed_network": managed,
-        "tcp_destinations_configured": bool(tcp.get("domains") or tcp.get("ip_ranges"))
-        if managed
-        else "unknown",
+        "network_policy": policy["state"],
+        "tcp_destinations_configured": policy["tcp_destinations_configured"],
         "public_ingress": "not_configured",
         "tunnel_reason": "The managed host has no configured TCP destinations."
-        if managed and not tcp.get("domains") and not tcp.get("ip_ranges")
+        if managed is True and not policy["tcp_destinations_configured"]
         else "A supported ingress must be configured and verified on this host.",
         "vm_persistence": "not_verified",
         "secret_isolation": False,

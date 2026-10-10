@@ -84,6 +84,21 @@ def test_truncation_is_bounded_and_reported(index):
         )
 
 
+def test_corrupt_vector_population_emits_one_summary_per_search(index, caplog):
+    save(index, "lexical fact", "many-corrupt-chunks")
+    index._chunks = lambda text: [(0, 1)] * MAX_CHUNKS_PER_MEMORY
+    index.index()
+    with index.store.connection(write=True) as db:
+        db.execute("UPDATE semantic_chunks SET vector=?", (b"bad",))
+
+    assert index.search("query") == []
+    warnings = [record for record in caplog.records if record.name == "dots_brain.semantic"]
+    assert len(warnings) == 1
+    assert warnings[0].getMessage() == (
+        f"Skipped {MAX_CHUNKS_PER_MEMORY} invalid semantic vectors in this search"
+    )
+
+
 def test_corrupt_derived_vector_is_skipped_without_losing_fulltext(index):
     memory = save(index, "stable lexical fact", "corrupt")
     index.index()
