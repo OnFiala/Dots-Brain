@@ -20,9 +20,6 @@ jobs:
       fail-fast: false
       matrix:
         python: ['3.11', '3.12', '3.13']
-    env:
-      BRAIN_TEST_OLD_V1_SRC: ${{ runner.temp }}/dots-historical-v1/src
-      BRAIN_TEST_OLD_V2_SRC: ${{ runner.temp }}/dots-historical-v2/src
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2
       - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.1.0
@@ -41,6 +38,9 @@ jobs:
       - run: uv run ruff check src tests scripts
       - run: uv run ruff format --check src tests scripts
       - run: uv run pytest -q
+        env:
+          BRAIN_TEST_OLD_V1_SRC: ${{ runner.temp }}/dots-historical-v1/src
+          BRAIN_TEST_OLD_V2_SRC: ${{ runner.temp }}/dots-historical-v2/src
       - run: uv run python scripts/validate_project.py
       - run: uv build
   gateway:
