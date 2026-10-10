@@ -15,15 +15,18 @@ def _line(command: str) -> str:
     return json.dumps({"type": "shell_command", "command": command}) + "\n"
 
 
-def test_copytruncate_records_acknowledged_gap_and_new_generation(tmp_path):
+def test_copytruncate_records_gap_and_blocks_the_current_cursor(tmp_path):
     source, cursor, events = tmp_path / "audit.jsonl", tmp_path / "run.cursor", []
     source.write_text(_line("old-one") + _line("old-two"))
     collector = JSONLCollector([source], cursor, lambda item: events.append(item) or True)
     assert collector.collect() == 2
     source.write_text(_line("new-one") + _line("new-two") + _line("new-three"))
-    assert collector.collect() == 4
-    assert events[2]["action"]["reason"] == "file_rotated_or_truncated"
-    assert len({event["record_id"] for event in events}) == len(events)
+    assert collector.collect() == 1
+    assert events[-1]["action"]["reason"] == "source_rewritten_requires_reset"
+    assert collector.collect() == 0
+    state = json.loads(cursor.read_text())["files"][str(source)]
+    assert state["offset"] == len(_line("old-one") + _line("old-two"))
+    assert state["source_reset_required"] is True
 
 
 def test_collector_requires_explicit_ack_and_uses_full_name_lock(tmp_path):
@@ -152,6 +155,187 @@ def test_appending_small_source_does_not_rotate_or_replay_acknowledged_lines(tmp
     assert sum(event["record_id"] == first_id for event in events) == 1
     assert all(event.get("kind") != "gap" for event in events)
     assert collector.collect() == 0
+
+
+def test_rename_preserves_forgotten_record_identity_and_imports_only_the_append(tmp_path):
+    source, cursor = tmp_path / "audit.jsonl", tmp_path / "cursor"
+    source.write_text(_line("forgotten") + _line("kept"))
+    delivered, suppressed = [], set()
+
+    def sink(event):
+        assert event["record_id"] not in suppressed, "forgotten source record was delivered again"
+        delivered.append(event)
+        return True
+
+    collector = JSONLCollector([source], cursor, sink)
+    assert collector.collect() == 2
+    suppressed.add(delivered[0]["record_id"])
+    original = source.read_bytes()
+
+    # Export tools commonly replace an unchanged snapshot through rename.
+    replacement = source.with_suffix(".replacement")
+    replacement.write_bytes(original)
+    replacement.replace(source)
+    assert collector.collect() == 0
+
+    # A later replacement may carry the same consumed prefix plus a new line.
+    replacement.write_bytes(original + _line("new-after-forget").encode())
+    replacement.replace(source)
+    assert collector.collect() == 1
+    assert [event["action"].get("reason") for event in delivered if event["kind"] == "gap"] == []
+    assert [event["action"].get("command") for event in delivered] == [
+        "forgotten",
+        "kept",
+        "new-after-forget",
+    ]
+
+
+def test_rename_with_a_middle_prefix_rewrite_blocks_without_importing_the_append(tmp_path):
+    source, cursor, events = tmp_path / "audit.jsonl", tmp_path / "cursor", []
+    lines = [_line(f"row-{index:03d}") for index in range(120)]
+    source.write_text("".join(lines))
+    collector = JSONLCollector([source], cursor, lambda event: events.append(event) or True)
+    assert collector.collect() == 120
+    acknowledged = source.read_bytes()
+    lines[60] = _line("new-060")  # Same length; the old 256-byte samples still match.
+    replacement = source.with_suffix(".replacement")
+    replacement.write_text("".join(lines) + _line("append-after-rewrite"))
+    replacement.replace(source)
+    assert collector.collect() == 1
+    assert events[-1]["action"]["reason"] == "source_rewritten_requires_reset"
+    assert len(events) == 121
+    state = json.loads(cursor.read_text())["files"][str(source)]
+    assert state["offset"] == len(acknowledged)
+    assert state["source_reset_required"] is True
+
+
+def test_rewritten_rename_records_one_gap_and_blocks_reimport(tmp_path):
+    source, cursor, events = tmp_path / "audit.jsonl", tmp_path / "cursor", []
+    source.write_text(_line("original"))
+    collector = JSONLCollector([source], cursor, lambda event: events.append(event) or True)
+    assert collector.collect() == 1
+    replacement = source.with_suffix(".replacement")
+    replacement.write_text(_line("rewritten-one"))
+    replacement.replace(source)
+    assert collector.collect() == 1
+    replacement.write_text(_line("rewritten-two"))
+    replacement.replace(source)
+    assert collector.collect() == 0
+    gaps = [event for event in events if event["kind"] == "gap"]
+    assert [event["action"]["reason"] for event in gaps] == ["source_rewritten_requires_reset"]
+
+
+def test_initially_missing_source_is_not_reported_as_a_rotation_when_created(tmp_path):
+    source, cursor, events = tmp_path / "audit.jsonl", tmp_path / "cursor", []
+    collector = JSONLCollector([source], cursor, lambda event: events.append(event) or True)
+    assert collector.collect() == 1
+    source.write_text(_line("available"))
+    assert collector.collect() == 1
+    assert [event["action"].get("reason") for event in events if event["kind"] == "gap"] == [
+        "source_unavailable"
+    ]
+
+
+def test_pending_retry_after_rename_does_not_redeliver_a_suppressed_source(tmp_path, monkeypatch):
+    source, cursor = tmp_path / "snapshot.jsonl", tmp_path / "cursor"
+    source.write_text(json.dumps({"role": "user", "message": "forgotten"}) + "\n")
+    calls, failed_receipt = [], True
+
+    class Session:
+        async def call_tool(self, name, arguments):
+            nonlocal failed_receipt
+            calls.append((name, arguments))
+            if name == "memory_remember":
+                return SimpleNamespace(
+                    isError=True,
+                    structuredContent={"error": {"code": "source_suppressed"}},
+                    content=[],
+                )
+            if (
+                name == "audit_record"
+                and arguments.get("action", {}).get("type") == "collector_pass"
+                and failed_receipt
+            ):
+                failed_receipt = False
+                return SimpleNamespace(
+                    isError=True,
+                    structuredContent={"error": {"code": "busy"}},
+                    content=[],
+                )
+            return SimpleNamespace(isError=False, structuredContent={"id": "ok"}, content=[])
+
+    @asynccontextmanager
+    async def connection(_credential):
+        yield Session()
+
+    monkeypatch.setattr(capture_delivery, "connect", connection)
+
+    async def exercise():
+        first = await capture_delivery.collect_remote(
+            paths=[source],
+            cursor=cursor,
+            credential=tmp_path / "credential",
+            project="alpha",
+            account="bot",
+            kind="transcript",
+        )
+        assert first["state"] == "capture_partial"
+        assert first["coverage_receipt"] == "pending_retry"
+        replacement = source.with_suffix(".replacement")
+        replacement.write_bytes(source.read_bytes() + b'{"role":"user","message":"later"}\n')
+        replacement.replace(source)
+        retry = await capture_delivery.collect_remote(
+            paths=[source],
+            cursor=cursor,
+            credential=tmp_path / "credential",
+            project="alpha",
+            account="bot",
+            kind="transcript",
+        )
+        assert retry["state"] == "capture_pass_complete"
+
+    asyncio.run(exercise())
+    remembered = [args["content"] for name, args in calls if name == "memory_remember"]
+    assert remembered == ["forgotten", "later"]
+    omitted = [args for name, args in calls if name == "audit_record" and args.get("kind") == "gap"]
+    assert len(omitted) == 2
+    assert {item["action"]["reason"] for item in omitted} == {"delivery_suppressed_source"}
+
+
+def test_audit_delivery_keeps_snapshot_actor_as_unverified_metadata(tmp_path, monkeypatch):
+    source, cursor, calls = tmp_path / "audit.jsonl", tmp_path / "cursor", []
+    source.write_text(
+        json.dumps({"type": "shell_command", "command": "pwd", "agentId": "agent-7"}) + "\n"
+    )
+
+    class Session:
+        async def call_tool(self, name, arguments):
+            calls.append((name, arguments))
+            return SimpleNamespace(isError=False, structuredContent={"id": "ok"}, content=[])
+
+    @asynccontextmanager
+    async def connection(_credential):
+        yield Session()
+
+    monkeypatch.setattr(capture_delivery, "connect", connection)
+
+    async def exercise():
+        result = await capture_delivery.collect_remote(
+            paths=[source],
+            cursor=cursor,
+            credential=tmp_path / "credential",
+            project="alpha",
+            account="bot",
+            kind="audit",
+        )
+        assert result["state"] == "capture_pass_complete"
+
+    asyncio.run(exercise())
+    captured = next(
+        args for name, args in calls if name == "audit_record" and args["kind"] == "action"
+    )
+    assert captured["details"]["source_actor"] == "agent-7"
+    assert captured["details"]["event"]["source_identity"] == "unverified_snapshot"
 
 
 @pytest.mark.parametrize("header", ["Authorization", "Proxy-Authorization", "x-api-key", "Cookie"])

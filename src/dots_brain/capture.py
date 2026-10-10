@@ -8,7 +8,9 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import stat as stat_module
+from base64 import b64decode, b64encode
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -23,6 +25,8 @@ _AUDIT_TYPES = frozenset(
 MAX_LINE_BYTES = 256 * 1024
 MAX_BATCH_BYTES = 16 * 1024 * 1024
 MAX_BATCH_RECORDS = 1000
+PREFIX_CHAIN_BLOCK_BYTES = 4096
+_PREFIX_CHAIN_SEED = hashlib.sha256(b"dots-brain.capture.prefix.v1").hexdigest()
 
 
 def _identity(source: str, offset: int, raw: bytes) -> str:
@@ -281,6 +285,9 @@ class JSONLCollector:
                 continue
             if not stat_module.S_ISREG(stat.st_mode):
                 raise InputError("Capture source must be a regular file.")
+            if previous.get("source_reset_required"):
+                self.completed = False
+                continue
             # Check type before opening and use non-blocking/no-follow flags so a
             # pathname race cannot turn a collector into a FIFO/device reader.
             flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NONBLOCK", 0)
@@ -306,29 +313,65 @@ class JSONLCollector:
             except Exception:
                 os.close(descriptor)
                 raise
+            identity_changed = (
+                previous.get("device") != stat.st_dev or previous.get("inode") != stat.st_ino
+            )
+            checkpoint_matches = _fingerprints_match(previous, fingerprints)
+            checkpoint_is_verifiable = isinstance(
+                previous.get("prefix_fingerprint", previous.get("fingerprint")), str
+            )
+            replacement_continuity = (
+                identity_changed
+                and checkpoint_is_verifiable
+                and checkpoint_matches
+                and _prefix_chain_matches(previous, descriptor, offset)
+            )
+            # Exports are commonly written to a temporary file then atomically
+            # renamed over the old path.  An inode is therefore a file handle,
+            # not a source generation.  Keep the old generation only when the
+            # acknowledged prefix and its checkpoint boundary prove continuity.
+            # Legacy cursors without a fingerprint retain their old same-inode
+            # behavior, but do not trust a replacement inode as continuous.
             rotated = bool(previous) and (
-                previous.get("device") != stat.st_dev
-                or previous.get("inode") != stat.st_ino
-                or stat.st_size < offset
-                or not _fingerprints_match(previous, fingerprints)
+                stat.st_size < offset
+                or (
+                    identity_changed
+                    and not (
+                        replacement_continuity or (previous.get("unavailable") and offset == 0)
+                    )
+                )
+                or (not identity_changed and checkpoint_is_verifiable and not checkpoint_matches)
             )
             if rotated:
                 gap = _gap(
-                    "collector", _identity(key, offset, b"rotation"), "file_rotated_or_truncated"
+                    "collector",
+                    _identity(key, offset, b"source-reset-required"),
+                    "source_rewritten_requires_reset",
                 )
                 if self.sink(gap) is not True:
                     raise InputError("Capture sink did not acknowledge record.")
-                offset = 0
-                fingerprints = _fingerprints(descriptor, 0)
-                cursor["files"][key] = {
-                    "device": stat.st_dev,
-                    "inode": stat.st_ino,
-                    "offset": 0,
-                    "generation": int(previous.get("generation", 0)) + 1,
-                    **fingerprints,
-                }
+                cursor["files"][key] = {**previous, "source_reset_required": True}
                 self._save_cursor(cursor)
                 forwarded += 1
+                self.completed = False
+                os.close(descriptor)
+                continue
+            elif previous and (identity_changed or previous.get("unavailable")):
+                # Persist the replacement identity even when it has no new
+                # complete line.  This is safe only after the verified
+                # continuity check above and prevents a retry from treating the
+                # same snapshot as a fresh generation.
+                state = {
+                    **previous,
+                    "device": stat.st_dev,
+                    "inode": stat.st_ino,
+                    "offset": offset,
+                    "generation": int(previous.get("generation", 0)),
+                    **fingerprints,
+                }
+                state.pop("unavailable", None)
+                cursor["files"][key] = state
+                self._save_cursor(cursor)
             with os.fdopen(descriptor, "rb", closefd=True) as stream:
                 stream.seek(offset)
                 discard = not rotated and previous.get("discard_until_newline", False)
@@ -365,6 +408,7 @@ class JSONLCollector:
                         "offset": next_offset,
                         "generation": generation,
                         **_fingerprints(stream.fileno(), next_offset),
+                        **_extend_prefix_chain(current, raw, start),
                         "discard_until_newline": discard,
                     }
                     self._save_cursor(cursor)
@@ -429,3 +473,61 @@ def _fingerprints_match(previous: dict[str, Any], current: dict[str, Any]) -> bo
         if key in previous and previous[key] != current[key]:
             return False
     return True
+
+
+def _extend_prefix_chain(previous: dict[str, Any], raw: bytes, start: int) -> dict[str, Any]:
+    """Advance a fixed-block hash chain without retaining acknowledged content."""
+    digest = previous.get("acknowledged_prefix_digest")
+    length = previous.get("acknowledged_prefix_length")
+    encoded_tail = previous.get("acknowledged_prefix_tail")
+    if digest is None and length is None and encoded_tail is None:
+        if start:
+            return {}
+        digest, length, encoded_tail = _PREFIX_CHAIN_SEED, 0, ""
+    if (
+        not isinstance(digest, str)
+        or not re.fullmatch(r"[0-9a-f]{64}", digest)
+        or type(length) is not int
+        or length != start
+        or not isinstance(encoded_tail, str)
+    ):
+        return {}
+    try:
+        tail = b64decode(encoded_tail, validate=True)
+    except ValueError:
+        return {}
+    if len(tail) >= PREFIX_CHAIN_BLOCK_BYTES:
+        return {}
+    pending = tail + raw
+    while len(pending) >= PREFIX_CHAIN_BLOCK_BYTES:
+        block, pending = pending[:PREFIX_CHAIN_BLOCK_BYTES], pending[PREFIX_CHAIN_BLOCK_BYTES:]
+        digest = hashlib.sha256(bytes.fromhex(digest) + block).hexdigest()
+    return {
+        "acknowledged_prefix_digest": digest,
+        "acknowledged_prefix_length": start + len(raw),
+        "acknowledged_prefix_tail": b64encode(pending).decode(),
+    }
+
+
+def _prefix_chain_matches(previous: dict[str, Any], descriptor: int, offset: int) -> bool:
+    """Verify every acknowledged byte when a replacement inode appears."""
+    if previous.get("acknowledged_prefix_length") != offset:
+        return False
+    current = os.lseek(descriptor, 0, os.SEEK_CUR)
+    try:
+        state: dict[str, Any] = {}
+        position = 0
+        os.lseek(descriptor, 0, os.SEEK_SET)
+        while position < offset:
+            raw = os.read(descriptor, min(64 * 1024, offset - position))
+            if not raw:
+                return False
+            state = _extend_prefix_chain(state, raw, position)
+            if not state:
+                return False
+            position += len(raw)
+        return state.get("acknowledged_prefix_digest") == previous.get(
+            "acknowledged_prefix_digest"
+        ) and state.get("acknowledged_prefix_tail") == previous.get("acknowledged_prefix_tail")
+    finally:
+        os.lseek(descriptor, current, os.SEEK_SET)

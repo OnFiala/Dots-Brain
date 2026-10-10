@@ -57,7 +57,8 @@ so tool pairing remains unverified. Source timestamps and actor fields remain
 untrusted snapshot metadata, separate from the authenticated collector identity.
 
 A pass is capped at 1,000 records or 16 MiB, with a 256 KiB line bound. Resume when
-`more_pending` is true. Acknowledged cursor updates survive interruption; source
-rotation creates a new generation and a reported gap. Renaming a source can
-change its identity; copying the same snapshot under another path is not a
-supported deduplication mechanism.
+`batch_limit_reached` is true. Acknowledged cursor updates survive interruption.
+An atomic replacement continues only when every acknowledged byte is unchanged.
+If a replacement, truncation, or rewrite changes an acknowledged prefix, capture
+records a durable gap and blocks that source under the current cursor. Review the
+export and start an explicitly chosen new cursor before importing it again.

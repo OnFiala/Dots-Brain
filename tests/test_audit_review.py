@@ -74,6 +74,113 @@ def test_multiple_pages_and_cross_run_receipt(source):
     assert updated["unresolved"] == []
 
 
+def test_oversized_page_retries_with_smaller_complete_pages(tmp_path, source):
+    append, fetch = source
+    # These are ordinary persisted audit rows. Fourteen fit the server's event
+    # limits but their 100-row review page exceeds the local 1 MiB budget.
+    payload = ["x " * 999] * 40
+    for index in range(14):
+        append(event_id=f"large-{index}", details=payload)
+    assert len(review.canonical(fetch(0, review.PAGE_SIZE)).encode()) > review.MAX_PAGE_BYTES
+    limits = []
+
+    def observed_fetch(after, limit):
+        limits.append(limit)
+        return fetch(after, limit)
+
+    scan = review.stage(tmp_path, "slot", observed_fetch)
+    assert scan["count"] == 14
+    assert limits[:4] == [100, 50, 25, 12]
+    completed = review.complete(tmp_path, envelope(scan))
+    assert completed == {"state": "completed", "last_id": 14, "has_more": False}
+
+
+def test_single_oversized_event_is_never_truncated_or_checkpointed(tmp_path, source):
+    append, fetch = source
+    append(event_id="one")
+    limits = []
+
+    def oversized_event(after, limit):
+        limits.append(limit)
+        page = fetch(after, limit)
+        if page["events"]:
+            page["events"][0]["details"] = {"value": "x" * review.MAX_PAGE_BYTES}
+        return page
+
+    with pytest.raises(review.AuditPageTooLarge):
+        review.stage(tmp_path, "slot", oversized_event)
+    assert limits == [100, 50, 25, 12, 6, 3, 1]
+    assert not (tmp_path / "checkpoint.json").exists()
+    assert not (tmp_path / "pending.json").exists()
+
+
+def test_overflow_anomalies_are_aggregated_and_checkpointable(tmp_path, source):
+    append, fetch = source
+    for index in range(review.MAX_UNRESOLVED + 1):
+        append("intent", f"open-{index}")
+    for index in range(200):
+        append("intent", f"healthy-intent-{index}")
+        append("receipt", f"healthy-receipt-{index}", intent_event_id=f"healthy-intent-{index}")
+
+    scan = review.stage(tmp_path, "slot", fetch)
+    anomalies = {item["code"]: item for item in scan["candidate"]["anomalies"]}
+    assert scan["count"] == 1401
+    assert anomalies["unresolved_budget_exhausted"]["count"] == 201
+    assert anomalies["orphan_or_duplicate_receipt"]["count"] == 200
+    assert all(
+        len(item["event_ids"]) <= review.MAX_ANOMALY_EVENT_IDS for item in anomalies.values()
+    )
+    assert len(scan["scan_findings"]) == 2
+    completed = review.complete(tmp_path, envelope(scan))
+    assert completed == {"state": "completed", "last_id": 1401, "has_more": False}
+    assert review.read_json(tmp_path / "checkpoint.json")["last_id"] == 1401
+
+
+def test_same_run_key_drains_remaining_completed_chunks(tmp_path, source):
+    append, fetch = source
+    for index in range(2300):
+        append(event_id=f"event-{index}")
+
+    first = review.stage(tmp_path, "slot", fetch)
+    assert first["count"] == review.PAGE_SIZE * review.MAX_PAGES
+    completed_first = review.complete(tmp_path, envelope(first))
+    assert completed_first["state"] == "completed_chunk"
+    assert review.complete(tmp_path, envelope(first)) == completed_first
+    second = review.stage(tmp_path, "slot", fetch)
+    assert second["state"] == "needs_analysis"
+    assert second["count"] == 300
+    assert review.complete(tmp_path, envelope(second)) == {
+        "state": "completed",
+        "last_id": 2300,
+        "has_more": False,
+    }
+    assert review.stage(tmp_path, "slot", fetch) == {
+        "state": "already_completed",
+        "run_key": "slot",
+    }
+
+
+def test_auto_findings_stay_bounded_across_many_chunks(tmp_path, source, monkeypatch):
+    append, fetch = source
+    monkeypatch.setattr(review, "PAGE_SIZE", 1)
+    monkeypatch.setattr(review, "MAX_PAGES", 1)
+    monkeypatch.setattr(review, "MAX_UNRESOLVED", 0)
+    for index in range(250):
+        append("intent", f"open-{index}")
+
+    for _ in range(250):
+        scan = review.stage(tmp_path, "slot", fetch)
+        review.complete(tmp_path, envelope(scan))
+
+    checkpoint = review.read_json(tmp_path / "checkpoint.json")
+    assert checkpoint["last_id"] == 250
+    assert checkpoint["has_more"] is False
+    assert len(checkpoint["findings"]) == 1
+    assert len(checkpoint["findings"][0]["event_ids"]) == review.MAX_ANOMALY_EVENT_IDS
+    assert checkpoint["anomaly_counts"] == {"unresolved_budget_exhausted": 250}
+    assert len(review.canonical(checkpoint["findings"])) < 32000
+
+
 @pytest.mark.parametrize("failure", ["network", "cap", "duplicate", "hash", "schema"])
 def test_incomplete_scan_preserves_checkpoint(tmp_path, source, failure):
     append, fetch = source

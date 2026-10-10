@@ -33,18 +33,31 @@ async def collect_remote(
                 if isinstance(getattr(block, "text", None), str)
             ).lower()
 
+        def result_code(result) -> str | None:
+            structured = getattr(result, "structuredContent", None)
+            error = structured.get("error") if isinstance(structured, dict) else None
+            code = error.get("code") if isinstance(error, dict) else None
+            return code if isinstance(code, str) else None
+
         async def call(name, arguments):
             result = await session.call_tool(name, arguments)
             if result.isError or not isinstance(result.structuredContent, dict):
                 message = result_error(result)
-                raise InputError(
+                error = InputError(
                     "Capture delivery was not acknowledged; retry using the same cursor."
                     if not message
                     else f"Capture delivery rejected: {message[:240]}"
                 )
+                error.delivery_error_code = result_code(result)
+                raise error
             return result.structuredContent
 
         def terminal_delivery_reason(error: Exception) -> str | None:
+            code = getattr(error, "delivery_error_code", None)
+            if code in {"source_suppressed", "source_forgotten"}:
+                return "delivery_suppressed_source"
+            if code == "invalid_input":
+                return "delivery_invalid_input"
             message = str(error).lower()
             if "suppressed" in message or "forgotten" in message:
                 return "delivery_suppressed_source"
@@ -65,6 +78,7 @@ async def collect_remote(
                 "source": event["source"],
                 "source_kind": "provider_snapshot",
                 "source_timestamp": event.get("timestamp"),
+                "source_actor": event.get("actor"),
                 "sanitization": event.get("sanitization", {}),
             }
             action = event.get("action")

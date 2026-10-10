@@ -71,7 +71,7 @@ def test_audit_chain_rejects_tampering_and_receipt_requires_actor_intent(tmp_pat
             db.execute("UPDATE audit_events SET kind='gap'")
 
 
-def test_collector_waits_for_ack_partial_line_and_rotation(tmp_path):
+def test_collector_waits_for_ack_and_blocks_rewritten_source_until_explicit_reset(tmp_path):
     export, cursor, delivered = tmp_path / "audit.jsonl", tmp_path / "cursor.json", []
     export.write_text(
         json.dumps({"ts": "2026-01-01T00:00:00Z", "type": "shell_command", "command": "echo hi"})
@@ -82,8 +82,20 @@ def test_collector_waits_for_ack_partial_line_and_rotation(tmp_path):
     assert collector.collect() == 1 and len(delivered) == 1
     assert collector.collect() == 0
     export.write_text(json.dumps({"type": "shell_command", "command": "x"}) + "\n")
-    assert collector.collect() == 2 and delivered[-1]["kind"] == "action"
-    assert "ABCDEFGHIJKLMNOPQRSTUVWXYZ" not in json.dumps(delivered[-1])
+    assert collector.collect() == 1
+    assert delivered[-1]["action"]["reason"] == "source_rewritten_requires_reset"
+    assert collector.collect() == 0
+
+    # A new cursor is an explicit operator decision to accept the replacement.
+    reset_delivered = []
+    reset = JSONLCollector(
+        [export],
+        tmp_path / "approved-reset.cursor",
+        lambda item: reset_delivered.append(item) or True,
+    )
+    assert reset.collect() == 1
+    assert reset_delivered[-1]["kind"] == "action"
+    assert "ABCDEFGHIJKLMNOPQRSTUVWXYZ" not in json.dumps(reset_delivered[-1])
 
 
 def test_transcript_excludes_system_and_marks_unknown_shape():

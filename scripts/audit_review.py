@@ -33,6 +33,7 @@ PAGE_SIZE = 100
 MAX_PAGES = 20
 MAX_PAGE_BYTES = 1024 * 1024
 MAX_UNRESOLVED = 1000
+MAX_ANOMALY_EVENT_IDS = 16
 FINDING_CATEGORIES = {
     "coverage_unverified",
     "capture_gap",
@@ -57,6 +58,10 @@ class ReviewError(ValueError):
 
 class AuditPageError(ReviewError):
     code = "invalid_audit_page"
+
+
+class AuditPageTooLarge(AuditPageError):
+    """A valid response exceeded the local review budget."""
 
 
 class AuditContinuityError(ReviewError):
@@ -158,7 +163,7 @@ def fetch_page(after_id, limit, target):
         check=True,
     )
     if len(result.stdout) > MAX_PAGE_BYTES:
-        raise AuditPageError("Audit page exceeds review budget")
+        raise AuditPageTooLarge("Audit page exceeds review budget")
     try:
         return json.loads(result.stdout)
     except json.JSONDecodeError as exc:
@@ -169,7 +174,7 @@ def validate_page(page, after_id, limit):
     if not isinstance(page, dict) or set(page) != {"events", "next_after_id", "has_more"}:
         raise AuditPageError("Invalid audit page")
     if len(canonical(page).encode("utf-8")) > MAX_PAGE_BYTES:
-        raise AuditPageError("Audit page exceeds review budget")
+        raise AuditPageTooLarge("Audit page exceeds review budget")
     rows = page["events"]
     if not isinstance(rows, list) or len(rows) > limit or type(page["has_more"]) is not bool:
         raise AuditPageError("Invalid audit page")
@@ -231,8 +236,42 @@ def anomaly(code, event_ids):
     return {"code": code, "event_ids": sorted(set(event_ids))}
 
 
-def collect(checkpoint, fetch, max_pages=MAX_PAGES, origin="synthetic"):
+def add_anomaly(anomalies, code, event_ids):
+    """Aggregate repeated bounded anomalies without hiding their scale."""
+    event_ids = sorted(set(event_ids))
+    for item in anomalies:
+        if item["code"] != code:
+            continue
+        item["count"] = item.get("count", 1) + 1
+        samples = sorted(set(item["event_ids"] + event_ids))
+        if len(samples) > MAX_ANOMALY_EVENT_IDS:
+            samples = samples[: MAX_ANOMALY_EVENT_IDS - 1] + [samples[-1]]
+        item["event_ids"] = samples
+        return
+    anomalies.append(anomaly(code, event_ids))
+
+
+def fetch_valid_page(fetch, after, limit):
+    """Retry only an oversized page with fewer rows; never truncate a row."""
+    while True:
+        try:
+            page = fetch(after, limit)
+            return page, validate_page(page, after, limit), limit
+        except AuditPageError as error:
+            if (
+                not isinstance(error, AuditPageTooLarge)
+                and str(error) != "Audit page exceeds review budget"
+            ):
+                raise
+            if limit == 1:
+                raise
+            limit = max(1, limit // 2)
+
+
+def collect(checkpoint, fetch, max_pages=None, origin="synthetic"):
     """Bounded scan; failures return no candidate and never change a checkpoint."""
+    if max_pages is None:
+        max_pages = MAX_PAGES
     if checkpoint and checkpoint["origin"] != origin:
         raise ReviewError("Audit origin changed")
     after = checkpoint.get("last_id", 0)
@@ -247,16 +286,16 @@ def collect(checkpoint, fetch, max_pages=MAX_PAGES, origin="synthetic"):
     events = []
     anomalies = []
     has_more = False
+    page_limit = PAGE_SIZE
     for _ in range(max_pages):
-        page = fetch(after, PAGE_SIZE)
-        rows = validate_page(page, after, PAGE_SIZE)
+        page, rows, page_limit = fetch_valid_page(fetch, after, page_limit)
         for row in rows:
             payload = validate_row(row, previous_hash)
             previous_hash = row["event_hash"]
             key = unresolved_key(row["project"], row["principal"], row["client_event_id"])
             if row["kind"] == "intent":
                 if len(unresolved) >= MAX_UNRESOLVED:
-                    anomalies.append(anomaly("unresolved_budget_exhausted", [row["id"]]))
+                    add_anomaly(anomalies, "unresolved_budget_exhausted", [row["id"]])
                 else:
                     unresolved[key] = {
                         "key_hash": key,
@@ -268,12 +307,12 @@ def collect(checkpoint, fetch, max_pages=MAX_PAGES, origin="synthetic"):
             elif row["kind"] == "receipt":
                 reference = unresolved_key(row["project"], row["principal"], row["intent_event_id"])
                 if reference not in unresolved:
-                    anomalies.append(anomaly("orphan_or_duplicate_receipt", [row["id"]]))
+                    add_anomaly(anomalies, "orphan_or_duplicate_receipt", [row["id"]])
                 elif unresolved[reference]["evidence"] not in (None, row["evidence"]):
-                    anomalies.append(
-                        anomaly(
-                            "receipt_evidence_mismatch", [unresolved[reference]["id"], row["id"]]
-                        )
+                    add_anomaly(
+                        anomalies,
+                        "receipt_evidence_mismatch",
+                        [unresolved[reference]["id"], row["id"]],
                     )
                 else:
                     del unresolved[reference]
@@ -326,7 +365,7 @@ def atomic_json(path, value):
 
 def stage(root, run_key, fetch, origin="synthetic"):
     checkpoint = read_json(root / "checkpoint.json")
-    if checkpoint.get("run_key") == run_key:
+    if checkpoint.get("run_key") == run_key and not checkpoint.get("has_more"):
         return {"state": "already_completed", "run_key": run_key}
     events, candidate = collect(checkpoint, fetch, origin=origin)
     previous = read_json(root / "pending.json")
@@ -390,6 +429,24 @@ def validate_findings(findings):
             raise ValueError("Invalid finding metadata")
 
 
+def _sample_event_ids(values):
+    values = sorted(set(values))
+    if len(values) > MAX_ANOMALY_EVENT_IDS:
+        return values[: MAX_ANOMALY_EVENT_IDS - 1] + [values[-1]]
+    return values
+
+
+def checkpoint_anomaly_counts(checkpoint):
+    """Read bounded cumulative counts without changing the findings envelope."""
+    counts = checkpoint.get("anomaly_counts", {})
+    if not isinstance(counts, dict) or any(
+        category not in FINDING_CATEGORIES or type(count) is not int or count < 1
+        for category, count in counts.items()
+    ):
+        raise ReviewError("Invalid anomaly counts checkpoint")
+    return counts
+
+
 def complete(root, review):
     if not isinstance(review, dict) or set(review) != {
         "review_id",
@@ -407,7 +464,11 @@ def complete(root, review):
     if checkpoint.get("review_id") == review_id:
         if checkpoint.get("review_digest") != digest(review):
             raise ValueError("Completed review content digest mismatch")
-        return {"state": "already_completed", "last_id": checkpoint["last_id"]}
+        return {
+            "state": "completed_chunk" if checkpoint.get("has_more") else "already_completed",
+            "last_id": checkpoint["last_id"],
+            "has_more": checkpoint.get("has_more", False),
+        }
     pending = read_json(root / "pending.json")
     if pending.get("review_id") != review_id or pending["base_digest"] != digest(checkpoint):
         raise ValueError("Stale or missing review; scan and analyze again")
@@ -415,21 +476,39 @@ def complete(root, review):
         raise ValueError("Review content digest mismatch")
     previous_findings = checkpoint.get("findings", [])
     validate_findings(previous_findings)
+    anomaly_counts = checkpoint_anomaly_counts(checkpoint)
     allowed_ids = set(pending["event_ids"])
     allowed_ids.update(item["id"] for item in pending["candidate"]["unresolved"])
     for item in previous_findings:
         allowed_ids.update(item["event_ids"])
     if any(set(item["event_ids"]) - allowed_ids for item in findings):
         raise ValueError("Finding refers to an event outside the reviewed evidence")
+    auto_categories = {item["category"] for item in pending.get("scan_findings", [])}
     merged = {}
     for item in previous_findings + pending.get("scan_findings", []) + findings:
         normalized = item | {"event_ids": sorted(set(item["event_ids"]))}
-        key = canonical([normalized["category"], normalized["event_ids"]])
+        key = canonical(
+            [
+                normalized["category"],
+                None if normalized["category"] in auto_categories else normalized["event_ids"],
+            ]
+        )
         if normalized["status"] == "resolved":
             merged.pop(key, None)
         else:
+            if existing := merged.get(key):
+                normalized = normalized | {
+                    "event_ids": _sample_event_ids(existing["event_ids"] + normalized["event_ids"])
+                }
             merged[key] = normalized
     validate_findings(list(merged.values()))
+    anomaly_counts = dict(anomaly_counts)
+    for anomaly in pending["candidate"]["anomalies"]:
+        count = anomaly.get("count", 1)
+        if type(count) is not int or count < 1:
+            raise ReviewError("Invalid anomaly count")
+        category = anomaly["code"]
+        anomaly_counts[category] = anomaly_counts.get(category, 0) + count
     record = {
         **pending["candidate"],
         "review_id": review_id,
@@ -441,6 +520,7 @@ def complete(root, review):
         "reviewed_events": pending["count"],
         "model_reported_by_reviewer": model,
         "findings": list(merged.values()),
+        "anomaly_counts": anomaly_counts,
         "coverage": "recorded audit only; provider-wide capture unverified",
     }
     # Report metadata and cursor have one atomic commit point.
