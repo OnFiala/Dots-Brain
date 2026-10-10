@@ -143,16 +143,7 @@ def _redact_text(text: str) -> tuple[str, dict[str, int]]:
 
     def header_replace(match: re.Match[str]) -> str:
         value = match.group("value").strip()
-        credential_like = (
-            value.lower().startswith(("basic ", "bearer "))
-            or "=" in value
-            or (
-                " " not in value
-                and len(value) >= 16
-                and any(char.isdigit() or not char.isalpha() for char in value)
-            )
-        )
-        if not credential_like:
+        if not value or value in {"[REDACTED]", "[REDACTED_TOKEN]"}:
             return match.group(0)
         counts["credential_header"] = counts.get("credential_header", 0) + 1
         return f"{match.group('name')}: [REDACTED]"

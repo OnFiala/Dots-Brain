@@ -118,6 +118,9 @@ def _migrate(db: sqlite3.Connection) -> None:
     for statement in extension_statements():
         db.execute(statement)
     db.execute(f"PRAGMA user_version={V2}")
+    from .store import APPLICATION_ID
+
+    db.execute(f"PRAGMA application_id={APPLICATION_ID}")
     secure_fts(db)
     ensure_fts_row_mapping(db)
     if validate_snapshot(db, V2) != before:

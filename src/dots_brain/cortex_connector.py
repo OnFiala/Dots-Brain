@@ -81,7 +81,7 @@ class CortexWriteUncertain(CortexConnectorError):
 
 
 class CortexWriteRejected(CortexConnectorError):
-    """An explicit upstream refusal that did not create the requested record."""
+    """An upstream error response; it does not prove that no write committed."""
 
     code = "cortex_write_rejected"
 
@@ -608,15 +608,15 @@ class CortexConnector:
                 raise CortexConnectorError("CORTEX operation receipt is unavailable.")
             return _receipt_from_row(row, replayed=False)
         except CortexWriteRejected as exc:
-            # The MCP tool explicitly refused the write. It did not issue a
-            # receipt, so leave a retryable local record rather than uncertainty.
+            # MCP isError is not proof of rollback: an upstream implementation
+            # may commit and then fail while producing its response.
             try:
                 await asyncio.to_thread(
-                    self._ledger.release_planned, actual_id, error_code=_error_code(exc)
+                    self._ledger.mark_uncertain, actual_id, error_code=_error_code(exc)
                 )
             except Exception:
                 pass
-            raise
+            raise CortexWriteUncertain(actual_id) from exc
         except CortexPreSendError as exc:
             try:
                 await asyncio.to_thread(

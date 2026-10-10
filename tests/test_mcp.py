@@ -68,6 +68,16 @@ def test_http_protocol_scopes_project_boundaries_and_revocation(tmp_path):
                         )
                         assert not result.isError, result
                         memory_id = result.structuredContent["id"]
+                        own = await session.call_tool(
+                            "memory_get", {"memory_id": memory_id, "revision": 1}
+                        )
+                        assert own.structuredContent["id"] == memory_id
+                        found = await session.call_tool(
+                            "memory_search", {"query": "confidential", "project": "alpha"}
+                        )
+                        assert [row["id"] for row in found.structuredContent["results"]] == [
+                            memory_id
+                        ]
                         assert store.get(memory_id)["writer_principal"] == (
                             "local-client:" + writer["client_id"]
                         )
@@ -84,8 +94,15 @@ def test_http_protocol_scopes_project_boundaries_and_revocation(tmp_path):
                         await session.initialize()
                         search = await session.call_tool("memory_search", {"query": "confidential"})
                         assert search.structuredContent["results"] == []
-                        denied = await session.call_tool("memory_get", {"memory_id": memory_id})
+                        explicit = await session.call_tool(
+                            "memory_search", {"query": "confidential", "project": "alpha"}
+                        )
+                        assert explicit.structuredContent["results"] == []
+                        denied = await session.call_tool(
+                            "memory_get", {"memory_id": memory_id, "revision": 1}
+                        )
                         assert denied.isError
+                        assert denied.structuredContent["error"]["code"] == "not_found"
                 revoke_client(store, writer["client_id"])
                 http.headers["Authorization"] = "Bearer " + token
                 response = await http.post("http://127.0.0.1:8765/mcp", json={})

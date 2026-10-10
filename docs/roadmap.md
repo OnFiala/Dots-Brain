@@ -6,6 +6,6 @@ The next work items need separate design and acceptance:
 - continuous provider capture with explicit consent and coverage proof;
 - live CORTEX transport acceptance against an authorized endpoint;
 - broader semantic quality and capacity measurement;
-- deployment templates with no operator-specific data.
+- stable actor migration across grants and explicit export of deletion barriers.
 
 Items remain planned until source, artifact, runtime, and behavior evidence exist.

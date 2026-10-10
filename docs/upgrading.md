@@ -43,3 +43,8 @@ dots-brain --data-dir /absolute/private/memory abort-restore --target /absolute/
 
 Preserve both stores and inspect the command result before resuming service. This
 candidate has not been deployed or accepted.
+
+New databases and v1 migrations carry Dots Brain's SQLite `application_id`.
+Earlier schema-v2 databases with ID zero remain compatible; a nonzero foreign ID
+is rejected. This marker identifies the format and is not protection against a
+local owner who can edit the database directly.

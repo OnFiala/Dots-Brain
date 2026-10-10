@@ -29,7 +29,7 @@ from pydantic import AnyHttpUrl
 
 from .auth import MEMORY_SCOPES, SCOPES, Policy, validate_endpoint
 from .errors import InputError, StateError
-from .local import read_json, write_json
+from .local import read_json, sync_directory, write_json
 from .store import Store, normalize_projects
 
 MAX_CLIENTS = 256
@@ -136,6 +136,8 @@ def issuer_url(value: str) -> str:
 
 
 def configuration(store: Store) -> dict | None:
+    if (store.directory / "oauth-config-pending.json").exists():
+        raise StateError("OAuth configuration recovery is required; rerun oauth configure.")
     path = store.directory / "oauth.json"
     if not path.exists():
         return None
@@ -172,25 +174,77 @@ def revoke_all(db) -> dict:
     return {"clients_invalidated": 0, "grants_revoked": 0}
 
 
+def _recover_configuration(store: Store) -> None:
+    """Finish or roll back a file publication according to its SQLite commit."""
+    journal = store.directory / "oauth-config-pending.json"
+    if not journal.exists():
+        return
+    pending = read_json(journal)
+    if pending.get("version") != 1 or not re.fullmatch(r"[0-9a-f]{32}", str(pending.get("id", ""))):
+        raise StateError("OAuth configuration journal is invalid; preserve it for inspection.")
+    with store.connection() as db:
+        exists = db.execute(
+            "SELECT 1 FROM sqlite_master WHERE name='oauth_config_commits'"
+        ).fetchone()
+        committed = (
+            exists
+            and db.execute(
+                "SELECT 1 FROM oauth_config_commits WHERE id=?", (pending["id"],)
+            ).fetchone()
+        )
+    value = pending.get("next" if committed else "previous")
+    if value is None:
+        (store.directory / "oauth.json").unlink(missing_ok=True)
+    elif isinstance(value, dict) and value.get("version") == 1:
+        write_json(
+            store.directory / "oauth.json", {"version": 1, "issuer": issuer_url(value["issuer"])}
+        )
+    else:
+        raise StateError("OAuth configuration journal is invalid; preserve it for inspection.")
+    if committed:
+        onboarding_path(store).unlink(missing_ok=True)
+    sync_directory(store.directory)
+    journal.unlink()
+    sync_directory(store.directory)
+
+
 def configure(store: Store, issuer: str, *, replace_issuer: bool = False) -> dict:
     config = {"version": 1, "issuer": issuer_url(issuer)}
+    store.ensure_writable()
+    _recover_configuration(store)
     previous = configuration(store)
     if previous is not None and previous != config and not replace_issuer:
         raise StateError(
             "Replacing the issuer revokes existing grants; use --replace-issuer explicitly."
         )
     revoked = {"clients_invalidated": 0, "grants_revoked": 0}
-    with store.connection(write=True) as db:
-        for statement in SCHEMA.split(";"):
-            if statement.strip():
-                db.execute(statement)
-        if previous != config:
-            revoked = revoke_all(db)
-            record_auth_change(store, db, "oauth_issuer_configured", details=revoked)
-    write_json(store.directory / "oauth.json", config)
-    # A registration window belongs to an issuer. Do not carry it to a newly
-    # configured public origin.
-    onboarding_path(store).unlink(missing_ok=True)
+    transition = uuid.uuid4().hex
+    journal = store.directory / "oauth-config-pending.json"
+    write_json(journal, {"version": 1, "id": transition, "previous": previous, "next": config})
+    try:
+        with store.connection(write=True) as db:
+            store.ensure_writable()
+            for statement in SCHEMA.split(";"):
+                if statement.strip():
+                    db.execute(statement)
+            db.execute("CREATE TABLE IF NOT EXISTS oauth_config_commits (id TEXT PRIMARY KEY)")
+            if previous != config:
+                revoked = revoke_all(db)
+                record_auth_change(store, db, "oauth_issuer_configured", details=revoked)
+            # Readers fail closed while the journal exists. Publish the file
+            # before commit, so a failed replace rolls back credential changes.
+            write_json(store.directory / "oauth.json", config)
+            db.execute("DELETE FROM oauth_config_commits")
+            db.execute("INSERT INTO oauth_config_commits(id) VALUES (?)", (transition,))
+    except BaseException:
+        # The journal remains if rollback publication also fails. A later
+        # configure recovers using the committed transaction ID, never guesses.
+        try:
+            _recover_configuration(store)
+        except Exception:
+            pass
+        raise
+    _recover_configuration(store)
     return {
         "state": "configured",
         "issuer": config["issuer"],
@@ -234,7 +288,7 @@ class OAuthStore:
             return not (self.store.directory / "disabled.json").exists() and configuration(
                 self.store
             ) == {"version": 1, "issuer": self.issuer}
-        except (InputError, OSError, ValueError):
+        except (InputError, StateError, OSError, ValueError):
             return False
 
     def require_enabled(self):

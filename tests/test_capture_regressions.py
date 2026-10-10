@@ -136,3 +136,29 @@ def test_terminal_delivery_becomes_acknowledged_gap_and_invalid_journal_needs_re
         assert recovered["recovered_pending_receipt"] is True
 
     asyncio.run(exercise())
+
+
+def test_appending_small_source_does_not_rotate_or_replay_acknowledged_lines(tmp_path):
+    source, cursor, events = tmp_path / "audit.jsonl", tmp_path / "cursor", []
+    source.write_text(_line("first"))
+    collector = JSONLCollector([source], cursor, lambda item: events.append(item) or True)
+    assert collector.collect() == 1
+    first_id = events[0]["record_id"]
+    with source.open("a") as stream:
+        stream.write("".join(_line(f"next-{i}") for i in range(40)))
+    assert collector.collect() == 40
+    assert len(events) == 41
+    assert len({event["record_id"] for event in events}) == 41
+    assert sum(event["record_id"] == first_id for event in events) == 1
+    assert all(event.get("kind") != "gap" for event in events)
+    assert collector.collect() == 0
+
+
+@pytest.mark.parametrize("header", ["Authorization", "Proxy-Authorization", "x-api-key", "Cookie"])
+def test_exact_credential_header_does_not_depend_on_value_entropy(header):
+    text = f"{header}: alphabeticcredentialvalue"
+    with pytest.raises(InputError):
+        guard_content({"content": text})
+    redacted = sanitize(text).value
+    assert "alphabeticcredentialvalue" not in redacted
+    assert sanitize(redacted).value == redacted

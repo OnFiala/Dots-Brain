@@ -300,7 +300,9 @@ class JSONLCollector:
                     raise InputError(
                         "Capture source changed or is not a regular file; retry collection."
                     )
-                fingerprints = _fingerprints(descriptor, offset)
+                fingerprints = _fingerprints(
+                    descriptor, offset, prefix_length=previous.get("prefix_length")
+                )
             except Exception:
                 os.close(descriptor)
                 raise
@@ -380,12 +382,20 @@ class JSONLCollector:
             return _gap("collector", record_id, "invalid_json_line")
 
 
-def _fingerprints(descriptor: int, offset: int, size: int = 256) -> dict[str, Any]:
+def _fingerprints(
+    descriptor: int, offset: int, size: int = 256, *, prefix_length: int | None = None
+) -> dict[str, Any]:
     """Bind a checkpoint to both the file prefix and bytes immediately before it."""
     current = os.lseek(descriptor, 0, os.SEEK_CUR)
     try:
         file_size = os.fstat(descriptor).st_size
-        prefix_length = min(size, file_size)
+        # Compare precisely the prefix stored at the previous checkpoint. On
+        # save, hash only acknowledged bytes, never an unfinished appended tail.
+        if prefix_length is None:
+            prefix_length = min(size, offset, file_size)
+        elif type(prefix_length) is not int or not 0 <= prefix_length <= size:
+            raise InputError("Capture cursor has an invalid prefix length.")
+        prefix_length = min(prefix_length, file_size)
         os.lseek(descriptor, 0, os.SEEK_SET)
         prefix = os.read(descriptor, prefix_length)
         boundary_start = max(0, offset - size)

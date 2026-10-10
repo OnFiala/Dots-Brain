@@ -11,6 +11,7 @@ import signal
 import socket
 import subprocess
 import sys
+import threading
 import time
 import uuid
 from pathlib import Path
@@ -244,6 +245,17 @@ def daemon_environment() -> dict[str, str]:
     return environment
 
 
+def reap_process(process: subprocess.Popen) -> None:
+    """Retain and reap a detached child without fabricating its exit status."""
+    with contextlib.suppress(OSError):
+        process.wait()
+
+
+def schedule_reap(process: subprocess.Popen) -> None:
+    """Avoid Popen finalizer warnings while preserving the actual child status."""
+    threading.Thread(target=reap_process, args=(process,), daemon=True).start()
+
+
 def up(
     store: Store, *, port: int | None = None, semantic: bool | None = None, resume: bool = False
 ) -> dict:
@@ -352,6 +364,7 @@ def up(
                         cwd=store.directory,
                         env=daemon_environment(),
                     )
+                    schedule_reap(process)
                 finally:
                     os.close(log_fd)
             finally:

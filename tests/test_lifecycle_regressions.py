@@ -1,4 +1,5 @@
 import json
+import time
 
 import pytest
 
@@ -6,13 +7,14 @@ from dots_brain.auth import authenticate, issue_client, read_connection
 from dots_brain.clients import (
     bridge_entry,
     configure,
+    connect_client,
     integration_key,
     target_path,
 )
 from dots_brain.errors import InputError
 from dots_brain.local import read_json, write_json
 from dots_brain.removal import disconnect_client, uninstall
-from dots_brain.runtime import credential, daemon_environment, up
+from dots_brain.runtime import credential, daemon_environment, schedule_reap, up
 from dots_brain.store import Store
 
 
@@ -64,6 +66,22 @@ def test_daemon_environment_drops_caller_import_and_proxy_state(monkeypatch):
     assert environment["LANG"] == "C.UTF-8"
     assert "PYTHONPATH" not in environment
     assert "HTTPS_PROXY" not in environment
+
+
+def test_background_reaper_waits_for_the_managed_child():
+    class Process:
+        waited = False
+
+        def wait(self):
+            self.waited = True
+
+    process = Process()
+    schedule_reap(process)
+    for _ in range(100):
+        if process.waited:
+            break
+        time.sleep(0.001)
+    assert process.waited
 
 
 def test_normalized_client_path_has_one_registration_identity(tmp_path):
@@ -159,3 +177,63 @@ def test_remote_disconnect_is_terminal_without_local_database(tmp_path):
     assert result["access"] == "issuer_revocation_required"
     assert not store.path.exists()
     assert read_json(store.directory / "integrations.json")["items"] == {}
+
+
+def test_remote_connect_creates_only_registration_parent(tmp_path, monkeypatch):
+    store = Store(tmp_path / "device")
+    config = tmp_path / "remote.json"
+    connection = tmp_path / "remote-connection.json"
+    connection.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "client_id": "remote",
+                "token": "secret",
+                "url": "https://host.example/mcp",
+            }
+        )
+    )
+
+    async def verified(entry, **checks):
+        assert checks["write"] is False
+        return {"state": "verified_read", "read": True, "write": "not_tested"}
+
+    monkeypatch.setattr("dots_brain.clients.verify_command", verified)
+    result = connect_client(store, provider="cursor", config=config, connection=connection)
+
+    assert result["state"] == "configured_verified_bridge"
+    assert store.directory.is_dir()
+    assert not store.path.exists()
+
+
+def test_repeated_local_connect_skips_second_write_probe(tmp_path, monkeypatch):
+    store = Store(tmp_path / "memory")
+    store.initialize()
+    config = tmp_path / "cursor.json"
+    calls = []
+
+    def runtime(*args, **kwargs):
+        return {"url": "http://127.0.0.1:8765/mcp"}
+
+    async def verified(entry, **checks):
+        calls.append(checks["write"])
+        return {
+            "state": "verified_read_write" if checks["write"] else "verified_read",
+            "read": True,
+            "write": True if checks["write"] else "not_tested",
+        }
+
+    monkeypatch.setattr("dots_brain.clients.up", runtime)
+    monkeypatch.setattr("dots_brain.clients.verify_command", verified)
+    connect_client(store, provider="cursor", config=config)
+    connect_client(store, provider="cursor", config=config)
+
+    assert calls == [True, False]
+
+
+def test_repeated_uninstall_revokes_without_reenabling_the_store(tmp_path):
+    store = Store(tmp_path / "memory")
+    store.initialize()
+
+    assert uninstall(store)["state"] == "uninstalled"
+    assert uninstall(store)["state"] == "uninstalled"

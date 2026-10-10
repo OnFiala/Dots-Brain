@@ -243,3 +243,12 @@ def test_multiprocess_setup_and_prepublication_crash_leave_one_complete_database
         assert db.execute("PRAGMA user_version").fetchone()[0] == 2
         assert db.execute("PRAGMA application_id").fetchone()[0] != 0
         assert db.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+
+
+def test_legacy_schema_v2_zero_application_id_remains_explicitly_compatible(tmp_path):
+    store = Store(tmp_path / "legacy-v2")
+    store.initialize()
+    with store.connection() as db:
+        db.execute("PRAGMA application_id=0")
+    store.initialize()
+    assert store.status()["memories"] == 0

@@ -194,7 +194,8 @@ def connect_client(
         raise InputError(
             "Initialize the chosen memory host with up, or provide an existing connection."
         )
-    with locked(store.directory / "installation.lock"):
+    # A remote client needs a local registration but must not initialize a local database.
+    with locked(store.directory / "installation.lock", create_parent=connection is not None):
         return _connect_client(
             store, provider=provider, config=config, connection=connection, projects=projects
         )
@@ -262,7 +263,10 @@ def _connect_client(store, *, provider, config, connection, projects):
             asyncio.wait_for(
                 verify_command(
                     entry,
-                    write=local,
+                    # A prior successful local connection already proved writes for this
+                    # credential. Repeating its deterministic probe would target a
+                    # deliberately suppressed deleted probe record.
+                    write=local and created_credential,
                     project=(projects or ["default"])[0],
                     cleanup_store=store if local else None,
                 ),

@@ -124,16 +124,16 @@ def test_preflight_credential_failure_never_claims_sending_and_is_retryable():
     assert transport.calls == []
 
 
-def test_explicit_upstream_rejection_is_retryable_planned_not_uncertain():
+def test_post_send_upstream_error_remains_uncertain():
     ledger = Ledger()
-    with pytest.raises(CortexWriteRejected):
+    with pytest.raises(CortexWriteUncertain):
         asyncio.run(
             service(Transport(failure=CortexWriteRejected("rejected")), ledger).write_note(
                 **note_kwargs()
             )
         )
     row = next(iter(ledger.rows.values()))
-    assert row["state"] == "planned"
+    assert row["state"] == "uncertain"
     assert row["error_code"] == "cortex_write_rejected"
 
 

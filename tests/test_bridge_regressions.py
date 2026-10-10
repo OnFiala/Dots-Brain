@@ -244,3 +244,19 @@ def test_bridge_session_does_not_replay_failed_mutation(monkeypatch):
             await worker
 
     asyncio.run(exercise())
+
+
+def test_shutdown_above_twice_queue_capacity_settles_every_caller():
+    async def exercise():
+        remote = BridgeSession(None)
+        callers = [asyncio.create_task(remote.request("read")) for _ in range(100)]
+        await asyncio.sleep(0)
+        await remote.close()
+        await asyncio.wait_for(remote.run(), 1)
+        results = await asyncio.wait_for(asyncio.gather(*callers, return_exceptions=True), 1)
+        assert len(results) == 100
+        assert all(isinstance(result, BaseException) for result in results)
+        assert remote.queue.empty()
+        assert all(task.done() for task in callers)
+
+    asyncio.run(exercise())

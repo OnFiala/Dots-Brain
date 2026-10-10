@@ -768,7 +768,10 @@ def test_official_oauth_client_completes_discovery_registration_and_pkce_over_li
                 ["--data-dir", str(store.directory), "oauth", "configure", "--issuer", issuer]
             )
         )
-        assert result["service"]["pid"] != first["pid"]
+        assert result["restart_required"] is True
+        down(store)
+        restarted = up(store, port=urlsplit(issuer).port)
+        assert restarted["pid"] != first["pid"]
         assert result["public_ingress"] == "not_verified"
         state = OAuthStore(store)
         state.set_onboarding(open_for_seconds=600)
@@ -1247,3 +1250,35 @@ def test_onboarding_limiter_bounds_many_peers_and_global_capacity():
     assert admitted <= 61
     assert len(limiter.buckets) <= 512
     assert len(limiter.global_buckets) == 1
+
+
+@pytest.mark.parametrize("persistent_failure", [False, True])
+def test_failed_issuer_file_publication_preserves_grants_and_can_recover(
+    installation, monkeypatch, persistent_failure
+):
+    import dots_brain.oauth as oauth
+
+    store, state, _, app = installation
+    with TestClient(app, base_url=ISSUER) as http:
+        client = register(http)
+        tokens = http.post("/token", data=request_code(http, client, state)).json()
+    original = oauth.write_json
+    failures = []
+
+    def failing(path, value):
+        if path.name == "oauth.json" and (persistent_failure or not failures):
+            failures.append(path)
+            raise OSError("synthetic disk failure")
+        return original(path, value)
+
+    monkeypatch.setattr(oauth, "write_json", failing)
+    with pytest.raises(OSError):
+        configure(store, "https://replacement.example", replace_issuer=True)
+    with store.connection() as db:
+        assert db.execute("SELECT COUNT(*) FROM oauth_grants WHERE revoked=0").fetchone()[0] == 1
+        assert db.execute("SELECT COUNT(*) FROM oauth_tokens").fetchone()[0] == 2
+    assert state.enabled() is not persistent_failure
+    monkeypatch.setattr(oauth, "write_json", original)
+    configure(store, ISSUER)
+    assert state.policy(tokens["access_token"]) is not None
+    assert not (store.directory / "oauth-config-pending.json").exists()

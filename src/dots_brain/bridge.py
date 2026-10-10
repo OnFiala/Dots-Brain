@@ -15,7 +15,7 @@ from mcp.server.stdio import stdio_server
 
 from . import __version__
 from .auth import authenticate, read_connection
-from .errors import BrainError, InputError
+from .errors import BrainError, BusyError, InputError
 from .local import read_json, write_json
 from .protocol import INSTRUCTIONS, error_result, safe_error
 
@@ -354,8 +354,14 @@ class BridgeSession:
             )
         result = asyncio.get_running_loop().create_future()
         try:
-            await self.queue.put((name, arguments, result))
+            # Admission is atomic with the closed check on this event loop.
+            # Waiting putters could otherwise enqueue behind the stop sentinel
+            # after close drained the queue and the worker had already exited.
+            self.queue.put_nowait((name, arguments, result))
             return await result
+        except asyncio.QueueFull:
+            result.cancel()
+            raise BusyError("The local bridge queue is full; retry later.") from None
         except asyncio.CancelledError:
             # A canceled caller must not leave a result waiter behind in the
             # bounded queue. The worker observes this before issuing the call.

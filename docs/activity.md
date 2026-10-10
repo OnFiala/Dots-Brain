@@ -21,3 +21,38 @@ do not put production memory content in the target.
 Capture never imports system instructions or analysis/reasoning payloads. If a
 terminally quarantined pending receipt blocks a deliberate retry, use
 `capture --recover-pending` after inspecting the local result.
+
+## Experimental Grok snapshot format
+
+The current adapter supports the supplied Grok export shape below. It is not a
+generic JSONL parser and has not been accepted against a live producer. Use UTF-8,
+one JSON object per line, and keep the cursor when the same source grows.
+
+| Mode | Accepted shape | Captured data |
+| --- | --- | --- |
+| `audit` | `type`, optional `ts` and `agentId` | Sanitized action metadata. |
+| `transcript` | `role`, `message.content` block list | User text and tool names/status. |
+
+Audit `type` is one of `shell_command` (`command`, `shellKind`, `target`),
+`mcp_tool_call` (`serverIdentifier`, `toolName`, `toolCallId`, `status`,
+`durationMs`), `browser_navigation` (`url`, `pageTitle`), or
+`computer_use_session` (`actionCount`, `durationMs`, `screenshotCount`).
+
+```json
+{"type":"mcp_tool_call","ts":"2026-01-01T12:00:00Z","toolName":"example","status":"success"}
+{"role":"user","message":{"content":[{"type":"text","text":"Synthetic project note."}]}}
+```
+
+The first example belongs to an audit file, the second to a transcript file.
+Assistant `tool_use` blocks contribute only `name`; tool `tool_result` blocks
+contribute `name` and a boolean `result.success` when present. Tool arguments and
+results are omitted. Plain assistant text has no verified visibility flag in this
+format and becomes a coverage gap. Records have no reliable transcript call IDs,
+so tool pairing remains unverified. Source timestamps and actor fields remain
+untrusted snapshot metadata, separate from the authenticated collector identity.
+
+A pass is capped at 1,000 records or 16 MiB, with a 256 KiB line bound. Resume when
+`more_pending` is true. Acknowledged cursor updates survive interruption; source
+rotation creates a new generation and a reported gap. Renaming a source can
+change its identity; copying the same snapshot under another path is not a
+supported deduplication mechanism.

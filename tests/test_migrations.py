@@ -4,7 +4,7 @@ import pytest
 
 from dots_brain.errors import IntegrityError, MigrationRequiredError
 from dots_brain.migrations import HISTORICAL_WRITER, migrate_v1_to_v2
-from dots_brain.store import Store, source_key
+from dots_brain.store import APPLICATION_ID, Store, source_key
 
 V1_SCHEMA = """
 CREATE TABLE memories (
@@ -96,6 +96,7 @@ def test_migration_preserves_data_and_rejects_old_sql_contract(tmp_path):
     assert store.get("memory-1", revision=1)["content"] == "first content"
     assert store.search("second")[0]["revision"] == 2
     with store.connection() as db:
+        assert db.execute("PRAGMA application_id").fetchone()[0] == APPLICATION_ID
         revision = db.execute("SELECT writer_principal FROM revisions WHERE revision=1").fetchone()[
             0
         ]

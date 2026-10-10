@@ -40,3 +40,9 @@ or transfer a credential to another machine.
 `oauth disable` revokes OAuth state and does not start a local service. It does not
 revoke ordinary local bearer credentials. The onboarding window has a TTL and the
 gateway has a separate runtime gate; both must permit registration and approval.
+
+Issuer changes use a private `oauth-config-pending.json` journal and a matching
+SQLite commit marker. A file-publication failure rolls back grant invalidation;
+a crash leaves OAuth disabled until `oauth configure` is run again. Reuse the
+intended issuer and the existing `--replace-issuer` approval flag. Do not delete
+the journal manually: it determines whether the old or new configuration committed.
