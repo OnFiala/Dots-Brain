@@ -22,7 +22,7 @@
 
 - [Architecture](architecture.md): local components and data boundaries.
 - [Capabilities](capabilities.md): implemented surfaces and acceptance boundaries.
-- [Autonomy](autonomy.md): optional CORTEX use and operating constraints.
+- [Autonomy](autonomy.md): authorized autonomous setup and verification boundaries.
 - [Roadmap](roadmap.md): planned work.
 - [Stress tests](stress-tests.md): bounded synthetic measurements and their limits.
 - [Releases](releases.md): tag and draft-release procedure.

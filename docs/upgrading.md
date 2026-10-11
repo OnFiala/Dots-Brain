@@ -16,8 +16,10 @@ release tag for a production upgrade. A development branch is not a release.
 5. Run the offline migration below before starting the new binary. Then start
    the supervisor, run `doctor`, reload each client and make a real MCP read.
 
-Use a reviewed commit or published tag. This unreleased candidate is not a normal
-upgrade path and this documentation makes no production-upgrade claim.
+The procedures below cover this candidate's supported schema upgrades and
+rollback. For disposable acceptance, pin the exact reviewed candidate commit;
+for production, select a reviewed published release. Passing the procedure on
+a test store does not establish production acceptance.
 
 ### HTTP and OAuth listener upgrade
 

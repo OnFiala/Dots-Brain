@@ -8,7 +8,9 @@ builds are not a supported upgrade or rollback path for a schema-v4 store.
 macOS can run local source checks and stdio experiments, but managed lifecycle
 behavior is not accepted there. Windows is not supported.
 
-Use a writable checkout and `uv`; this alpha has no supported `pip install` path.
+Use a writable checkout and `uv` for the procedure below. CI separately installs
+the built wheel and exercises it outside the checkout; that artifact check does
+not publish a package or establish a package-index installation for this candidate.
 Put the data directory and every backup or export destination on a local POSIX
 filesystem that supports hard links. Dots Brain refuses atomic publication on an
 unsupported destination with `capability_unavailable`; use a local directory rather

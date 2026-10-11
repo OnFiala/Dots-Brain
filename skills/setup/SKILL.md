@@ -40,8 +40,9 @@ Report that evidence separately from remote access, capture, or host persistence
 
 `up` starts or reuses one managed loopback HTTP service. A manually supervised
 service may already own the store. `oauth configure` and `oauth disable` never
-start a service; use the existing supervisor for the subsequent restart. Run a
-backend exposed through a public route with `serve --transport http --public-gateway`.
+start a service; use the existing supervisor for any required restart. Follow
+`docs/oauth.md` to select private and OAuth-only listeners before connecting a
+public gateway.
 
 ```text
 dots-brain --data-dir /absolute/private/memory oauth configure --issuer https://memory.example
@@ -73,8 +74,10 @@ Client metadata and callback addresses are untrusted input.
 Capture accepts an opt-in bounded JSONL snapshot. It excludes analysis/reasoning
 payloads and is not provider-wide or live conversation capture. CORTEX is optional;
 use it only with a separately authorized endpoint, token file, project map, and
-live verification. Inspect uncertain CORTEX operations before retrying; only an
-idempotent note can receive an owner-authorized retry.
+live verification. Inspect uncertain CORTEX operations before retrying. The local
+owner can explicitly authorize a retry of a note, decision, or outcome; only notes
+carry an upstream idempotency key, so decisions and outcomes can be duplicated.
+Follow the upstream contract in `docs/reference/mcp-tools.md`.
 
 For upgrades, use `docs/upgrading.md`. For removal, run `uninstall --dry-run`,
 inspect it, then run `uninstall` within the user's authority. Uninstall preserves

@@ -5,6 +5,9 @@ stores source metadata and revisions in one SQLite database, supports full-text
 search, and can add local CPU embeddings. It does not automatically collect
 assistant conversations.
 
+A **Dot** means an AI assistant or client using this shared service. It is a
+product term, not a separate database or a grant of access.
+
 **Version: 0.4.0-alpha.4 (unreleased).** This candidate has local MCP storage,
 scoped client credentials, backup and staged restore commands. It is not a
 published release or a deployment claim. Live capture, a CORTEX connection,
@@ -14,7 +17,9 @@ acceptance evidence.
 ## Quick start on Linux
 
 Use a writable checkout, Python 3.11–3.13, and [uv](https://docs.astral.sh/uv/).
-There is no supported `pip install` path in this alpha.
+The documented installation uses the locked source checkout. CI also installs
+and exercises a built wheel in isolation; this unreleased candidate is not a
+published package to install from a package index.
 
 ```sh
 git clone https://github.com/OnFiala/Dots-Brain.git

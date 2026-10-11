@@ -14,8 +14,16 @@ absolute data directory outside the checkout.
 Callers should branch on `code`, not error prose. Common codes are
 `invalid_input`, `revision_conflict`, `source_suppressed`, `migration_required`,
 `capability_unavailable`, `busy`, `credential_rejected`, `service_unavailable`,
-`timed_out`, and `internal_error`. A code describes the boundary result; it does
+`timed_out`, `store_disabled`, `invalid_state`, `integrity_error`, `database_error`,
+`permission_denied`, and `internal_error`. See [troubleshooting](../troubleshooting.md)
+for next commands. A code describes the boundary result; it does
 not make a remote service or client UI verified.
+
+Some results retain compatibility keys from the original VM deployment:
+`vm_persistence: "not_verified"` means host persistence has not been tested, and
+`restart_on_vm_boot: false` means `up` has not installed boot startup. They do not
+assert that the current machine is a VM. `doctor` reports local checks separately
+from these acceptance limits; use `healthy` and the individual `checks` results.
 
 ## Store and service
 
@@ -94,6 +102,7 @@ dots-brain --data-dir /absolute/private/memory client create --name local-tool -
 dots-brain --data-dir /absolute/private/memory client list
 dots-brain --data-dir /absolute/private/memory client revoke client-id
 dots-brain bridge --credential-file /absolute/private/credential.json
+dots-brain bridge --credential-file /absolute/private/credential.json --local-data-dir /absolute/private/memory
 dots-brain verify --credential-file /absolute/private/credential.json --project work
 ```
 
@@ -123,9 +132,20 @@ no upstream call, and reports the remaining remote probe as `unknown`; it does
 not establish deletion. It unblocks a later explicit write verification. The
 archive remains private evidence for manual resolution.
 
-`client create` defaults to `memory:read` and a 30-day credential lifetime;
-use explicit scopes and `--days` (up to 365) for another grant. Expired or revoked
-credentials are rejected rather than renewed.
+`client create` defaults to `memory:read`; use explicit scopes for another grant.
+
+| Credential source | Lifetime |
+| --- | --- |
+| `client create` | 30 days by default; `--days` accepts 1–365. |
+| `connect` | 365 days for a newly issued managed credential. |
+
+Retained credentials keep their original expiry. Expired or revoked credentials
+are rejected rather than renewed. OAuth has a separate [token lifecycle](../oauth.md#token-lifecycle).
+
+`bridge --local-data-dir` may resume only the managed local instance matching the
+credential's identity and endpoint. Generated local adapter entries use it for
+managed restart. Omit it for a separately supervised or remote endpoint; it does
+not start an arbitrary server or create another store.
 
 Bridge calls share one connection, with eight in flight and at most 128 pending.
 The absolute request deadline includes waiting in the queue. The complete
@@ -147,6 +167,7 @@ dots-brain --data-dir /absolute/private/memory oauth onboarding open --minutes 1
 dots-brain --data-dir /absolute/private/memory oauth onboarding status
 dots-brain --data-dir /absolute/private/memory oauth pending
 dots-brain --data-dir /absolute/private/memory oauth approve request-id --redirect-host client.example --project work --scope memory:read
+dots-brain --data-dir /absolute/private/memory oauth approve request-id --redirect-host client.example --project work --scope memory:read --scope memory:forget --allow-forget
 dots-brain --data-dir /absolute/private/memory oauth deny request-id
 dots-brain --data-dir /absolute/private/memory oauth clients
 dots-brain --data-dir /absolute/private/memory oauth purge
@@ -156,13 +177,18 @@ dots-brain --data-dir /absolute/private/memory oauth onboarding close
 dots-brain --data-dir /absolute/private/memory oauth disable
 ```
 
+`oauth status` inspects configuration; `oauth clients` lists registrations and
+their revocation state; `oauth deny REQUEST_ID` rejects that exact pending request.
+`oauth onboarding status` reports the current short window. Deletion approval
+requires `--allow-forget` as well as the requested `memory:forget` scope.
 Changing issuer needs `oauth configure --replace-issuer` and revokes old OAuth
 grants. The CLI onboarding TTL and the public gateway gate are separate controls.
 `oauth recover` completes a valid interrupted configuration change. An invalid
 configuration or journal makes `oauth status` exit with status 1 and print an
 explicit recovery command. Preserve the named files before using a replacement
-command, which revokes existing grants. `oauth purge` removes expired requests and
-unused registrations while retaining grant provenance and active approvals.
+command, which revokes existing grants. `oauth purge` removes expired exchanges
+and unused registrations immediately, even within their automatic cleanup TTL;
+it retains every client referenced by grant history, an unexpired request or code.
 See [OAuth](../oauth.md) for the approval procedure and request-size limits.
 
 ## Audit, capture, and optional CORTEX
@@ -170,12 +196,17 @@ See [OAuth](../oauth.md) for the approval procedure and request-size limits.
 ```sh
 dots-brain --data-dir /absolute/private/memory audit events --project work --after-id 0 --limit 100
 dots-brain --data-dir /absolute/private/memory audit report --project work
+dots-brain --data-dir /absolute/private/memory audit events --project work --since 2026-01-01T00:00:00Z --until 2026-01-02T00:00:00Z
 dots-brain capture --kind audit --path /absolute/private/snapshot.jsonl --cursor /absolute/private/cursor.json --credential-file /absolute/private/credential.json --project work --account account-id
 dots-brain --data-dir /absolute/private/memory cortex configure --endpoint https://cortex.example/mcp --token-file /absolute/private/cortex-token --project-map work=work
 dots-brain --data-dir /absolute/private/memory cortex operations --project work
 dots-brain --data-dir /absolute/private/memory cortex resolve --project work --operation-id operation-id --resolution retry
 dots-brain --data-dir /absolute/private/memory cortex resolve --project work --operation-id operation-id --resolution recover-sending --writers-stopped
 ```
+
+`audit --since` is an inclusive lower bound and `--until` an exclusive upper bound
+on server-recorded UTC time, not a client-supplied event timestamp. Use ISO 8601
+timestamps with a timezone. Both filters apply to `events` and `report`.
 
 Capture is a bounded import of supplied JSONL. `--recover-pending` only handles a
 terminally quarantined pending receipt after inspection. CORTEX is optional and

@@ -49,7 +49,8 @@ bytes at 50,000 records and from 7,540,736 to 12,173,312 bytes at 100,000
 (about 66% and 61%). Whole-database growth therefore understates the cost of
 indexing IDs when vectors account for most of the database.
 
-Reproduce with the same interpreter and two clean source exports. Each directory
+Reproduce with [benchmark_storage.py](../scripts/benchmark_storage.py), the same
+interpreter and two clean source exports. Each directory
 must be new; the helper creates only synthetic data and refuses an existing seed
 directory. It emits JSON with environment, timings, sample ranges and RSS.
 
@@ -68,32 +69,23 @@ on both sources. The full-text policy and ID indexing therefore carry a measured
 hybrid recall regression on this dataset; W4 does not claim a relevance or noise
 improvement. The corpus is a public regression fixture, not held-out validation.
 
-## Audit workload, 2026-10-10
+## Semantic index limits
 
-An independent AI reviewer tested commit `0a48497` (source tree
-`2b9dab2072ba5495852587c3c2795974c5d9b20d`) on macOS 26.6.2 arm64,
-Python 3.11.14 and SQLite 3.50.4. All stores were disposable and all records
-synthetic. The vector workloads used fixed normalized 384-dimensional vectors,
-so their timings exclude model inference, HTTP and external clients.
+The shipped storage helper measures status, updates, forget and migration; it
+does not reproduce search or index-pass latency. Historical 50,000/100,000 chunk
+timings without a shipped harness and comparable baseline have been removed.
+Use [stress_semantic.py](../scripts/stress_semantic.py) for a bounded real-model
+workload; record its environment and source revision, and compare the same
+workload on the same machine before claiming an improvement.
 
-| Workload | Observed result |
-| --- | --- |
-| 50,000 valid chunks | Search median 147 ms (3 samples); idle index pass median 30 ms (5 samples). |
-| 100,000 valid chunks | Search median 388 ms (3 samples, range 302–503 ms); idle index pass median 62 ms (5 samples). |
-| 50,000 / 100,000 invalid chunks | Search 81 / 137 ms, no result and one summary warning per call. One repair pass repaired exactly 4 records in 34 / 68 ms. Each is one sample. |
-| 100,000 stale retry entries, limit 16 | 18 SELECT statements, exactly 16 stale entries removed in one pass (0.144 ms, one sample). |
-| 256 deferred failures | A new healthy record was indexed first; the last due failure was reached within 16 bounded passes. |
-| Forget followed by a new revision-1 record, unchanged total count | The replacement was indexed and returned by search. |
+Search remains linear in stored chunks. Discovering pending records still queries
+the source table; repair and failed-retry work proceeds in bounded slices. CLI
+`index` drains a complete repair sweep before returning. Cancellation during
+embedding occurs between records. Deterministic regressions cover invalid vectors,
+replacement records and deferred failures in
+[semantic regressions](../tests/test_semantic_regressions.py) and
+[round 3 semantic checks](../tests/test_round3_semantic.py).
 
-The review caught a lossy count/revision shortcut that missed replacements, an
-unbounded retry-deadline loop, and invalid embedding shapes that could enter a
-repair loop. The final source removes the shortcut, rotates a bounded set of
-retry entries, and validates vector shape before publication. Deterministic
-regressions live in `tests/test_semantic_regressions.py`.
-
-Search remains linear in stored chunks, and an idle indexing pass still scans
-the source table for pending records. Cancellation during embedding occurs
-between records. These warm, bounded measurements do not establish production
-capacity, model relevance, concurrent workload headroom, provider-log freshness,
-or long-running service limits. CI separately exercises the pinned real model
-and an actual Chromium OAuth callback.
+None of these checks establishes production capacity, model relevance, concurrent
+headroom, provider-log freshness or long-running service limits. CI separately
+exercises the pinned real model and an actual Chromium OAuth callback.

@@ -37,7 +37,9 @@ Tool failures return structured error data with a stable `code`. Clients should
 use that code for control flow and treat the message as operator context. Common
 codes include `invalid_input`, `revision_conflict`, `source_suppressed`,
 `forbidden`, `not_found`, `migration_required`, `capability_unavailable`, `busy`,
-`credential_rejected`, `service_unavailable`, `timed_out`, and `internal_error`.
+`credential_rejected`, `service_unavailable`, `timed_out`, `store_disabled`,
+`invalid_state`, `integrity_error`, `database_error`, `permission_denied`, and
+`internal_error`. See [troubleshooting](../troubleshooting.md) for safe next steps.
 Bridge transport failures also include `request_too_large` and `outcome_unknown`;
 see [bridge limits and recovery](cli.md#credentials-and-local-bridge).
 An error code reports only this request's result; it does not prove or revoke an
@@ -63,3 +65,34 @@ decision for notes, decisions, and outcomes; decisions and outcomes can duplicat
 because they have no upstream idempotency key. Recovering an orphaned `sending`
 receipt only marks it uncertain while all cooperating writers are stopped; it does
 not send or authorize a retry.
+
+## CORTEX upstream contract
+
+The configured endpoint must implement Streamable HTTP MCP with a dedicated
+credential and the following tools. Local project names map one-to-one to explicit
+upstream `project_id` values; the connector never guesses a project or exposes a
+generic upstream call tool.
+
+| Upstream tool | Request fields |
+| --- | --- |
+| `cortex_brief` | `project_id`, `query` |
+| `cortex_search` | `project_id`, `query`, `limit` |
+| `cortex_fetch` | `object_id` (reconciliation only) |
+| `cortex_record_note` | `project_id`, `title`, `summary`, `content`, `topic`, `idempotency_key` |
+| `cortex_record_decision` | `project_id`, `title`, `summary`, `doctrine_statement`, `doctrine_level` |
+| `cortex_record_outcome` | `project_id`, `title`, `summary`, `status`, `topic` |
+
+Responses must contain a JSON object in MCP `structuredContent` or a JSON text
+content block. An MCP `isError` response is a failure, not proof that a write did
+not commit. A write acknowledgement must contain a safe `event_id` or `object_id`;
+only these identifiers are retained in the local receipt. The connector appends
+its origin reference to note content or decision/outcome summary. Only notes send
+the operation ID as `idempotency_key`; the upstream must honor it for retry safety.
+
+Reconciliation searches for the operation ID, reads up to 20 `results` containing
+`object_id`, then fetches a candidate object. Fetch must expose `project_id` and
+`content_text` for notes or `summary_text` for decisions/outcomes, either directly
+or inside `stored_object`. Matching project and origin text returns only
+`candidate_unverified`: it does not acknowledge delivery or authorize a retry.
+Missing tools or incompatible receipts fail explicitly. Endpoint configuration
+alone does not establish that a real CORTEX service satisfies this contract.

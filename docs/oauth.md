@@ -6,8 +6,10 @@ or transfer a credential to another machine.
 
 1. Operate an HTTPS route to the host with TLS and appropriate ingress controls.
 2. Configure the issuer on the existing store. Configuration never starts a
-   service. Stop the supervisor for a planned issuer change and restart it after
-   configuration; the command itself does not require other writers to stop.
+   service and can run alongside an existing service; the command does not require
+   other writers to stop. The running HTTP application loads its issuer and OAuth
+   routes at startup. Restart it through its existing supervisor after enabling
+   OAuth or changing the issuer. Reapplying the same issuer preserves grants.
    Changing an issuer requires `--replace-issuer`, which revokes the
    existing OAuth grants and retains the resulting change in the local audit:
 
@@ -51,7 +53,8 @@ or transfer a credential to another machine.
 
    `--redirect-host` must exactly match the callback hostname for the client flow
    being approved. Choose the requested project list and scopes deliberately;
-   `--all-projects` is available but broad.
+   `--all-projects` is available but broad. Granting `memory:forget` additionally
+   requires the owner's explicit `--allow-forget` choice.
 
 5. Complete the pairing page with its **POST Continue** action. It refreshes while
    it waits for the owner; a manual refresh is also safe before Continue. Loading
@@ -72,6 +75,44 @@ or transfer a credential to another machine.
 `oauth disable` revokes OAuth state and does not start a local service. It does not
 revoke ordinary local bearer credentials. The onboarding window has a TTL and the
 gateway has a separate runtime gate; both must permit registration and approval.
+
+| Operator command | Effect |
+| --- | --- |
+| `oauth status` | Inspect configuration and any recovery command without repairing files. |
+| `oauth clients` | List registered clients and revocation state without credentials. |
+| `oauth deny REQUEST_ID` | Deny the exact request while it remains available. |
+| `oauth onboarding status` | Inspect whether the short pairing window is open. |
+| `oauth purge` | Remove expired exchanges and unused registrations; retain grant provenance and unexpired requests/codes. |
+
+## Token lifecycle
+
+| Item | Lifetime |
+| --- | --- |
+| Authorization request | 300 seconds from request creation. |
+| Authorization code | 60 seconds from browser continuation; single use. |
+| OAuth grant | 30 days from successful code exchange. |
+| OAuth refresh token | Until the grant expires; rotation does not extend it. |
+| OAuth access token | Up to 3,600 seconds, bounded by grant expiry. |
+| Idle ungranted registration | Automatic cleanup after 900 seconds when no request, code or grant references it. |
+
+Automatic cleanup occurs during registration/authorization work. Explicit
+`oauth purge` removes an unused registration immediately, including one younger
+than 900 seconds. Both paths retain every registration referenced by any grant
+history, including expired or revoked grants. Purge also preserves unexpired
+pending/approved requests and issued codes so pairing can finish.
+
+Refresh replaces the prior access token and rotates the refresh token. Reuse of
+a spent refresh token by its matching client revokes that grant family; another
+client's family is unaffected. There are at most 4,096 refresh rotations per grant.
+After grant expiry or revocation, the client must pair again. Local static
+credentials have separate [lifetimes](reference/cli.md#credentials-and-local-bridge).
+
+Authorization code replay is rejected with HTTP 400 `invalid_grant`. The original
+access token and grant remain valid after that rejection. The service does not
+revoke the original grant on code reuse (the SEC-24 limitation); code reuse and
+spent refresh-token reuse therefore have different revocation behavior.
+
+## Configuration recovery
 
 Issuer changes use a private `oauth-config-pending.json` journal and a matching
 SQLite commit marker. Reads select the previous configuration before commit or
@@ -100,10 +141,8 @@ current file. Clients must pair again. Recovery does not restart a service.
 OAuth route bodies are limited to 16 KiB; MCP bodies to 1 MiB. Registration
 requires JSON and `/token` requires form encoding. At most 256 live ungranted
 clients and 128 pending authorizations are retained, with three pending requests
-per client. `oauth purge` removes unused clients while preserving unexpired
-requests, issued codes and grant provenance. Expired exchanges are also cleaned
-as new requests arrive. A full registration pool requires waiting for expiry or
-explicit operator review and `oauth purge`.
+per client. A full registration pool requires waiting for automatic cleanup or
+explicit operator review and `oauth purge`; see the [token lifecycle](#token-lifecycle).
 
 The backend ignores proxy headers at the transport layer and keys its limiter
 from the actual socket peer. A gateway therefore shares one backend peer budget
@@ -111,3 +150,35 @@ across its callers. The example gateway also has a shared load budget: this boun
 work but does not provide per-end-user denial-of-service isolation. Open short
 onboarding windows and enforce any stronger client isolation at a gateway with
 its own verified source identity; never trust a caller-supplied IP header.
+
+## TLS termination example
+
+The [Linux deployment template](../deploy/README.md) supplies a dedicated HTTP
+gateway on port 8788, forwarding only to the OAuth listener on port 8787. An
+existing nginx TLS terminator on the same host can use this server block inside
+its `http` configuration. Set the dedicated gateway's listener and allowed peer
+to `127.0.0.1` for this topology, and replace the domain and certificate paths:
+
+```nginx
+server {
+    listen 443 ssl;
+    server_name memory.example.com;
+    ssl_certificate /etc/ssl/memory.example.com/fullchain.pem;
+    ssl_certificate_key /etc/ssl/memory.example.com/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    client_max_body_size 1m;
+    location / {
+        proxy_pass http://127.0.0.1:8788;
+        proxy_set_header Host memory.example.com;
+        proxy_http_version 1.1;
+        proxy_buffering off;
+        proxy_read_timeout 300s;
+    }
+}
+```
+
+Validate the edited configuration with `nginx -t` on the target host before
+reloading its supervisor. This illustrative block has not been accepted on a
+deployed host. DNS, certificate issuance/renewal and public reachability are the
+operator's responsibility. Preserve the dedicated gateway's path, method, body
+and onboarding controls; forwarding directly to the backend would bypass them.

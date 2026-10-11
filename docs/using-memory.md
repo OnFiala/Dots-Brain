@@ -102,8 +102,8 @@ recall at ten (87.9%)**. Both returned a semantic candidate for **24/24
 out-of-domain questions**. These are retrieval counts, not latency or memory
 measurements. This fixture replacement does not improve ranking. The current
 floor provides no useful rejection of those unrelated questions; verify source
-relevance before using a result. Short cross-language retrieval also remains a
-known limitation pending the separate ranking change.
+relevance before using a result. Short cross-language retrieval remains a known
+limitation.
 
 Reproduce with a locally prepared model (the test never downloads one):
 
@@ -113,3 +113,24 @@ BRAIN_TEST_MODEL_DIR=/path/to/prepared/model uv run pytest -q tests/test_semanti
 
 The XML records recall and unrelated-candidate counts. The test enforces a broad
 80% retrieval regression floor; it makes no out-of-domain accuracy guarantee.
+
+### Independent threshold evaluation
+
+On the same machine and pinned model, a separate verifier sealed 24 neutral
+records, 144 relevant queries and 30 unrelated queries before seeing the proposed
+policy. A separately sealed supplement tested 24 one-word cross-language queries
+and 24 unrelated words. The candidate used cosine floors of 0.15 for one or two
+words, 0.30 for three to five words, and 0.45 for longer queries.
+
+| Dataset | `555f615` relevant at ten | Candidate relevant at ten | `555f615` unrelated queries returning a candidate | Candidate unrelated queries returning a candidate |
+| --- | --- | --- | --- | --- |
+| Short, medium and long queries | 141/144 | 137/144 | 30/30 | 14/30 |
+| One-word cross-language queries | 17/24 | 17/24 | 24/24 | 24/24 |
+
+The candidate passed the original dataset's predeclared margins, but failed the
+supplement's maximum 50% unrelated-candidate rate. It was **not adopted**. The
+current floor remains 0.20 and the one-word retrieval issue remains open. No
+queries, expected answers or acceptance margins were changed after measurement.
+The valid run verified all 24 records indexed before querying. An earlier attempt
+with only 16 indexed records was invalidated and excluded. These finite synthetic
+results do not establish production retrieval quality.

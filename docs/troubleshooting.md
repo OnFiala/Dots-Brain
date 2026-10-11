@@ -10,11 +10,15 @@ file, database, or private export into an issue or conversation.
 
 | Result | Next step |
 | --- | --- |
-| `setup_required` | Locate the canonical directory before creating a store. |
-| `disabled` | Reinstall only intentionally with `up --resume` or bootstrap. |
+| `not_found` | Locate the canonical directory and run `dots-brain --data-dir PATH doctor`; use `setup` only after confirming a new store is intended. |
+| `store_disabled` | Inspect with `dots-brain --data-dir PATH doctor`. Only an ordinary uninstall can resume with `up --resume`; recovery markers require the specific activation or cancellation procedure in [upgrading](upgrading.md). |
+| `invalid_state` | Preserve the named state files and run `dots-brain --data-dir PATH doctor`; follow the specific recovery command in the error. For OAuth, start with `oauth status`. |
+| `integrity_error` | Stop writers, preserve the database and WAL, and run `dots-brain --data-dir PATH doctor`; follow [recovery from rejected data](upgrading.md#a-plan-reports-corrupt-or-unsupported-data) with a known-good copy. |
+| `database_error` | Run `dots-brain --data-dir PATH doctor` and inspect the database check before retrying; preserve the store if corruption or an unsupported format is reported. |
+| `permission_denied` | Inspect ownership and permissions of the named local paths under the actual service user; rerun `dots-brain --data-dir PATH doctor` after correcting the authorized access. |
 | Loopback connection fails | Check the exact interpreter, service state, and credential file. |
 | Client tools are absent | Reload the client configuration; bridge success is not UI activation. |
-| OAuth flow waits | Inspect and approve only the exact pending request from that flow. |
+| OAuth flow waits | Run `oauth onboarding status` and `oauth pending` on the host; approve only the exact request from that flow with its callback hostname and intended projects. |
 | `partial` | Resolve each reported issue and rerun; do not declare success. |
 | `capture_partial` or `capture_recovery_required` | Keep the cursor and source file. Inspect the reported gap or pending receipt before an explicit recovery or new cursor. |
 | `migration_required` | Stop writers, make a full backup, and follow the offline upgrade procedure. |

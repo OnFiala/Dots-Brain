@@ -24,11 +24,11 @@ state.
   stores require migration to v4, including indexed IDs in the derived FTS table.
 - Make backup creation standalone and atomic, and preserve a safe recovery state
   when restore cutover validation fails.
-- Bound semantic indexing to 128 chunks per memory, exclude low-similarity
-  results, and retain the best semantic body passage in hybrid search.
+- Retain the best semantic body passage in hybrid search.
 - Reuse the local bridge connection and report overload without replaying writes.
-- Close OAuth onboarding by default. Require the redirect host at approval and
-  explicit confirmation before replacing the issuer.
+- Clarify unchanged credential lifetimes: `client create` defaults to 30 days,
+  `connect` issues new managed credentials for 365 days, and retained credentials
+  keep their expiry.
 
 ### Fixed
 
@@ -79,8 +79,7 @@ state.
   documented offline operator checks and cancels only a pending cutover.
 - Replace owner-specific deployment records with public Linux installation and
   ingress guidance.
-- Bind OAuth pairing to its initiating browser; consume approval only on POST.
-  Preserve refresh scope and recover interrupted configuration changes.
+- Preserve refresh scope and recover interrupted configuration changes.
 - Omit client names from default OAuth request inspection. Show them only with
   `--verbose` as untrusted client text.
 - Bound text and JSON keys before credential matching. Minimize CORTEX context
@@ -114,21 +113,42 @@ state.
   copies and follow the documented upgrade/rollback path.
 - Advance the package to `0.4.0a4` for schema v4; `0.4.0a3` used v3 and earlier
   `0.4.0a2` builds reused a version across formats. All v1/v2/v3 stores require
-  an explicit offline upgrade. Older binaries reject v4. Indexed IDs enlarge
+  an explicit offline upgrade. V4 is unsupported by older binaries. Indexed IDs enlarge
   FTS and may change BM25 scores/order, while text membership remains confined
   to titles/content. See [upgrade and rollback](docs/upgrading.md).
 - Existing stores backed by unsupported SQLite versions cannot be safely upgraded
   or rolled back through this candidate.
 - CLI and MCP callers should use structured error codes and the updated result
   contracts. A boolean or numeric string is no longer accepted as a revision.
-- OAuth configure/disable no longer starts or restarts a daemon implicitly.
+- Unknown tool arguments are rejected instead of ignored. The serialized MCP
+  request body is limited to 1 MiB, including the protocol envelope.
+- Capture returns `capture_partial` or `capture_recovery_required` with exit 1
+  for incomplete or blocked collection. Callers must inspect gaps and retained
+  receipts before continuing.
+- Remove `oauth configure --no-start` and `oauth disable --no-start`; these
+  commands never start or restart a daemon. Use the existing supervisor when
+  a restart is needed.
+- Close OAuth onboarding by default. Open a bounded window explicitly, supply
+  `--redirect-host` for approval, and use `--replace-issuer` for issuer changes.
+  Browser approval is consumed only by POST from the initiating browser.
+- Semantic search excludes scores below 0.20 and indexing stops at 128 chunks
+  per memory. The fixed threshold is not a guarantee of relevance; larger
+  memories can have incomplete semantic coverage. See [using memory](docs/using-memory.md).
+- The credential filter uses category-based policy: high-confidence secret forms
+  are rejected on memory/CORTEX writes, uncertain forms return safe warnings, and
+  capture redacts recognized forms. Existing callers must inspect warnings and
+  partial capture results; no filter guarantees detection of every secret.
+- `preflight` inspects a managed network policy only when `--network-policy PATH`
+  is supplied; without it, policy state is `not_supplied` and destination state
+  is unknown. It no longer assumes a provider-specific policy location.
+- `uninstall` returns `partial` when unowned or modified client entries remain,
+  and reports process-stop evidence as unknown when it cannot verify it.
 - A listener started with `--public-gateway` accepts OAuth grants only. Static
   credentials require a private listener; request headers cannot change the policy.
 - Setup on a disabled instance fails. Only the explicit recovery or reinstall
   command can clear its marker. `doctor` returns separate database, OAuth and
   managed-service checks with a top-level `healthy` result.
-- `client create` needs `--url` unless a managed endpoint is recorded. New client
-  credentials default to 30 days; existing credentials retain their expiry.
+- `client create` needs `--url` unless a managed endpoint is recorded.
 - `audit_review.py` requires a private `target.json`. Capture stops on an
   acknowledged-prefix rewrite instead of replaying potentially forgotten records.
 - MCP is pinned below 1.31 because the typed dispatch boundary depends on the
