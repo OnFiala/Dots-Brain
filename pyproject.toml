@@ -43,3 +43,6 @@ select = ["E", "F", "I", "UP", "B"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/dots_brain"]
+
+[tool.hatch.build.targets.sdist.force-include]
+"tests/fixtures/historical/v1-263c386/brain.sqlite3" = "tests/fixtures/historical/v1-263c386/brain.sqlite3"
