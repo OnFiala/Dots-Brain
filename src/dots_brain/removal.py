@@ -19,7 +19,7 @@ from .clients import (
     registrations,
     target_path,
 )
-from .errors import BrainError, InputError
+from .errors import BrainError, InputError, StateError
 from .installation_state import mark_uninstalled, marker_path
 from .local import atomic_write, lock_status, locked, read_json, write_json
 from .runtime import active, state_path, stop_process, unmanaged_writers
@@ -104,7 +104,7 @@ def inventory(
                 continue
             valid_items[key] = item
         registry = {"version": 1, "items": valid_items, "_invalid_items": invalid_items}
-    except (OSError, ValueError, InputError):
+    except (OSError, ValueError, InputError, StateError):
         registry = {"version": 1, "items": {}, "_invalid_items": None}
         issues.append(
             {"state": "registry_unreadable", "action": "Preserve and repair the registry."}

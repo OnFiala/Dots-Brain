@@ -228,15 +228,16 @@ def test_missing_installation_and_dry_run_do_not_create_files(tmp_path):
     assert not store.directory.exists()
 
 
-def test_corrupt_registry_is_preserved_and_reported_while_service_is_disabled(tmp_path):
+@pytest.mark.parametrize("content", [b"{broken", b"[]", b"\xff", b'{"version": 99, "items": {}}'])
+def test_corrupt_registry_is_preserved_and_reported_while_service_is_disabled(tmp_path, content):
     store = Store(tmp_path / "memory")
     _, token = record_connection(store, tmp_path / "cursor.json")
     registry = store.directory / "integrations.json"
-    registry.write_text("{broken")
+    registry.write_bytes(content)
     result = uninstall(store)
     assert result["state"] == "partial" and result["service_disabled"]
     assert any(issue["state"] == "registry_unreadable" for issue in result["issues"])
-    assert registry.read_text() == "{broken"
+    assert registry.read_bytes() == content
     assert authenticate(store, token) is None
 
 
