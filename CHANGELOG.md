@@ -26,6 +26,9 @@ state.
   when restore cutover validation fails.
 - Retain the best semantic body passage in hybrid search.
 - Reuse the local bridge connection and report overload without replaying writes.
+- Separate OAuth handlers, capture collection/delivery, sanitizer traversal and
+  CORTEX write planning/claim/delivery into bounded responsibilities, with a typed
+  CORTEX operation receipt on the public write path.
 - Clarify unchanged credential lifetimes: `client create` defaults to 30 days,
   `connect` issues new managed credentials for 365 days, and retained credentials
   keep their expiry.
@@ -40,6 +43,9 @@ state.
   process ownership checks and include lease/PID evidence in readiness failures.
 - Name actionable recovery commands for disabled stores, old backup schemas and
   client conflicts; identify parser-owned option names without echoing values.
+- Preserve corrupt managed client state with scoped diagnostics, and retain
+  uninstall's disable/revoke/partial behavior when registry reads raise a state
+  error. Close capture source descriptors if rewrite acknowledgement fails.
 - Progress past large accepted audit events through an explicit host-verified
   review projection, retain original hashes and record omitted content as a finding.
   Verify the same projection when it becomes the next scan's anchor.
@@ -120,6 +126,9 @@ state.
   or rolled back through this candidate.
 - CLI and MCP callers should use structured error codes and the updated result
   contracts. A boolean or numeric string is no longer accepted as a revision.
+- Runtime and client state failures use `invalid_state`, unsupported capabilities
+  use `capability_unavailable`, and occupied listeners use `busy`; malformed
+  caller input still uses `invalid_input`.
 - Unknown tool arguments are rejected instead of ignored. The serialized MCP
   request body is limited to 1 MiB, including the protocol envelope.
 - Capture returns `capture_partial` or `capture_recovery_required` with exit 1
@@ -141,8 +150,9 @@ state.
 - `preflight` inspects a managed network policy only when `--network-policy PATH`
   is supplied; without it, policy state is `not_supplied` and destination state
   is unknown. It no longer assumes a provider-specific policy location.
-- `uninstall` returns `partial` when unowned or modified client entries remain,
-  and reports process-stop evidence as unknown when it cannot verify it.
+- `uninstall` returns `partial` when owned client entries cannot be safely removed
+  or required credential revocation fails. Unrelated discovered entries are notes.
+  Process-stop evidence is unknown when it cannot be verified.
 - A listener started with `--public-gateway` accepts OAuth grants only. Static
   credentials require a private listener; request headers cannot change the policy.
 - Setup on a disabled instance fails. Only the explicit recovery or reinstall

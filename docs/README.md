@@ -15,6 +15,7 @@
 - [Upgrading and recovery](upgrading.md): offline migration, backup, rollback, and staged restore.
 - [Uninstall](uninstall.md): disable an instance while retaining data.
 - [Verification](verification.md): source checks versus runtime acceptance.
+- [Audit round 3 ledger](audit-round-3.md): finding dispositions, commits, regression evidence and remaining limits.
 - [Security](../SECURITY.md): trust boundaries and reporting.
 - [Linux deployment](../deploy/README.md): generic systemd and reverse-proxy template.
 
