@@ -82,14 +82,30 @@ class MemoryService:
         policy.require("memory:read")
         results = self.store.search(query, project=project, limit=limit, projects=policy.projects)
         mode = "fulltext"
+        semantic_state = "disabled" if self.semantic is None else "enabled"
         if self.semantic is not None:
-            semantic = self.semantic.search(
-                query, project=project, limit=limit, projects=policy.projects
-            )
+            try:
+                semantic = self.semantic.search(
+                    query, project=project, limit=limit, projects=policy.projects
+                )
+            except Exception:
+                logging.getLogger("dots_brain").warning(
+                    "Semantic search unavailable; using fulltext."
+                )
+                return {"mode": mode, "results": results, "semantic": "degraded"}
             records, scores = {}, {}
             for ranking in (results, semantic):
                 for rank, record in enumerate(ranking, start=1):
                     key = record["id"]
+                    previous = records.get(key)
+                    if (
+                        record.get("match_field", record.get("passage", {}).get("field")) == "title"
+                        and previous is not None
+                        and previous["revision"] == record["revision"]
+                    ):
+                        record = dict(
+                            record, excerpt=previous["excerpt"], passage={"field": "content"}
+                        )
                     records[key] = record
                     scores[key] = scores.get(key, 0.0) + 1 / (60 + rank)
             results = [
@@ -100,7 +116,7 @@ class MemoryService:
         return {
             "mode": mode,
             "results": results,
-            "semantic": "disabled" if self.semantic is None else "enabled",
+            "semantic": semantic_state,
         }
 
     def context(
@@ -113,28 +129,21 @@ class MemoryService:
         used = len(chunks[0])
         included = 0
         for record in found["results"]:
+            try:
+                memory = self.store.get(
+                    record["id"], revision=record["revision"], projects=policy.projects
+                )
+            except NotFoundError:
+                continue
             header = json.dumps(
-                {k: record[k] for k in ("id", "revision", "source", "project")}, ensure_ascii=False
+                {k: record[k] for k in ("id", "revision", "source", "project")}
+                | {"title": memory["title"][: min(64, max_chars // 16)]},
+                ensure_ascii=False,
             )
             remaining = max_chars - used - len(header) - 3
             if remaining < 1:
                 break
-            excerpt = record["excerpt"]
-            if record.get("passage", {}).get("field") == "title":
-                # A title locates the memory but carries little usable context.
-                # Fetch that exact revision, with the same project boundary, and
-                # include a bounded body excerpt without changing search ranking.
-                try:
-                    memory = self.store.get(
-                        record["id"], revision=record["revision"], projects=policy.projects
-                    )
-                except NotFoundError:
-                    continue
-                passage_budget = min(800, remaining)
-                # Reserve most of the space for the body, even with a long title.
-                title = memory["title"][: passage_budget // 3]
-                excerpt = title + "\n" + memory["content"][: passage_budget - len(title) - 1]
-            excerpt = excerpt[:remaining]
+            excerpt = record["excerpt"][:remaining]
             chunk = header + "\n" + excerpt + "\n\n"
             chunks.append(chunk)
             used += len(chunk)

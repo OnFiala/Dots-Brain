@@ -99,12 +99,16 @@ def error_result(exc):
     )
 
 
-def protect_calls(server):
-    # FastMCP 1.30 has no version argument. Keep this adaptation at the boundary.
-    server._mcp_server.version = __version__
+def protect_validation_logs():
     for logger in (logging.getLogger(), logging.getLogger("mcp.server.lowlevel.server")):
         if not any(isinstance(item, _SDKValidationLogFilter) for item in logger.filters):
             logger.addFilter(_SDKValidationLogFilter())
+
+
+def protect_calls(server):
+    # FastMCP 1.30 has no version argument. Keep this adaptation at the boundary.
+    server._mcp_server.version = __version__
+    protect_validation_logs()
 
     @server._mcp_server.call_tool(validate_input=False)
     async def call(name, arguments):

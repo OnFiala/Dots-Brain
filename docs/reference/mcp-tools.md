@@ -47,6 +47,10 @@ Known codes include `invalid_input`, `revision_conflict`, `source_suppressed`,
 `not_found`, `migration_required`, `capability_unavailable`, `store_disabled` and
 `internal_error`. Validation and unexpected exceptions do not echo submitted
 values, paths or credentials. Logs contain a short code and exception type.
+The bridge reports `service_unavailable` for a failed read and `outcome_unknown`
+when it cannot confirm a write result. It does not automatically retry. The shell
+client returns a nonzero exit status for an MCP error; empty argument input means
+an empty object.
 
 An uncertain credential-shaped memory is saved unchanged with safe `warnings`
 metadata, including on replay. Certain credential forms are rejected. See

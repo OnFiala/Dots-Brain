@@ -1,5 +1,6 @@
 """A local stdio client for the same authenticated remote memory service."""
 
+import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
 from uuid import uuid4
@@ -10,9 +11,12 @@ from mcp.client.stdio import stdio_client
 from mcp.client.streamable_http import streamable_http_client
 from mcp.server.lowlevel import Server
 from mcp.server.stdio import stdio_server
+from mcp.types import CallToolRequest, CallToolResult, ServerResult, TextContent
 
+from . import __version__
 from .auth import authenticate, read_connection
 from .errors import InputError
+from .protocol import INSTRUCTIONS, protect_validation_logs
 
 
 def resume_local_connection(path: Path, directory: Path) -> None:
@@ -48,6 +52,7 @@ async def connect(path: Path):
         headers={"Authorization": "Bearer " + connection["token"]},
         timeout=30,
         follow_redirects=False,
+        trust_env=False,
     ) as http:
         async with streamable_http_client(connection["url"], http_client=http) as (read, write, _):
             async with ClientSession(read, write) as session:
@@ -134,18 +139,52 @@ async def verify_session(session, *, write=False, project="default", cleanup_sto
     }
 
 
+async def call_remote(path: Path, name: str, arguments: dict) -> CallToolResult:
+    try:
+        async with asyncio.timeout(30), connect(path) as session:
+            return await session.call_tool(name, arguments)
+    except Exception:
+        read_only = name in {
+            "memory_status",
+            "memory_get",
+            "memory_search",
+            "memory_context",
+            "audit_events",
+            "audit_report",
+        }
+        error = {
+            "code": "service_unavailable" if read_only else "outcome_unknown",
+            "message": "The remote service did not return a confirmed result."
+            if read_only
+            else "The write outcome is unknown. Check its source identity before retrying.",
+        }
+        return CallToolResult(
+            isError=True,
+            structuredContent={"error": error},
+            content=[TextContent(type="text", text=error["message"])],
+        )
+
+
 async def run_bridge(path: Path) -> None:
-    server = Server("Dots Brain bridge")
+    server = Server("Dots Brain bridge", version=__version__, instructions=INSTRUCTIONS)
+    protect_validation_logs()
 
     @server.list_tools()
     async def list_tools():
-        async with connect(path) as session:
-            return (await session.list_tools()).tools
+        try:
+            async with connect(path) as session:
+                return (await session.list_tools()).tools
+        except Exception:
+            raise InputError(
+                "Remote tool discovery failed; check the service and access."
+            ) from None
 
-    @server.call_tool()
-    async def call_tool(name, arguments):
-        async with connect(path) as session:
-            return await session.call_tool(name, arguments)
+    async def call_tool(request):
+        return ServerResult(
+            await call_remote(path, request.params.name, request.params.arguments or {})
+        )
+
+    server.request_handlers[CallToolRequest] = call_tool
 
     async with stdio_server() as (read, write):
         await server.run(read, write, server.create_initialization_options())

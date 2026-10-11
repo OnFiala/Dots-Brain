@@ -49,9 +49,29 @@ Full-text queries are NFC-normalized and use the whole input within the existing
 characters and includes source identity and revision; use `memory_get` for an
 exact source revision.
 
+A title match locates a record; its search excerpt contains the body of that
+revision. Hybrid search keeps the full-text body excerpt when the semantic winner
+is the title. `match_field` identifies the semantic winning field separately
+from the returned `passage`. Context rechecks access to the exact revision and
+omits deleted records; a concurrent update does not mix a new body into an old
+revision. A bounded title in the context header helps identify the source.
+
 Semantic search is optional and uses the pinned local CPU model. Model preparation
 is explicit. The v2 derived index has no new relevance threshold, repair state
 machine or schema migration in this branch. Known short-word retrieval weaknesses
 remain. The batch-1 acceptance comparison must use the same frozen neutral corpus
 and environment for c963700 and the candidate; owner usefulness assessment remains
 separate. No earlier branch's score or performance measurement proves this candidate.
+
+If semantic search fails, search returns full-text results with
+`semantic: degraded`; it does not expose the underlying exception. Indexing reports
+`indexed_now` for the current call and `indexed` for the total current index.
+Committing an indexed revision replaces that memory's old model rows. Disabled
+stores reject an index commit even if embedding started before the barrier.
+
+The HTTP bridge creates a separate authenticated MCP session for each call and
+ignores proxy settings from the environment. It never automatically retries a
+failed call. Loss of a write response produces `outcome_unknown`: the write may
+have committed. Check the source identity and revision before deciding to retry.
+Default connection verification reads tool discovery and `memory_status` only;
+an explicit `verify --write` is a separate, mutating synthetic probe.

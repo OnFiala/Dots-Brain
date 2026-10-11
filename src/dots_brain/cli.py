@@ -395,7 +395,7 @@ def _run(args) -> dict | None:
         indexed = 0
         while True:
             result = semantic.index()
-            indexed += result["indexed"]
+            indexed += result["indexed_now"]
             if result["examined"] == 0:
                 return {"indexed_this_run": indexed, **semantic.status()}
     if args.command == "export":

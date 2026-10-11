@@ -36,9 +36,15 @@ FILES = {
         "sha256",
         "fa685fc160bbdbab64058d4fc91b60e62d207e8dc60b9af5c002c5ab946ded00",
     ),
-    "config.json": ("git", "5b496dbbbe502a10e2d64525481c6f444d125403"),
-    "special_tokens_map.json": ("git", "b1879d702821e753ffe4245048eee415d54a9385"),
-    "tokenizer_config.json": ("git", "6af3e8bba20e4425103afb1ae3dee3cacdbe7afb"),
+    "config.json": ("sha256", "c8ec081fdad2df991bf5abbf18418fec7a5cdaa421f60ffb060a30040b8c376f"),
+    "special_tokens_map.json": (
+        "sha256",
+        "8c785abebea9ae3257b61681b4e6fd8365ceafde980c21970d001e834cf10835",
+    ),
+    "tokenizer_config.json": (
+        "sha256",
+        "0666eebf692422757e1dddf3c9fb1ded73ba3dc726c5828671fc89e45bf3609f",
+    ),
 }
 
 
@@ -47,6 +53,8 @@ def model_directory(store: Store) -> Path:
 
 
 def verify_file(path: Path, kind: str, expected: str) -> bool:
+    if kind not in {"sha256", "git"}:
+        raise CapabilityError("Unsupported artifact checksum algorithm.")
     if not path.is_file() or path.is_symlink():
         return False
     digest = hashlib.sha256() if kind == "sha256" else hashlib.sha1(usedforsecurity=False)
@@ -107,7 +115,7 @@ class SemanticIndex:
             raise CapabilityError("Install the semantic extra to enable local embeddings.") from exc
         self.np = numpy
         self.store = store
-        self.lock = threading.Lock()
+        self.lock = threading.RLock()
         self.model = TextEmbedding(
             model_name=MODEL_NAME,
             cache_dir=str(directory),
@@ -116,15 +124,26 @@ class SemanticIndex:
             threads=2,
             providers=["CPUExecutionProvider"],
         )
-        from tokenizers import Tokenizer
+        self.tokenizer = self.model.model.tokenizer
+        if self.tokenizer is None:
+            raise CapabilityError("The embedding model did not load its tokenizer.")
 
-        self.tokenizer = Tokenizer.from_file(str(directory / "tokenizer.json"))
-        self.tokenizer.no_truncation()
-        self.tokenizer.no_padding()
+    def _encode_for_chunks(self, text: str, *, add_special_tokens: bool):
+        with self.lock:
+            truncation, padding = self.tokenizer.truncation, self.tokenizer.padding
+            self.tokenizer.no_truncation()
+            self.tokenizer.no_padding()
+            try:
+                return self.tokenizer.encode(text, add_special_tokens=add_special_tokens)
+            finally:
+                if truncation:
+                    self.tokenizer.enable_truncation(**truncation)
+                if padding:
+                    self.tokenizer.enable_padding(**padding)
 
     def _chunks(self, text: str) -> list[tuple[int, int]]:
         """Token offsets keep every passage within the model's 128-token limit."""
-        offsets = self.tokenizer.encode(text, add_special_tokens=False).offsets
+        offsets = self._encode_for_chunks(text, add_special_tokens=False).offsets
         if not offsets:
             return [(0, len(text))]
         chunks = []
@@ -138,7 +157,7 @@ class SemanticIndex:
         return chunks
 
     def _embed(self, text: str):
-        if len(self.tokenizer.encode(text, add_special_tokens=True).ids) > 128:
+        if len(self._encode_for_chunks(text, add_special_tokens=True).ids) > 128:
             raise CapabilityError("The passage exceeds the embedding token limit.")
         with self.lock:
             vector = next(iter(self.model.embed([text]))).astype("<f4")
@@ -166,15 +185,13 @@ class SemanticIndex:
                 for start, end in self._chunks(row[field])
             ]
             with self.store.connection(write=True) as db:
+                self.store.ensure_writable()
                 current = db.execute(
                     "SELECT current_revision AS revision FROM memories WHERE id=?", (row["id"],)
                 ).fetchone()
                 if current is None or current["revision"] != row["revision"]:
                     continue
-                db.execute(
-                    "DELETE FROM semantic_chunks WHERE memory_id=? AND model=?",
-                    (row["id"], MODEL_ID),
-                )
+                db.execute("DELETE FROM semantic_chunks WHERE memory_id=?", (row["id"],))
                 db.executemany(
                     "INSERT INTO semantic_chunks VALUES (?,?,?,?,?,?,?,?,?)",
                     [
@@ -193,7 +210,7 @@ class SemanticIndex:
                     ],
                 )
                 indexed += 1
-        return {"indexed": indexed, "examined": len(rows), **self.status()}
+        return {"indexed_now": indexed, "examined": len(rows), **self.status()}
 
     def status(self, *, projects: tuple[str, ...] | None = None) -> dict:
         clause, args = self.store._filter(projects)
@@ -226,7 +243,7 @@ class SemanticIndex:
     ) -> list[dict]:
         vectors = [self._embed(query[start:end]) for start, end in self._chunks(query)]
         clause, args = self.store._filter(projects, project)
-        best = {}
+        best, bodies = {}, {}
         with self.store.connection() as db:
             cursor = db.execute(
                 "SELECT m.id,m.current_revision AS revision,v.dimension,v.vector,"
@@ -250,10 +267,15 @@ class SemanticIndex:
                 )
                 if row["id"] not in best or candidate > best[row["id"]]:
                     best[row["id"]] = candidate
+                if row["field"] == "content" and (
+                    row["id"] not in bodies or candidate > bodies[row["id"]]
+                ):
+                    bodies[row["id"]] = candidate
                 if len(best) > limit * 2:
                     best = dict(
                         sorted(best.items(), key=lambda pair: pair[1], reverse=True)[:limit]
                     )
+                    bodies = {key: bodies[key] for key in best if key in bodies}
         records = []
         from .errors import NotFoundError
 
@@ -266,6 +288,11 @@ class SemanticIndex:
                 continue
             if record["revision"] != revision:
                 continue
+            record["match_field"] = field
+            if field == "title":
+                _, _, start, end, field = bodies.get(
+                    memory_id, (score, revision, 0, len(record["content"]), "content")
+                )
             record["excerpt"] = record[field][start:end][:800]
             record.pop("content")
             record["passage"] = {"field": field, "start_char": start, "end_char": end}

@@ -6,16 +6,16 @@ import json
 import sys
 from pathlib import Path
 
-from dots_brain.bridge import connect, resume_local_connection
+from dots_brain.bridge import call_remote, connect, resume_local_connection
 
 
 async def request(credential: Path, tool: str | None, arguments: dict) -> tuple[dict, int]:
-    async with connect(credential) as session:
-        if tool is None:
-            result = await session.list_tools()
-            return result.model_dump(mode="json", exclude_none=True), 0
-        result = await session.call_tool(tool, arguments)
+    if tool is not None:
+        result = await call_remote(credential, tool, arguments)
         return result.model_dump(mode="json", exclude_none=True), int(result.isError)
+    async with connect(credential) as session:
+        result = await session.list_tools()
+        return result.model_dump(mode="json", exclude_none=True), 0
 
 
 def main() -> int:
@@ -34,7 +34,7 @@ def main() -> int:
             raw = sys.stdin.buffer.read(131073)
             if len(raw) > 131072:
                 raise ValueError("Arguments exceed the MCP request limit.")
-            arguments = json.loads(raw)
+            arguments = json.loads(raw or b"{}")
             if not isinstance(arguments, dict):
                 raise ValueError("Arguments must be an object.")
         if args.local_data_dir is not None:
