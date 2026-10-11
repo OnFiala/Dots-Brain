@@ -11,7 +11,7 @@ from .auth import read_connection, revoke_client
 from .clients import PROVIDERS, bridge_entry, integration_key, registrations, target_path
 from .errors import InputError
 from .local import atomic_write, locked, read_json, write_json
-from .runtime import state_path, stop_process
+from .runtime import bound_state, state_path, stop_process
 from .store import Store, now
 
 
@@ -232,7 +232,11 @@ def uninstall(
                     revoke_all(store, db, reason="uninstalled")
             try:
                 if state_path(store).exists():
-                    stop_process(read_json(state_path(store)))
+                    state = read_json(state_path(store))
+                    if bound_state(store, state):
+                        stop_process(state)
+                    else:
+                        issues.append({"state": "managed_process_unbound"})
             except (OSError, ValueError, InputError):
                 issues.append({"state": "managed_process_stop_failed"})
             results = []

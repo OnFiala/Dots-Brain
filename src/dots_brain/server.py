@@ -109,6 +109,10 @@ def run_http(server, service, *, port, public_port=None, public_gateway=False):
     policies = {port: public_gateway}
     if public_port is not None:
         policies[public_port] = True
+    service.http_listeners = [
+        {"port": number, "policy": "oauth_only" if public else "private"}
+        for number, public in policies.items()
+    ]
     with contextlib.ExitStack() as stack:
         sockets = [
             stack.enter_context(socket.create_server(("127.0.0.1", value))) for value in ports

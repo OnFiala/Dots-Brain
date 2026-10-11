@@ -1,255 +1,51 @@
 # CLI reference
 
-Operator commands write a JSON result. `serve` and `bridge` carry MCP protocol
-traffic; `--help` and `--version` print text. Invalid command arguments exit 2.
-Parser errors identify a known option or missing argument and a scoped `--help`
-command, without echoing the rejected value. Other failures exit 1 with
-`state: "error"` and a typed `code`; a successful
-command exits 0 unless its result state is `partial`, `blocked`,
-`verification_failed`, `capture_partial`, `capture_recovery_required`,
-`probe_recovery_needed`, `external_writers_remain`, `writer_state_unknown`, or `invalid`. Those
-states require operator action even when a result was written. Use a private
-absolute data directory outside the checkout.
+Use `dots-brain --data-dir /absolute/private/memory COMMAND --help` for the exact
+v2 options. Operator results are JSON; `serve` and `bridge` carry MCP protocol
+traffic. Argument errors exit 2. Runtime errors exit 1 with `state: "error"` and
+a safe `code`. `partial`, `blocked` and `verification_failed` also exit 1. Inspect
+individual checks and warnings even when a command returns zero.
 
-Callers should branch on `code`, not error prose. Common codes are
-`invalid_input`, `revision_conflict`, `source_suppressed`, `migration_required`,
-`capability_unavailable`, `busy`, `credential_rejected`, `service_unavailable`,
-`timed_out`, `store_disabled`, `invalid_state`, `integrity_error`, `database_error`,
-`permission_denied`, and `internal_error`. See [troubleshooting](../troubleshooting.md)
-for next commands. A code describes the boundary result; it does
-not make a remote service or client UI verified.
+Current typed codes include `invalid_input`, `not_found`, `revision_conflict`,
+`source_suppressed`, `capability_unavailable`, `migration_required`,
+`store_disabled` and the safe boundary fallback `operation_failed`.
 
-Some results retain compatibility keys from the original VM deployment:
-`vm_persistence: "not_verified"` means host persistence has not been tested, and
-`restart_on_vm_boot: false` means `up` has not installed boot startup. They do not
-assert that the current machine is a VM. `doctor` reports local checks separately
-from these acceptance limits; use `healthy` and the individual `checks` results.
-
-## Store and service
-
-| Command | Purpose |
+| Command | Current purpose |
 | --- | --- |
-| `setup` | Initialize or reuse the local database. |
-| `doctor` | Diagnose the database, OAuth configuration, managed-service record and recorded HTTP listener mode. |
-| `preflight [--network-policy PATH]` | Inspect host capabilities without changing state; only inspects a policy file explicitly supplied by the operator. |
-| `serve` | Run one stdio or loopback HTTP MCP server. |
-| `up` / `down` | Start or stop the managed loopback HTTP service. |
-| `providers` | List implemented client adapters. |
-| `connect` / `disconnect` | Add or remove a managed local client connection. |
-| `uninstall` | Disable the instance and detach managed clients while retaining data. |
+| `setup`, `doctor`, `preflight` | Initialize/reuse the store, inspect independent checks, inspect host capabilities. |
+| `serve [--transport http --port 8765 --public-port 8787]` | Owner stdio or one process with private and OAuth-only HTTP listeners. |
+| `up [--port PORT] [--semantic] [--resume]`, `down` | Linux managed lifecycle; explicit resume only after ordinary uninstall. |
+| `providers` | Adapter capabilities and remaining client activation boundary. |
+| `connect PROVIDER [--config PATH] [--project PROJECT] [--mcp-url URL]` | Verify a read and configure a bridge; explicit private URL uses the existing supervisor. |
+| `connect PROVIDER --credential-file PATH` | Configure using an existing supplied connection; no second local store. |
+| `disconnect PROVIDER [--config PATH] [--dry-run]` | Remove a recorded connection within its current ownership rules. |
+| `uninstall [--dry-run] [--config PROVIDER=PATH]` | Offline disable/revoke/detach; preserve data. |
+| `migrate [--apply --writers-stopped] [--backup PATH]` | Plan/apply the released v1 to v2 migration. |
+| `backup --output PATH` | Consistent standalone private snapshot. |
+| `restore --backup PATH --target PATH` | New disabled target reconciled with the surviving source's deletion barriers. |
+| `activate-restore --target PATH --writers-stopped` | Validate and activate the exact staged recovery. |
+| `model prepare`, `index` | Prepare the optional pinned model; index pending memories and report `indexed_now`. |
+| `export --output PATH` | Private JSONL export. |
+| `client create`, `client list`, `client revoke ID` | Manage scoped static credentials. |
+| `bridge --credential-file PATH` | Per-call remote MCP sessions; optional managed `--local-data-dir` only on the memory host. |
+| `verify --credential-file PATH [--write --project PROJECT]` | Read by default; explicit write mode uses a synthetic write/delete probe. |
+| `oauth configure`, `disable`, `status`, `pending`, `approve`, `deny`, `grants`, `revoke` | [OAuth](../oauth.md) configuration and approval lifecycle. |
+| `audit report`, `audit events` | Existing v2 operation metadata with bounded pages. |
+| `capture`, `cortex` | Existing optional integration surfaces, not activated or accepted by this batch. |
+
+For supervisor diagnosis:
 
 ```sh
-dots-brain --data-dir /absolute/private/memory setup
-dots-brain --data-dir /absolute/private/memory doctor
-dots-brain preflight
-dots-brain preflight --network-policy /absolute/path/network-policy.json
-dots-brain --data-dir /absolute/private/memory serve
-dots-brain --data-dir /absolute/private/memory serve --transport http --port 8765
-dots-brain --data-dir /absolute/private/memory serve --transport http --port 8765 --public-port 8787
-dots-brain --data-dir /absolute/private/memory up
-dots-brain --data-dir /absolute/private/memory up --port 8766 --semantic
-dots-brain --data-dir /absolute/private/memory down
-dots-brain --data-dir /absolute/private/memory providers
-dots-brain --data-dir /absolute/private/memory connect codex --project work
-dots-brain --data-dir /absolute/private/memory disconnect codex --dry-run
-dots-brain --data-dir /absolute/private/memory uninstall --dry-run
+dots-brain --data-dir /absolute/private/memory doctor --mcp-url http://127.0.0.1:8765/mcp --credential-file /absolute/private/credential.json
 ```
 
-`up --resume` is the explicit way to re-enable an intentionally uninstalled
-store. `connect` verifies the generated bridge, then the actual client must be
-reloaded and used for a real MCP read.
+`doctor` never creates a probe grant or starts a service. `connect` returns
+`write: "not_tested"` and needs actual client reload/usage afterward. Without an
+explicit URL, local `connect` uses managed `up` on Linux. `--mcp-url` and a supplied
+`--credential-file` are alternative connect modes.
 
-## Data, migration, and recovery
-
-`migrate --apply` and cutover commands require every writer to be stopped. The
-flag is an operator declaration and an exclusive writer lease checks cooperating
-servers. The command cannot stop clients or supervisors for you, or protect
-against direct SQLite writers outside Dots Brain. Restore always stages a disabled target. Keep the
-surviving source store until the target has passed its offline checks.
-
-```sh
-dots-brain --data-dir /absolute/private/memory migrate
-dots-brain --data-dir /absolute/private/memory migrate --apply --writers-stopped --backup /absolute/private/backup.sqlite3
-dots-brain --data-dir /absolute/private/memory backup --output /absolute/private/backup.sqlite3
-dots-brain --data-dir /absolute/private/memory restore --backup /absolute/private/backup.sqlite3 --target /absolute/private/restored
-dots-brain --data-dir /absolute/private/memory activate-restore --target /absolute/private/restored --writers-stopped
-dots-brain --data-dir /absolute/private/memory abort-restore --target /absolute/private/restored --writers-stopped
-dots-brain --data-dir /absolute/private/memory export --output /absolute/private/export.jsonl
-```
-
-`abort-restore` only cancels the exact pending cutover. It cannot undo a committed
-cutover. Current restore needs the surviving source for deletion reconciliation;
-it is not a host-loss recovery feature.
-
-## Semantic index
-
-```sh
-dots-brain --data-dir /absolute/private/memory model prepare
-dots-brain --data-dir /absolute/private/memory index
-dots-brain --data-dir /absolute/private/memory index --retry-failed
-```
-
-`model prepare` downloads the pinned local model. Index state can be `indexed`,
-`empty`, or `failed`; a record may also be marked `truncated` when bounded chunk
-processing reaches its limit. Full-text search continues to work without it.
-`index` finishes a bounded repair sweep before returning. Status is a structural
-count, not a numeric validation of every vector; see [using memory](../using-memory.md).
-
-## Credentials and local bridge
-
-```sh
-dots-brain --data-dir /absolute/private/memory client create --name local-tool --scope memory:read --project work --credential-file /absolute/private/credential.json --url http://127.0.0.1:8765/mcp
-dots-brain --data-dir /absolute/private/memory client list
-dots-brain --data-dir /absolute/private/memory client revoke client-id
-dots-brain bridge --credential-file /absolute/private/credential.json
-dots-brain bridge --credential-file /absolute/private/credential.json --local-data-dir /absolute/private/memory
-dots-brain verify --credential-file /absolute/private/credential.json --project work
-```
-
-Credential files are private capabilities. The CLI does not print them. `verify`
-checks a real read connection by default. It creates and then removes a synthetic
-probe only with `--write`. That probe needs `memory:read`, `memory:write`, and
-`memory:forget` on the selected project so it can verify and remove its record.
-The probe leaves durable audit and reimport-suppression metadata even after its
-content is removed. A saved unresolved receipt blocks another write probe.
-
-```sh
-dots-brain verify --credential-file /absolute/private/credential.json --recover-probe
-dots-brain verify --credential-file /absolute/private/credential.json --recover-probe --probe-memory-id observed-id --probe-revision 1
-dots-brain verify --credential-file /absolute/private/credential.json --archive-probe-receipt
-```
-
-Recovery never replays the write. A `written` v1 receipt supplies its ID/revision;
-a `sending` receipt needs the pair observed by the operator. On the memory host,
-inspect `dots-brain --data-dir /absolute/private/memory audit events --project work`
-and the exact memory before binding it. Cleanup re-reads all probe identity fields
-on a fresh session and deletes only that matching revision. An absent, changed or
-unverifiable record keeps the receipt and returns `probe_recovery_needed` (exit 1).
-
-If the outcome cannot be resolved, `--archive-probe-receipt` explicitly archives
-the exact local receipt with private permissions and a unique filename. It makes
-no upstream call, and reports the remaining remote probe as `unknown`; it does
-not establish deletion. It unblocks a later explicit write verification. The
-archive remains private evidence for manual resolution.
-
-`client create` defaults to `memory:read`; use explicit scopes for another grant.
-
-| Credential source | Lifetime |
-| --- | --- |
-| `client create` | 30 days by default; `--days` accepts 1–365. |
-| `connect` | 365 days for a newly issued managed credential. |
-
-Retained credentials keep their original expiry. Expired or revoked credentials
-are rejected rather than renewed. OAuth has a separate [token lifecycle](../oauth.md#token-lifecycle).
-
-`bridge --local-data-dir` may resume only the managed local instance matching the
-credential's identity and endpoint. Generated local adapter entries use it for
-managed restart. Omit it for a separately supervised or remote endpoint; it does
-not start an arbitrary server or create another store.
-
-Bridge calls share one connection, with eight in flight and at most 128 pending.
-The absolute request deadline includes waiting in the queue. The complete
-serialized MCP envelope must fit the 1 MiB limit before queuing and sending.
-Oversize requests return `request_too_large` without disrupting valid calls.
-Actual connection loss can leave sent mutations with `outcome_unknown` and a
-stable request reference. They are never automatically replayed. Await a write's
-confirmed response before a dependent read; concurrently issued calls do not
-establish read-after-write ordering. Eight blocked calls can occupy every slot
-until their deadlines; queueing does not guarantee per-client fairness.
-
-## OAuth
-
-```sh
-dots-brain --data-dir /absolute/private/memory oauth configure --issuer https://memory.example
-dots-brain --data-dir /absolute/private/memory oauth status
-dots-brain --data-dir /absolute/private/memory oauth recover
-dots-brain --data-dir /absolute/private/memory oauth onboarding open --minutes 10
-dots-brain --data-dir /absolute/private/memory oauth onboarding status
-dots-brain --data-dir /absolute/private/memory oauth pending
-dots-brain --data-dir /absolute/private/memory oauth approve request-id --redirect-host client.example --project work --scope memory:read
-dots-brain --data-dir /absolute/private/memory oauth approve request-id --redirect-host client.example --project work --scope memory:read --scope memory:forget --allow-forget
-dots-brain --data-dir /absolute/private/memory oauth deny request-id
-dots-brain --data-dir /absolute/private/memory oauth clients
-dots-brain --data-dir /absolute/private/memory oauth purge
-dots-brain --data-dir /absolute/private/memory oauth grants
-dots-brain --data-dir /absolute/private/memory oauth revoke grant-id
-dots-brain --data-dir /absolute/private/memory oauth onboarding close
-dots-brain --data-dir /absolute/private/memory oauth disable
-```
-
-`oauth status` inspects configuration; `oauth clients` lists registrations and
-their revocation state; `oauth deny REQUEST_ID` rejects that exact pending request.
-`oauth onboarding status` reports the current short window. Deletion approval
-requires `--allow-forget` as well as the requested `memory:forget` scope.
-Changing issuer needs `oauth configure --replace-issuer` and revokes old OAuth
-grants. The CLI onboarding TTL and the public gateway gate are separate controls.
-`oauth recover` completes a valid interrupted configuration change. An invalid
-configuration or journal makes `oauth status` exit with status 1 and print an
-explicit recovery command. Preserve the named files before using a replacement
-command, which revokes existing grants. `oauth purge` removes expired exchanges
-and unused registrations immediately, even within their automatic cleanup TTL;
-it retains every client referenced by grant history, an unexpired request or code.
-See [OAuth](../oauth.md) for the approval procedure and request-size limits.
-
-## Audit, capture, and optional CORTEX
-
-```sh
-dots-brain --data-dir /absolute/private/memory audit events --project work --after-id 0 --limit 100
-dots-brain --data-dir /absolute/private/memory audit report --project work
-dots-brain --data-dir /absolute/private/memory audit events --project work --since 2026-01-01T00:00:00Z --until 2026-01-02T00:00:00Z
-dots-brain capture --kind audit --path /absolute/private/snapshot.jsonl --cursor /absolute/private/cursor.json --credential-file /absolute/private/credential.json --project work --account account-id
-dots-brain --data-dir /absolute/private/memory cortex configure --endpoint https://cortex.example/mcp --token-file /absolute/private/cortex-token --project-map work=work
-dots-brain --data-dir /absolute/private/memory cortex operations --project work
-dots-brain --data-dir /absolute/private/memory cortex resolve --project work --operation-id operation-id --resolution retry
-dots-brain --data-dir /absolute/private/memory cortex resolve --project work --operation-id operation-id --resolution recover-sending --writers-stopped
-```
-
-`audit --since` is an inclusive lower bound and `--until` an exclusive upper bound
-on server-recorded UTC time, not a client-supplied event timestamp. Use ISO 8601
-timestamps with a timezone. Both filters apply to `events` and `report`.
-
-Capture is a bounded import of supplied JSONL. `--recover-pending` only handles a
-terminally quarantined pending receipt after inspection. CORTEX is optional and
-uses a dedicated endpoint, token file, and explicit project mapping. The local
-owner may explicitly retry an uncertain note, decision, or outcome after review;
-decisions and outcomes have no upstream idempotency key and a retry can duplicate
-them. `recover-sending` never retries: it marks a record left in `sending` by a
-terminated sender as uncertain. It requires every cooperating writer to be stopped
-and an exclusive writer lease; then reconcile or make a separate explicit retry decision.
-
-Capture accepts at most 1,000 records or 16 MiB in one pass, and rejects lines
-over 256 KiB. Its cursor is durable. If replacement, truncation, or rewrite changes
-an acknowledged prefix, the collector records a gap and blocks that source under
-the current cursor; it never falls back to reimporting acknowledged rows. See
-[activity and capture](../activity.md) for the supported snapshot shapes.
-
-### Private audit review helper
-
-`scripts/audit_review.py` is a separate operator helper, not an MCP tool and not a
-deployment service. It fetches only the fixed
-`dots-brain audit events --review-projection` command over SSH and keeps bounded
-versioned checkpoints and findings in its private state directory. The host CLI
-verifies each original row before projecting oversized content; ordinary rows
-retain local full verification. The output marks omitted content as unreviewed
-and records an `oversized_event` finding. Pages stay within 1 MiB; verification of
-one large original row remains dependent on the host's memory and execution time.
-See the [review trust and upgrade contract](../activity.md#cursor-and-review-state).
-
-Create `target.json` in that state directory, or pass it with `--target-config`:
-
-```json
-{
-  "origin": "operator-audit",
-  "host": "audit-host.example",
-  "user": "dotsbrain",
-  "executable": "/absolute/path/to/dots-brain",
-  "data_dir": "/absolute/private/memory",
-  "timezone": "UTC"
-}
-```
-
-Keep this file private: it contains host and filesystem layout. The helper accepts
-only these validated fields, not a shell command. Run `scan` with a reviewed
-run key, review its output, then use `complete` with the matching review file.
-When `complete` returns `has_more: true`, run the next chunk with the same run key;
-the helper preserves the continuation checkpoint only after a valid reviewed chunk.
+Bulk OAuth changes, uninstall, migration and recovery require stopped supported
+writers. Offline flags do not terminate supervisors and cannot protect against
+uncooperative direct SQLite writers. Preserve recovery state and follow
+[upgrading](../upgrading.md). The broader disconnect ownership matrix and unified
+operator/reviewer improvements are scheduled for the next batch.

@@ -18,7 +18,7 @@ Reuse an existing directory and connection where possible. Do not create a secon
 store on another device merely to make a client appear connected. Host selection
 does not verify deployment, CORTEX connectivity, or client UI activation.
 
-Use Linux for managed deployment. Python 3.11–3.13, SQLite 3.42 or newer with
+Use Linux for managed deployment. Python 3.11 or newer, SQLite 3.42 or newer with
 FTS secure deletion, and `uv` are required for a source checkout. Do not edit
 installed plugin caches or invent administrator access. A configured client is
 not proof of a working conversation integration.
@@ -53,7 +53,9 @@ dots-brain --data-dir /absolute/private/memory oauth configure --issuer https://
 Use `dots-brain --data-dir /absolute/private/memory connect <provider>` on the
 machine that owns the client configuration. `--config` selects a nonstandard
 configuration path. The command uses a private credential file and validates its
-generated bridge with synthetic memory operations. It does not prove that an
+generated bridge with a read-only check (`write: "not_tested"`). For an existing
+supervisor on this host, pass its explicit private `--mcp-url`; the resulting
+bridge does not run managed `up`. It does not prove that an
 existing chat has reloaded tools.
 
 Never print, copy into chat, or commit a credential file. A different device needs
@@ -64,10 +66,9 @@ network route or second database.
 ## OAuth, capture, and recovery
 
 Remote OAuth needs an HTTPS route already operated by the owner. Follow
-`docs/oauth.md`; onboarding is closed by default, so open a short window and
-approve only the exact request created by the initiated flow. Approval requires
-the exact callback hostname through `--redirect-host`, requested scopes, and an
-explicit project list. `oauth configure --issuer` does not provision ingress.
+`docs/oauth.md`; inspect the displayed callback and requested scopes, then
+approve only the exact request created by the initiated flow with an explicit
+project list. The v2 pairing page returns automatically after host approval. `oauth configure --issuer` does not provision ingress.
 Changing an issuer needs `--replace-issuer`, which revokes old OAuth grants.
 Client metadata and callback addresses are untrusted input.
 
@@ -80,7 +81,8 @@ carry an upstream idempotency key, so decisions and outcomes can be duplicated.
 Follow the upstream contract in `docs/reference/mcp-tools.md`.
 
 For upgrades, use `docs/upgrading.md`. For removal, run `uninstall --dry-run`,
-inspect it, then run `uninstall` within the user's authority. Uninstall preserves
+inspect it, stop writers through their current owner, then run `uninstall`
+within the user's authority. Uninstall preserves
 the database by default. Do not erase memories, exports, or backups unless that is
 explicitly requested.
 

@@ -1,7 +1,8 @@
 # Uninstall and data retention
 
-`uninstall` disables an existing instance, revokes its managed credentials, and
-removes unchanged managed client entries. It preserves the database by default.
+`uninstall` is offline maintenance: first stop the managed service with `down`,
+or stop HTTP/stdio writers through their own supervisor/client. An active writer
+lease rejects maintenance before data changes. A preview can run while serving.
 
 ```sh
 dots-brain --data-dir /absolute/private/memory uninstall --dry-run
@@ -9,45 +10,22 @@ dots-brain --data-dir /absolute/private/memory uninstall
 dots-brain --data-dir /absolute/private/memory doctor
 ```
 
-Run the preview first. `doctor` then reports `service_disabled: true` and `healthy: false`. A partial result
-names the remaining configuration or remote-revocation work; it is not success.
+Uninstall disables the instance, revokes access and detaches unchanged managed
+entries. It keeps the database, deletion history, exports and backups. OAuth
+client/grant provenance is retained after invalidation. An unbound process state
+is preserved and reported as an issue; it is never signalled.
 
-For a missing or empty installation, uninstall reports `not_installed` and does
-not create a data directory, marker, registry or lock. It reports
-`managed_process_stopped: "unknown"` when it has no process-stop evidence. Deleting
-a directory under a live process does not stop that process.
+`doctor` returns `state: "disabled"` for a disabled installation. A partial
+uninstall names unresolved configuration/revocation issues. `down` controls only
+a process whose saved identity and canonical data directory match; an external
+HTTP service remains running and is reported separately. There is no automatic
+process scan or forced supervisor shutdown.
 
-`down` only stops the managed background process. Manually supervised services and
-stdio clients need their own shutdown. Removing a source checkout or package is a
-separate operation after data and client configuration have been identified. Do
-not delete a shared environment or the canonical data directory to make removal
-appear complete.
+An ordinary uninstall may be resumed explicitly with `up --resume`. Recovery
+markers require the [restore procedure](upgrading.md). Removing code, erasing
+data or deleting backups is a separate action.
 
-An intentional reinstall can use `up --resume`; ordinary `setup` does not remove
-the disable marker. Erasure of data, exports, and backups is a separate destructive
-request with a separately verified target.
-
-`down` reports `external_writers_remain` when a supervised HTTP or stdio process
-still holds a server lease. `doctor.checks.managed_service.writers` shows the
-observed lease and Linux owner PIDs when available. A free lease is not proof
-that an external program without the lease protocol has stopped.
-Inspection reads the Linux kernel lock table without acquiring a lease. When an
-existing lock file cannot be inspected, `down` reports `writer_state_unknown`
-with a local `lsof` command and exit status 1. It does not report a stopped process.
-Uninstall retains the same uncertainty in its partial result. Missing files remain
-`absent`, which alone is still not process-stop evidence.
-HTTP listener diagnostics also report `unknown` when an existing lease cannot be
-inspected; `doctor` then marks the overall diagnosis unhealthy until verified.
-
-`disconnect` preserves both credentials and registration when the client entry
-was changed. Inspect that entry before retrying. An unchanged orphaned entry can
-be found at the provider's default path or an explicit `--config PROVIDER=PATH`.
-An unrecognized default entry is reported and retained even if the data directory
-is missing. Remote credential revocation remains the issuer's responsibility.
-
-Disconnect examines the requested provider and configuration. Unreadable or
-unowned files discovered elsewhere are informational `notes`; they do not turn
-completed removal into `partial`. Failures involving an owned registration,
-credential or modified managed entry remain material `issues`. Preview includes
-both. Unregistered 0.2.0-alpha.1 entries are preserved with a filename and manual
-cleanup instructions; see [upgrading clients](upgrading.md#legacy-client-entries).
+The complete disconnect ownership matrix, including preservation of modified
+surroundings, backups and legacy-client guidance, belongs to the next batch.
+Do not treat the current disconnect implementation as acceptance of that matrix.
+A supplied remote credential stays under its issuer's revocation authority.

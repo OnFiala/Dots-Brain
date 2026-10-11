@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import logging
 import os
 import sqlite3
 import sys
@@ -79,6 +80,9 @@ def parser() -> argparse.ArgumentParser:
     connect.add_argument("--config", type=Path)
     connect.add_argument("--credential-file", type=Path)
     connect.add_argument("--project", action="append")
+    connect.add_argument(
+        "--mcp-url", help="Explicit loopback private endpoint of this host's supervisor."
+    )
     disconnect = commands.add_parser("disconnect", help="Remove one managed client connection.")
     disconnect.add_argument("provider")
     disconnect.add_argument("--config", type=Path)
@@ -94,8 +98,14 @@ def parser() -> argparse.ArgumentParser:
         metavar="PROVIDER=PATH",
         help="Include a legacy custom configuration location.",
     )
-    commands.add_parser(
+    doctor = commands.add_parser(
         "doctor", help="Report local capabilities without assuming remote readiness."
+    )
+    doctor.add_argument(
+        "--mcp-url", help="Explicit private loopback MCP URL; does not start a service."
+    )
+    doctor.add_argument(
+        "--credential-file", type=Path, help="Existing credential for read verification."
     )
     oauth = commands.add_parser("oauth", help="Manage VM-local OAuth without printing credentials.")
     oauth_actions = oauth.add_subparsers(dest="oauth_action", required=True)
@@ -297,6 +307,7 @@ def _run(args) -> dict | None:
                 config=args.config,
                 connection=args.credential_file,
                 projects=args.project,
+                mcp_url=args.mcp_url,
             )
         )
     if args.command in ("up", "down", "preflight"):
@@ -323,22 +334,15 @@ def _run(args) -> dict | None:
             "capture": "opt_in_snapshot_collector",
         }
     if args.command == "doctor":
-        from .oauth import configuration
+        from .diagnostics import diagnose
 
-        initialized = store.path.is_file()
         return {
-            "state": "disabled"
-            if (store.directory / "disabled.json").exists()
-            else "local_ready"
-            if initialized
-            else "setup_required",
+            **diagnose(store, mcp_url=args.mcp_url, connection=args.credential_file),
             "version": __version__,
             "sqlite_version": sqlite3.sqlite_version,
-            "memory": store.status() if initialized else None,
             "vm_persistence": "not_verified",
             "public_ingress": "not_verified",
             "secret_isolation": False,
-            "remote_oauth": "configured" if configuration(store) else "not_configured",
             "host_costs": "not_verified",
             "event_automation": "not_implemented",
         }
@@ -433,6 +437,11 @@ def _run(args) -> dict | None:
 
 
 def main() -> None:
+    logging.basicConfig(
+        level=logging.WARNING,
+        format="%(asctime)s %(levelname)s %(message)s",
+        datefmt="%Y-%m-%dT%H:%M:%S%z",
+    )
     try:
         result = run(parser().parse_args())
         if result is not None:

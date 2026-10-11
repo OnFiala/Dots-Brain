@@ -19,6 +19,7 @@ from dots_brain.runtime import down, process_identity, up
 from dots_brain.store import Store
 
 
+@pytest.mark.skipif(sys.platform != "linux", reason="Requires actual Linux managed process control")
 def test_concurrent_up_reuses_one_process_and_recovers_after_crash(tmp_path):
     store = Store(tmp_path / "memory")
     try:
@@ -69,17 +70,18 @@ def test_adapter_preserves_other_settings_is_idempotent_and_refuses_conflicts(tm
     assert path.read_text() == text
 
 
-def test_connect_verifies_write_keeps_tokens_private_and_bridge_restarts_service(tmp_path):
+@pytest.mark.skipif(sys.platform != "linux", reason="Requires actual Linux managed process control")
+def test_connect_only_reads_keeps_tokens_private_and_bridge_restarts_service(tmp_path):
     store = Store(tmp_path / "memory")
     config = tmp_path / "cursor.json"
     try:
         up(store, port=0)
         result = connect_client(store, provider="cursor", config=config, projects=["work"])
-        assert result["read"] and result["write"]
+        assert result["read"] and result["write"] == "not_tested"
         again = connect_client(store, provider="cursor", config=config, projects=["work"])
         assert not again["configuration_changed"]
         assert again["client_id"] == result["client_id"]
-        assert store.status()["memories"] == 0  # Synthetic probe was removed.
+        assert store.status()["memories"] == 0  # Read-only connect created no probe memory.
         entry = json.loads(config.read_text())["mcpServers"]["dots-brain"]
         token = json.loads(Path(entry["args"][4]).read_text())["token"]
         assert token not in config.read_text() + json.dumps(result)

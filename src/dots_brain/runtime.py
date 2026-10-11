@@ -13,9 +13,10 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from . import __version__
-from .auth import authenticate, issue_client, read_connection, revoke_client
+from .auth import authenticate, issue_client, read_connection, revoke_client, validate_endpoint
 from .bridge import verify_connection
 from .errors import InputError
 from .local import atomic_write, locked, read_json, write_json
@@ -64,13 +65,23 @@ def active(state: dict) -> bool:
     )
 
 
-def credential(store: Store, *, name: str, path: Path, url: str, projects=None, forget=False):
-    scopes = ["memory:read", "memory:write"] + (["memory:forget"] if forget else [])
+def credential(
+    store: Store, *, name: str, path: Path, url: str, projects=None, forget=False, read_only=False
+):
+    scopes = ["memory:read"] if read_only else ["memory:read", "memory:write"]
+    if forget:
+        scopes.append("memory:forget")
     if path.exists():
         if path.is_symlink():
             raise InputError("The connection file must not be a symbolic link.")
         current = read_connection(path)
         policy = authenticate(store, current["token"])
+        if policy is not None and read_only and policy.scopes != frozenset(scopes):
+            revoke_client(store, current["client_id"])
+            path.unlink()
+            return issue_client(
+                store, name=name, scopes=scopes, projects=projects, days=365, output=path, url=url
+            )["client_id"]
         if policy is not None:
             expected_projects = None if projects is None else tuple(sorted(set(projects)))
             if policy.projects != expected_projects or policy.scopes != frozenset(scopes):
@@ -104,6 +115,13 @@ def stop_process(state: dict) -> None:
                 time.sleep(0.05)
             if active(state):
                 signal.pidfd_send_signal(fd, signal.SIGKILL)
+                deadline = time.monotonic() + 5
+                while active(state) and time.monotonic() < deadline:
+                    time.sleep(0.05)
+                if active(state):
+                    raise InputError(
+                        "The managed process has not stopped; its state was preserved."
+                    )
     finally:
         os.close(fd)
     with contextlib.suppress(ChildProcessError):
@@ -112,6 +130,28 @@ def stop_process(state: dict) -> None:
 
 def state_path(store: Store) -> Path:
     return store.directory / "service.json"
+
+
+def http_running(store: Store) -> bool:
+    if not store.directory.is_dir():
+        return False
+    try:
+        with locked(store.directory / "http.lock", timeout=0):
+            return False
+    except InputError:
+        return True
+
+
+def bound_state(store: Store, state: dict) -> bool:
+    return state.get("data_dir") == str(store.directory.resolve())
+
+
+def private_endpoint(url: str) -> str:
+    validate_endpoint(url)
+    parts = urlsplit(url)
+    if parts.scheme != "http" or parts.hostname not in {"127.0.0.1", "localhost", "::1"}:
+        raise InputError("Use this host's explicit loopback HTTP private MCP endpoint.")
+    return url
 
 
 def ensure_enabled(store: Store) -> None:
@@ -164,10 +204,22 @@ def up(
         )
     if port is not None and not 0 <= port <= 65535:
         raise InputError("Port must be between 0 and 65535; zero selects an available port.")
-    with locked(store.directory / "service.lock"), resuming(store, requested=resume):
+    with (
+        locked(store.directory / "service.lock"),
+        resuming(store, requested=resume),
+        contextlib.ExitStack() as startup,
+    ):
         ensure_enabled(store)
         store.initialize()
         state = read_json(state_path(store)) if state_path(store).exists() else {}
+        if http_running(store) and (not bound_state(store, state) or not active(state)):
+            raise InputError(
+                "HTTP is externally managed for this data directory. Use connect --mcp-url "
+                "with its explicit private endpoint; up will not start another server."
+            )
+        if state and not bound_state(store, state):
+            raise InputError("Service state is not bound to this data directory; it was preserved.")
+        process = None
         oauth = configuration(store)
         issuer = oauth["issuer"] if oauth else None
         if active(state) and (
@@ -221,6 +273,13 @@ def up(
             if semantic:
                 command.append("--semantic")
             log_path = store.directory / "service.log"
+            if log_path.is_symlink():
+                raise InputError("The managed log must not be a symbolic link.")
+            if log_path.is_file() and log_path.stat().st_size >= 5 * 1024 * 1024:
+                previous_log = log_path.with_name("service.log.1")
+                if previous_log.is_symlink():
+                    raise InputError("The rotated log must not be a symbolic link.")
+                log_path.replace(previous_log)
             log_fd = os.open(
                 log_path, os.O_CREAT | os.O_APPEND | os.O_WRONLY | os.O_NOFOLLOW, 0o600
             )
@@ -243,13 +302,9 @@ def up(
                 "semantic": semantic,
                 "url": f"http://127.0.0.1:{selected_port}/mcp",
                 "oauth_issuer": issuer,
+                "data_dir": str(store.directory.resolve()),
             }
-            try:
-                write_json(state_path(store), state)
-            except BaseException:
-                process.terminate()
-                process.wait(timeout=10)
-                raise
+            startup.callback(stop_process, state)
         probe = store.directory / "probe.connection.json"
         credential(
             store,
@@ -257,7 +312,7 @@ def up(
             path=probe,
             url=state["url"],
             projects=["__dots_brain_probe__"],
-            forget=True,
+            read_only=True,
         )
         deadline = time.monotonic() + 15
         while True:
@@ -270,6 +325,9 @@ def up(
             if not active(state) or time.monotonic() >= deadline:
                 raise InputError("The managed service did not pass its MCP readiness check.")
             time.sleep(0.1)
+        if process is not None:
+            write_json(state_path(store), state)
+        startup.pop_all()
         return {
             "state": "verified_local_service",
             "url": state["url"],
@@ -290,5 +348,11 @@ def up(
 def down(store: Store) -> dict:
     with locked(store.directory / "service.lock"):
         if state_path(store).exists():
-            stop_process(read_json(state_path(store)))
-        return {"state": "stopped", "data_preserved": True}
+            state = read_json(state_path(store))
+            if not bound_state(store, state):
+                return {"state": "not_managed", "data_preserved": True}
+            stop_process(state)
+        return {
+            "state": "externally_managed" if http_running(store) else "stopped",
+            "data_preserved": True,
+        }

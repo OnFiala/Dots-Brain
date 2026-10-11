@@ -54,6 +54,7 @@ def record_connection(store, config, provider="cursor", *, legacy=False):
     return record, read_connection(connection)["token"]
 
 
+@pytest.mark.skipif(sys.platform != "linux", reason="Requires actual Linux managed process control")
 def test_complete_lifecycle_keeps_memories_and_blocks_restart_until_explicit_resume(tmp_path):
     store = Store(tmp_path / "memory")
     config = tmp_path / "cursor.json"
@@ -75,6 +76,7 @@ def test_complete_lifecycle_keeps_memories_and_blocks_restart_until_explicit_res
         assert preview["state"] == "preview" and preview["clients"][0]["state"] == "would_remove"
         assert before == {p: p.read_bytes() for p in store.directory.rglob("*") if p.is_file()}
         assert active(read_json(store.directory / "service.json"))
+        down(store)  # Offline maintenance requires the running writer to exit first.
         result = uninstall(store)
         assert result["state"] == "uninstalled"
         assert not active(read_json(store.directory / "service.json"))
@@ -112,7 +114,7 @@ def test_complete_lifecycle_keeps_memories_and_blocks_restart_until_explicit_res
         assert restarted["pid"] != running["pid"]
         assert authenticate(store, token) is None
         connected = connect_client(store, provider="cursor", config=config)
-        assert connected["read"] and connected["write"]
+        assert connected["read"] and connected["write"] == "not_tested"
         assert store.get(memory["id"])["content"] == "Keep this memory."
     finally:
         down(store)
@@ -167,6 +169,7 @@ def test_edited_or_unreadable_config_is_preserved_but_host_access_is_revoked(tmp
     assert uninstall(store)["state"] == "partial"
 
 
+@pytest.mark.skipif(sys.platform != "linux", reason="Requires actual Linux managed process control")
 def test_profiles_have_distinct_credentials_and_disconnect_does_not_break_other_profile(tmp_path):
     store = Store(tmp_path / "memory")
     first, second = tmp_path / "first.json", tmp_path / "second.json"
@@ -222,6 +225,7 @@ def test_corrupt_registry_is_preserved_and_reported_while_service_is_disabled(tm
     assert authenticate(store, token) is None
 
 
+@pytest.mark.skipif(sys.platform != "linux", reason="Requires actual Linux managed process control")
 def test_remote_disconnect_preserves_supplied_credential_and_never_creates_database(tmp_path):
     host, client = Store(tmp_path / "host"), Store(tmp_path / "device")
     config = tmp_path / "remote.json"
@@ -241,7 +245,7 @@ def test_remote_disconnect_preserves_supplied_credential_and_never_creates_datab
         down(host)
 
 
-def test_running_owner_stdio_rejects_tools_after_uninstall(tmp_path):
+def test_running_owner_stdio_blocks_offline_uninstall_until_exit(tmp_path):
     store = Store(tmp_path / "memory")
     store.initialize()
 
@@ -254,7 +258,9 @@ def test_running_owner_stdio_rejects_tools_after_uninstall(tmp_path):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 assert not (await session.call_tool("memory_status", {})).isError
-                uninstall(store)
-                assert (await session.call_tool("memory_status", {})).isError
+                with pytest.raises(InputError, match="running writer"):
+                    uninstall(store)
+                assert not (await session.call_tool("memory_status", {})).isError
 
     asyncio.run(asyncio.wait_for(run(), timeout=15))
+    assert uninstall(store)["state"] == "uninstalled"

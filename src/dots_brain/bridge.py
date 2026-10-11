@@ -136,6 +136,7 @@ async def verify_session(session, *, write=False, project="default", cleanup_sto
         "write": verified_write if write else "not_tested",
         "probe_removed": True if write and verified_write else "not_applicable",
         "capture": "not_implemented",
+        "status": getattr(result, "structuredContent", None),
     }
 
 

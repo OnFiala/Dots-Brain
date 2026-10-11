@@ -8,22 +8,17 @@ assistant conversations.
 A **Dot** means an AI assistant or client using this shared service. It is a
 product term, not a separate database or a grant of access.
 
-**Version: 0.4.0-alpha.1 v2 implementation candidate (unreleased branch).** This candidate has local MCP storage,
-scoped client credentials, backup and staged restore commands. It is not a
-published release or a deployment claim. Live capture, a CORTEX connection,
-off-host recovery, and host reboot recovery need separate configuration and
-acceptance evidence.
-
-> Branch status: storage step 1A is verified; access step 1B is in progress. Documentation
-> inherited from the later candidate is being reconciled as the selected steps
-> land. Do not use this intermediate branch for a production change.
+**Version: 0.4.0-alpha.5, unreleased v2 candidate.** Batch 1 implements storage,
+access control, MCP boundaries, retrieval and lifecycle diagnostics. Local source
+checks are separate from installed-artifact evidence and real deployment. Both
+intended assistants, real-data recovery and Linux supervisor acceptance still
+need their designated checks. The next batch has not started.
 
 ## Quick start on Linux
 
 Use a writable checkout, Python 3.11 or newer, and [uv](https://docs.astral.sh/uv/).
 The documented installation uses the locked source checkout. This implementation
-branch is not a published package. The storage checkpoint is verified separately
-from the remaining access, MCP, retrieval and runtime work.
+branch is not a published package. Use the checkpoint report for the exact commit and executed checks.
 
 ```sh
 git clone https://github.com/OnFiala/Dots-Brain.git

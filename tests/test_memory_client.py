@@ -3,6 +3,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 from dots_brain.auth import issue_client
 from dots_brain.runtime import down, up
 from dots_brain.store import Store
@@ -20,6 +22,7 @@ def invoke(credential, *args, payload="{}"):
     )
 
 
+@pytest.mark.skipif(sys.platform != "linux", reason="Requires actual Linux managed process control")
 def test_shell_client_uses_live_mcp_and_preserves_client_scope(tmp_path):
     store = Store(tmp_path / "memory")
     store.initialize()

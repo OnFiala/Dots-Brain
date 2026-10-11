@@ -164,6 +164,7 @@ class MemoryService:
             if self.semantic is None
             else self.semantic.status(projects=policy.projects),
             "remote_oauth": "available_when_configured",
+            "http_listeners": getattr(self, "http_listeners", []),
             "audit": {
                 "state": "available",
                 "coverage": "memory_mutations_and_submitted_events",
