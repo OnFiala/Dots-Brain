@@ -8,13 +8,24 @@ import os
 import re
 import sqlite3
 import time
+import unicodedata
 import uuid
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
-from .errors import ConflictError, InputError, NotFoundError, SuppressedError
+from .database_io import open_readonly
+from .errors import (
+    CapabilityError,
+    ConflictError,
+    InputError,
+    MigrationRequiredError,
+    NotFoundError,
+    StoreDisabledError,
+    SuppressedError,
+)
+from .local import writer_lock
 
 SCHEMA_VERSION = 2
 WAL_LOCK_TIMEOUT = 10.0
@@ -84,7 +95,25 @@ def validate_text(value: str, name: str, maximum: int, *, empty: bool = False) -
         raise InputError(f"{name} must be text of at most {maximum} characters without NUL.")
     if not empty and not value.strip():
         raise InputError(f"{name} must not be empty.")
+    try:
+        value.encode("utf-8")
+    except UnicodeEncodeError:
+        raise InputError(f"{name} must be valid UTF-8 text.") from None
     return value
+
+
+def require_sqlite() -> None:
+    if sqlite3.sqlite_version_info < (3, 42, 0):
+        raise CapabilityError("SQLite 3.42 or newer with FTS5 is required for secure deletion.")
+
+
+def secure_fts(db: sqlite3.Connection) -> None:
+    """Enable FTS deletion and compact old tombstones once, in the caller's transaction."""
+    require_sqlite()
+    configured = db.execute("SELECT v FROM memory_fts_config WHERE k='secure-delete'").fetchone()
+    if not configured or configured[0] != 1:
+        db.execute("INSERT INTO memory_fts(memory_fts,rank) VALUES ('secure-delete',1)")
+        db.execute("INSERT INTO memory_fts(memory_fts) VALUES ('optimize')")
 
 
 def source_key(source: str, account: str, event_id: str) -> str:
@@ -121,10 +150,18 @@ class Store:
         self.path = self.directory / "brain.sqlite3"
 
     def initialize(self) -> None:
+        with writer_lock(self.directory):
+            self._initialize()
+
+    def _initialize(self) -> None:
+        require_sqlite()
         self.directory.mkdir(parents=True, exist_ok=True, mode=0o700)
         if self.path.is_symlink():
             raise InputError("The database must not be a symbolic link.")
-        descriptor = os.open(self.path, os.O_CREAT | os.O_RDWR, 0o600)
+        if self.path.exists():
+            with closing(open_readonly(self.path)) as preflight:
+                self._validate_version(preflight)
+        descriptor = os.open(self.path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
         os.close(descriptor)
         self.path.chmod(0o600)
         with self.connection() as db:
@@ -145,26 +182,44 @@ class Store:
                 # The schema and version are committed together; failure leaves no partial schema.
                 for statement in schema_statements():
                     db.execute(statement)
+            secure_fts(db)
 
     @contextmanager
     def connection(self, *, write: bool = False) -> Iterator[sqlite3.Connection]:
+        with writer_lock(self.directory), self._connection(write=write) as db:
+            yield db
+
+    @staticmethod
+    def _validate_version(db: sqlite3.Connection) -> None:
+        version = db.execute("PRAGMA user_version").fetchone()[0]
+        if version == 1:
+            raise MigrationRequiredError(
+                "Database schema v1 requires an explicit offline migration; "
+                "stop writers, then run migrate --apply --writers-stopped."
+            )
+        if version not in (0, SCHEMA_VERSION):
+            raise InputError("Unsupported database version; use a compatible Brain release.")
+
+    @contextmanager
+    def _connection(self, *, write: bool) -> Iterator[sqlite3.Connection]:
+        require_sqlite()
         if not self.path.exists():
             raise InputError("Memory is not initialized. Run dots-brain setup first.")
+        if self.path.is_symlink():
+            raise InputError("The database must not be a symbolic link.")
+        # Even closing a writable handle may checkpoint WAL. Preflight must be read-only.
+        with closing(open_readonly(self.path)) as preflight:
+            self._validate_version(preflight)
         db = sqlite3.connect(self.path, timeout=10)
         db.row_factory = sqlite3.Row
         try:
-            if db.execute("PRAGMA user_version").fetchone()[0] == 1:
-                raise InputError(
-                    "Database schema v1 requires an explicit offline migration; "
-                    "do not access it through this release."
-                )
-            if db.execute("PRAGMA user_version").fetchone()[0] not in (0, SCHEMA_VERSION):
-                raise InputError("Unsupported database version; use a compatible Brain release.")
+            self._validate_version(db)
             db.execute("PRAGMA foreign_keys=ON")
             db.execute("PRAGMA secure_delete=ON")
             db.execute("PRAGMA synchronous=FULL")
             if write:
                 db.execute("BEGIN IMMEDIATE")
+                secure_fts(db)
             yield db
             db.commit()
         except BaseException:
@@ -244,8 +299,8 @@ class Store:
         digest = hashlib.sha256(
             json.dumps([content, title, source_uri], ensure_ascii=False).encode()
         ).hexdigest()
-        timestamp = now()
         with self.connection(write=True) as db:
+            timestamp = now()
             self.ensure_writable()
             if db.execute("SELECT 1 FROM suppressions WHERE source_key=?", (key,)).fetchone():
                 raise SuppressedError("This source was forgotten and is blocked from reimport.")
@@ -259,14 +314,22 @@ class Store:
             ).fetchone()
             if existing:
                 memory_id = existing["id"]
-                replay = db.execute(
-                    "SELECT revision FROM revisions WHERE memory_id=? AND digest=?",
-                    (memory_id, digest),
-                ).fetchone()
-                if replay and (
-                    expected_revision != existing["current_revision"]
-                    or replay["revision"] == existing["current_revision"]
-                ):
+                current = existing["current_revision"]
+                candidate = (
+                    current
+                    if expected_revision == current
+                    else (1 if expected_revision is None else expected_revision + 1)
+                )
+                replay = (
+                    db.execute(
+                        "SELECT revision FROM revisions "
+                        "WHERE memory_id=? AND revision=? AND digest=?",
+                        (memory_id, candidate, digest),
+                    ).fetchone()
+                    if candidate <= current
+                    else None
+                )
+                if replay:
                     return {
                         "id": memory_id,
                         "revision": existing["current_revision"],
@@ -328,7 +391,8 @@ class Store:
         with self.connection() as db:
             row = db.execute(
                 "SELECT m.id,m.source,m.account,m.event_id,m.project,m.created_at,m.updated_at,"
-                "r.revision,r.title,r.content,r.source_uri,r.writer_principal "
+                "r.revision,r.title,r.content,r.source_uri,r.writer_principal,"
+                "r.created_at AS revision_created_at "
                 "FROM memories m JOIN revisions r "
                 "ON r.memory_id=m.id AND r.revision=COALESCE(?,m.current_revision) "
                 "WHERE m.id=?" + clause,
@@ -349,7 +413,7 @@ class Store:
         validate_text(query, "query", 2000)
         if not 1 <= limit <= 50:
             raise InputError("limit must be between 1 and 50.")
-        terms = re.findall(r"[^\W_]+", query, re.UNICODE)[:32]
+        terms = re.findall(r"[^\W_]+", unicodedata.normalize("NFC", query), re.UNICODE)
         if not terms:
             return []
         expression = " OR ".join('"' + term + '"' for term in terms)
@@ -405,8 +469,12 @@ class Store:
     def ensure_writable(self) -> None:
         # Check after acquiring the SQLite writer lock: a recovery cutover may
         # have disabled this store while this request was waiting for that lock.
-        if (self.directory / "disabled.json").exists():
-            raise InputError("This installation is disabled; memory writes are unavailable.")
+        marker = self.directory / "disabled.json"
+        if marker.exists() or marker.is_symlink():
+            raise StoreDisabledError(
+                "This installation is disabled; inspect doctor. Recovery requires "
+                "activate-restore; only an ordinary uninstall permits up --resume."
+            )
 
     def status(self, *, projects: tuple[str, ...] | None = None) -> dict:
         clause, args = self._filter(projects)
@@ -436,7 +504,8 @@ class Store:
         with self.connection() as db:
             rows = db.execute(
                 "SELECT m.id,m.source,m.account,m.event_id,m.project,m.created_at,m.updated_at,"
-                "r.revision,r.content,r.title,r.source_uri,r.writer_principal "
+                "r.revision,r.content,r.title,r.source_uri,r.writer_principal,"
+                "r.created_at AS revision_created_at "
                 "FROM memories m JOIN revisions r "
                 "ON r.memory_id=m.id WHERE 1" + clause + " ORDER BY m.id,r.revision",
                 args,

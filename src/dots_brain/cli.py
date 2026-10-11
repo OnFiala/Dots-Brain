@@ -8,11 +8,13 @@ import json
 import os
 import sqlite3
 import sys
+from contextlib import ExitStack
 from pathlib import Path
 
 from . import __version__
 from .auth import SCOPES
 from .errors import BrainError
+from .local import locked, writer_lock
 from .store import Store
 
 
@@ -154,6 +156,19 @@ def parser() -> argparse.ArgumentParser:
 
 
 def run(args) -> dict | None:
+    # One lease for an entire local command, including the lifetime of HTTP/stdio.
+    writes = args.command in {"setup", "serve", "up", "index", "model", "client", "cortex"}
+    writes |= args.command == "connect" and args.credential_file is None
+    writes |= args.command == "oauth" and args.oauth_action not in {"configure", "disable"}
+    with ExitStack() as leases:
+        if writes:
+            leases.enter_context(writer_lock(Store(args.data_dir).directory))
+        if args.command == "serve" and args.transport == "http":
+            leases.enter_context(locked(Store(args.data_dir).directory / "http.lock", timeout=0))
+        return _run(args)
+
+
+def _run(args) -> dict | None:
     store = Store(args.data_dir)
     if args.command in {"migrate", "backup", "restore", "activate-restore", "cortex"}:
         from .operations import (

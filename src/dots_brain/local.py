@@ -8,30 +8,58 @@ import json
 import os
 import tempfile
 import time
+from contextvars import ContextVar
 from pathlib import Path
 
 from .errors import InputError
 
 
 @contextlib.contextmanager
-def locked(path: Path, *, timeout: float = 40):
+def locked(path: Path, *, timeout: float = 40, shared: bool = False):
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     fd = os.open(path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
     try:
         deadline = time.monotonic() + timeout
         while True:
             try:
-                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                mode = fcntl.LOCK_SH if shared else fcntl.LOCK_EX
+                fcntl.flock(fd, mode | fcntl.LOCK_NB)
                 break
             except BlockingIOError:
                 if time.monotonic() >= deadline:
                     raise InputError(
-                        "Another installation is still running; retry this command."
+                        "The installation lock is busy. Stop running writers before "
+                        "offline maintenance, then retry."
                     ) from None
                 time.sleep(0.05)
         yield
     finally:
         os.close(fd)
+
+
+_writer_leases: ContextVar[tuple] = ContextVar("dots_brain_writer_leases", default=())
+
+
+@contextlib.contextmanager
+def writer_lock(directory: Path, *, exclusive: bool = False):
+    """Reenter an operation's lease; never silently upgrade a shared writer lease.
+
+    Server entrypoints hold SH for their lifetime. Maintenance holds EX across
+    its database and file changes. Nested Store connections reuse that lease.
+    """
+    directory = directory.resolve()
+    held = dict(_writer_leases.get())
+    if directory in held:
+        if exclusive and not held[directory]:
+            raise InputError("Offline maintenance cannot run inside an active writer.")
+        yield
+        return
+    with locked(directory / "writers.lock", shared=not exclusive, timeout=0):
+        token = _writer_leases.set((*held.items(), (directory, exclusive)))
+        try:
+            yield
+        finally:
+            _writer_leases.reset(token)
 
 
 def atomic_write(path: Path, content: str, *, mode: int = 0o600) -> None:

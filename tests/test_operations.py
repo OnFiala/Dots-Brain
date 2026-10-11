@@ -180,7 +180,11 @@ def test_cutover_refuses_to_lose_new_revisions_or_audit_history(tmp_path):
         activate_restore(source, target, writers_stopped=True)
     assert "revisions=" in str(error.value)
     assert source.status()["memories"] == 2
-    assert all((store.directory / "disabled.json").exists() for store in (source, target))
+    assert not (source.directory / "disabled.json").exists()
+    assert (target.directory / "disabled.json").exists()
+    assert source.remember(**{**record, "content": "Still writable"}, expected_revision=2)[
+        "changed"
+    ]
     assert target.status()["memories"] == 1
 
 

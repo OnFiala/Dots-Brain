@@ -23,3 +23,11 @@ class InputError(BrainError):
 
 class CapabilityError(BrainError):
     code = "capability_unavailable"
+
+
+class MigrationRequiredError(InputError):
+    code = "migration_required"
+
+
+class StoreDisabledError(InputError):
+    code = "store_disabled"

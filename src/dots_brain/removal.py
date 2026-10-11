@@ -12,7 +12,7 @@ from .clients import PROVIDERS, bridge_entry, integration_key, registrations, ta
 from .errors import InputError
 from .local import atomic_write, locked, read_json, write_json
 from .runtime import state_path, stop_process
-from .store import Store
+from .store import Store, now
 
 
 def inspect_config(path: Path, provider: str) -> tuple[str, dict, str]:
@@ -221,7 +221,9 @@ def uninstall(
             }
         with locked(store.directory / "service.lock"):
             # Disable first: stale bridges cannot restart, and running MCP tools reject calls.
-            write_json(store.directory / "disabled.json", {"version": 1, "disabled": True})
+            marker = store.directory / "disabled.json"
+            previous = read_json(marker) if marker.exists() else {"version": 1, "disabled": True}
+            write_json(marker, {**previous, "uninstalled_at": now()})
             if store.path.is_file():
                 with store.connection(write=True) as db:
                     db.execute("UPDATE clients SET revoked=1")

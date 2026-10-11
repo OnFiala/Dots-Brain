@@ -18,7 +18,7 @@ from . import __version__
 from .auth import authenticate, issue_client, read_connection, revoke_client
 from .bridge import verify_connection
 from .errors import InputError
-from .local import locked, read_json, write_json
+from .local import atomic_write, locked, read_json, write_json
 from .store import Store
 
 
@@ -115,18 +115,42 @@ def state_path(store: Store) -> Path:
 
 
 def ensure_enabled(store: Store) -> None:
-    if (store.directory / "disabled.json").exists():
+    marker = store.directory / "disabled.json"
+    if marker.exists() or marker.is_symlink():
         raise InputError("This installation is disabled. Inspect its recovery or removal state.")
 
 
 def resume_installation(store: Store) -> None:
     marker = store.directory / "disabled.json"
-    if marker.exists() and read_json(marker).get("reason") in {
-        "restored_requires_review",
-        "restore_cutover",
-    }:
-        raise InputError("Recovery requires activate-restore; up --resume cannot bypass it.")
+    if marker.is_symlink():
+        raise InputError("A symbolic-link disable barrier was preserved; inspect doctor.")
+    if marker.exists():
+        state = read_json(marker)
+        legacy = (
+            state.get("version") == 1
+            and state.get("disabled") is True
+            and set(state) <= {"version", "disabled", "uninstalled_at"}
+        )
+        if not (legacy or state.get("version") == 1 and state.get("reason") == "uninstalled"):
+            raise InputError("Recovery requires activate-restore; up --resume cannot bypass it.")
     marker.unlink(missing_ok=True)
+
+
+@contextlib.contextmanager
+def resuming(store: Store, *, requested: bool):
+    """A failed explicit startup must retain its original uninstall barrier."""
+    marker = store.directory / "disabled.json"
+    if requested and marker.is_symlink():
+        raise InputError("A symbolic-link disable barrier was preserved; inspect doctor.")
+    original = marker.read_text() if requested and marker.exists() else None
+    try:
+        if requested:
+            resume_installation(store)
+        yield
+    except BaseException:
+        if original is not None and not marker.exists():
+            atomic_write(marker, original)
+        raise
 
 
 def up(
@@ -140,9 +164,7 @@ def up(
         )
     if port is not None and not 0 <= port <= 65535:
         raise InputError("Port must be between 0 and 65535; zero selects an available port.")
-    with locked(store.directory / "service.lock"):
-        if resume:
-            resume_installation(store)
+    with locked(store.directory / "service.lock"), resuming(store, requested=resume):
         ensure_enabled(store)
         store.initialize()
         state = read_json(state_path(store)) if state_path(store).exists() else {}

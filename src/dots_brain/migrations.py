@@ -7,16 +7,17 @@ not guess whether a process using the database is safe to interrupt.
 
 from __future__ import annotations
 
-import os
 import sqlite3
 from collections.abc import Callable
+from contextlib import closing
 from datetime import UTC, datetime
 from pathlib import Path
 
 from .database_checks import validate_snapshot
+from .database_io import open_readonly, snapshot
 from .errors import InputError
-from .local import sync_file_and_parent
-from .store import Store, extension_statements
+from .local import writer_lock
+from .store import Store, extension_statements, require_sqlite, secure_fts
 
 # Used by failure injection tests after the real schema transformation.
 SCHEMA_EXTENSION_SQL: tuple[str, ...] = ()
@@ -65,7 +66,7 @@ def _version(path: Path) -> int:
         raise InputError("Memory is not initialized. Run dots-brain setup first.")
     if path.is_symlink():
         raise InputError("The database must not be a symbolic link.")
-    with sqlite3.connect(f"file:{path}?mode=ro", uri=True) as db:
+    with closing(open_readonly(path)) as db:
         return db.execute("PRAGMA user_version").fetchone()[0]
 
 
@@ -78,23 +79,8 @@ def _backup(path: Path, destination: Path) -> Path:
     destination = destination.expanduser().absolute()
     if destination.parent != path.parent:
         raise InputError("The migration backup must be a private file beside the database.")
-    if destination.is_symlink():
-        raise InputError("The migration backup must not be a symbolic link.")
-    descriptor = os.open(destination, os.O_CREAT | os.O_EXCL | os.O_RDWR, 0o600)
-    os.close(descriptor)
-    destination.chmod(0o600)
-    try:
-        with sqlite3.connect(path) as source, sqlite3.connect(destination) as copied:
-            validate_snapshot(source, V1)
-            source.backup(copied)
-            validate_snapshot(copied, V1)
-        if destination.stat().st_mode & 0o777 != 0o600:
-            raise InputError("The migration backup is not private.")
-        sync_file_and_parent(destination)
-    except BaseException:
-        # Keep a failed backup for inspection rather than silently deleting evidence.
-        raise
-    return destination
+    with closing(open_readonly(path)) as source:
+        return snapshot(source, destination, V1)
 
 
 def _migrate(db: sqlite3.Connection) -> None:
@@ -134,10 +120,17 @@ def _migrate(db: sqlite3.Connection) -> None:
     db.execute("DROP TABLE memories_v1")
     for statement in (*extension_statements(), *SCHEMA_EXTENSION_SQL):
         db.execute(statement)
+    if db.execute("SELECT 1 FROM sqlite_master WHERE name='oauth_clients'").fetchone():
+        from .oauth import SCHEMA as oauth_schema
+
+        for statement in oauth_schema.split(";"):
+            if statement.strip():
+                db.execute(statement)
     db.execute(f"PRAGMA user_version={V2}")
     if db.execute("PRAGMA foreign_key_check").fetchone() is not None:
         raise InputError("Foreign-key validation failed; migration was rolled back.")
-    if validate_snapshot(db, V2) != before:
+    after = validate_snapshot(db, V2)
+    if any(after.get(table) != count for table, count in before.items()):
         raise InputError("Migration changed record counts; migration was rolled back.")
 
 
@@ -154,28 +147,41 @@ def migrate_v1_to_v2(
     stopped-runtime guard, creates and verifies a private SQLite backup, then
     performs this migration atomically.  Repeating after success is a no-op.
     """
+    if apply:
+        with writer_lock(store.directory, exclusive=True):
+            return _migrate_offline(store, backup_path=backup_path, stop_guard=stop_guard)
     version = _version(store.path)
     if version == V2:
         return {"state": "already_current", "from_version": V2, "to_version": V2, "writes": False}
     if version != V1:
         raise InputError("Only a schema v1 store can be migrated to schema v2.")
-    if not apply:
-        return {
-            "state": "migration_required",
-            "from_version": V1,
-            "to_version": V2,
-            "writes": False,
-        }
+    with closing(open_readonly(store.path)) as db:
+        validate_snapshot(db, V1)
+    return {
+        "state": "migration_required",
+        "from_version": V1,
+        "to_version": V2,
+        "writes": False,
+    }
+
+
+def _migrate_offline(store: Store, *, backup_path, stop_guard) -> dict:
+    require_sqlite()
+    plan = migrate_v1_to_v2(store, apply=False)
+    if plan["state"] == "already_current":
+        return plan
     if stop_guard is None:
         raise InputError("Migration requires a stopped-runtime guard from the caller.")
     stop_guard()
-    backup = _backup(store.path, backup_path or _default_backup(store.path))
     db = sqlite3.connect(store.path, timeout=10)
     db.row_factory = sqlite3.Row
     try:
         db.execute("PRAGMA foreign_keys=OFF")
+        db.execute("PRAGMA secure_delete=ON")
         db.execute("BEGIN IMMEDIATE")
+        backup = _backup(store.path, backup_path or _default_backup(store.path))
         _migrate(db)
+        secure_fts(db)
         db.commit()
     except BaseException:
         db.rollback()
