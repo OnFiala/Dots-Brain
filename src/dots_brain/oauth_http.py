@@ -104,19 +104,94 @@ class OnboardingLimiter:
         return True
 
 
-def routes_app(state: OAuthStore):
-    provider = OAuthProvider(state)
-    authenticator = ClientAuthenticator(provider)
-    registration_options = ClientRegistrationOptions(
-        enabled=True,
-        valid_scopes=sorted(SCOPES),
-        # Clients such as ChatGPT omit registration scopes, then request both at
-        # authorization. Registration grants no access; owner approval still does.
-        default_scopes=["memory:read", "memory:write"],
+def _pairing_page(result):
+    request_id_html = html.escape(result["request_id"])
+    client_name = html.escape(result["untrusted_client_name"])
+    safe_origin = redirect_origin(result["redirect_origin"])
+    origin = html.escape(safe_origin)
+    requested = "".join(f"<li>{html.escape(scope)}</li>" for scope in result["requested_scopes"])
+    approval = (
+        "Waiting for authorization from your memory host."
+        if result["state"] == "pending"
+        else "Authorization was denied. Return to your AI tool."
+        if result["state"] == "denied"
+        else "Authorization is ready. Confirm below to return to your AI tool."
     )
+    submit = (
+        ""
+        if result["state"] not in {"approved", "denied"} or not result["browser_bound"]
+        else '<form id="claim" method="post"><button type="submit">Continue</button></form>'
+    )
+    nonce = secrets.token_urlsafe(24)
+    submit_script = (
+        f'<script nonce="{nonce}">'
+        'const form=document.getElementById("claim");let submitted=false;'
+        'form.addEventListener("submit",event=>{'
+        "if(submitted){event.preventDefault();return;}submitted=true;"
+        'form.querySelector("button").disabled=true;});</script>'
+        if submit
+        else ""
+    )
+    browser_note = (
+        ""
+        if result["browser_bound"]
+        else "<p>Refresh this page in the browser that began this connection.</p>"
+    )
+    refresh_note = (
+        "<p>This page checks again in ten seconds. "
+        "You can also refresh it after the owner approves.</p>"
+        if result["state"] == "pending"
+        else ""
+    )
+    page = f"""<!doctype html><html lang="en"><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+{'<meta http-equiv="refresh" content="10">' if result["state"] == "pending" else ""}
+<title>Connect Dots Brain</title>
+<body><main><h1>Connect to your Dots Brain</h1>
+<p>{approval}</p>
+<p><strong>Untrusted client name:</strong> {client_name}</p>
+<p><strong>Redirect origin:</strong> {origin}</p>
+<p><strong>Requested scopes:</strong></p><ul>{requested}</ul>
+<p>Request ID: <code>{request_id_html}</code></p>
+<p>This request expires after five minutes. Never share memory credentials.</p>
+{refresh_note}
+{browser_note}{submit}{submit_script}
+</main></body></html>"""
+    response = HTMLResponse(
+        page,
+        headers={
+            **NO_STORE,
+            "Content-Security-Policy": (
+                "default-src 'none'; base-uri 'none'; frame-ancestors 'none'; "
+                # IPv6 callbacks use a post-claim navigation response, so
+                # the form needs only its own origin in that case.
+                "form-action 'self'"
+                + ("" if ":" in urlsplit(safe_origin).hostname else f" {safe_origin}")
+                + (f"; script-src 'nonce-{nonce}'" if submit else "")
+            ),
+            "X-Frame-Options": "DENY",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+    return response
 
-    async def register(request):
-        if (await provider.run(state.onboarding_state))["state"] != "open":
+
+class OAuthEndpoints:
+    """Own the SDK provider and request handlers for one OAuth installation."""
+
+    def __init__(self, state: OAuthStore):
+        self.state = state
+        self.provider = OAuthProvider(state)
+        self.authenticator = ClientAuthenticator(self.provider)
+        self.registration_options = ClientRegistrationOptions(
+            enabled=True,
+            valid_scopes=sorted(SCOPES),
+            # Registration grants no access; owner approval still decides scopes.
+            default_scopes=["memory:read", "memory:write"],
+        )
+
+    async def register(self, request: Request):
+        if (await self.provider.run(self.state.onboarding_state))["state"] != "open":
             return JSONResponse(
                 {"error": "temporarily_unavailable"}, status_code=503, headers=NO_STORE
             )
@@ -141,7 +216,9 @@ def routes_app(state: OAuthStore):
                 {"error": "invalid_client_metadata"}, status_code=400, headers=NO_STORE
             )
         try:
-            response = await RegistrationHandler(provider, registration_options).handle(request)
+            response = await RegistrationHandler(self.provider, self.registration_options).handle(
+                request
+            )
         except (InputError, ValueError, TypeError, RecursionError):
             return JSONResponse(
                 {"error": "invalid_client_metadata"}, status_code=400, headers=NO_STORE
@@ -149,7 +226,7 @@ def routes_app(state: OAuthStore):
         response.headers.update(NO_STORE)
         return response
 
-    async def token(request):
+    async def token(self, request: Request):
         try:
             if (
                 request.headers.get("content-type", "").split(";", 1)[0]
@@ -160,17 +237,17 @@ def routes_app(state: OAuthStore):
         except (ValueError, UnicodeError, TypeError, MultiPartException):
             return JSONResponse({"error": "invalid_request"}, status_code=400, headers=NO_STORE)
         # SDK 1.30 parses RFC 8707 resource but does not validate it at /token.
-        if form.get("resource") != state.resource:
+        if form.get("resource") != self.state.resource:
             return JSONResponse({"error": "invalid_target"}, status_code=400, headers=NO_STORE)
         if form.get("grant_type") == "authorization_code" and not re.fullmatch(
             r"[A-Za-z0-9._~-]{43,128}", str(form.get("code_verifier", ""))
         ):
             return JSONResponse({"error": "invalid_grant"}, status_code=400, headers=NO_STORE)
-        response = await TokenHandler(provider, authenticator).handle(request)
+        response = await TokenHandler(self.provider, self.authenticator).handle(request)
         response.headers.update(NO_STORE)
         return response
 
-    async def revoke(request):
+    async def revoke(self, request: Request):
         # SDK 1.30's revocation model requires a nullable client_secret field.
         # Normalize the optional public-client field without changing SDK authentication.
         try:
@@ -198,18 +275,18 @@ def routes_app(state: OAuthStore):
             return {"type": "http.request", "body": body, "more_body": False}
 
         normalized = Request({**request.scope, "headers": headers}, receive)
-        response = await RevocationHandler(provider, authenticator).handle(normalized)
+        response = await RevocationHandler(self.provider, self.authenticator).handle(normalized)
         response.headers.update(NO_STORE)
         return response
 
-    async def authorize(request):
-        response = await AuthorizationHandler(provider).handle(request)
+    async def authorize(self, request: Request):
+        response = await AuthorizationHandler(self.provider).handle(request)
         location = response.headers.get("location", "")
-        prefix = state.issuer + "/oauth/pair/"
+        prefix = self.state.issuer + "/oauth/pair/"
         if location.startswith(prefix):
             request_id = location[len(prefix) :]
             if re.fullmatch(r"req_[A-Za-z0-9_-]{16,128}", request_id):
-                binding = await provider.run(state.pairing, request_id, bind_browser=True)
+                binding = await self.provider.run(self.state.pairing, request_id, bind_browser=True)
                 nonce = binding.get("browser_nonce")
                 if nonce:
                     response.set_cookie(
@@ -217,19 +294,19 @@ def routes_app(state: OAuthStore):
                         nonce,
                         httponly=True,
                         samesite="lax",
-                        secure=urlsplit(state.issuer).scheme == "https",
+                        secure=urlsplit(self.state.issuer).scheme == "https",
                         path=f"/oauth/pair/{request_id}",
                     )
         return response
 
-    async def pairing(request):
+    async def pairing(self, request: Request):
         request_id = request.path_params["request_id"]
         cookie_name = "dots_brain_pair_" + request_id[-32:]
         provided_nonce = request.cookies.get(cookie_name)
         try:
             if request.method == "POST":
-                result = await provider.run(
-                    state.claim, request_id, provided_nonce, require_browser=True
+                result = await self.provider.run(
+                    self.state.claim, request_id, provided_nonce, require_browser=True
                 )
                 if result["state"] == "redirect":
                     response = _claimed_redirect(result["url"])
@@ -242,12 +319,12 @@ def routes_app(state: OAuthStore):
                         headers=NO_STORE,
                     )
                 if result["state"] == "pending":
-                    result = await provider.run(
-                        state.pairing, request_id, browser_nonce=provided_nonce
+                    result = await self.provider.run(
+                        self.state.pairing, request_id, browser_nonce=provided_nonce
                     )
             else:
-                result = await provider.run(
-                    state.pairing,
+                result = await self.provider.run(
+                    self.state.pairing,
                     request_id,
                     bind_browser=False,
                     browser_nonce=provided_nonce,
@@ -260,124 +337,30 @@ def routes_app(state: OAuthStore):
             return HTMLResponse(
                 "<h1>This connection request has expired.</h1>", status_code=410, headers=NO_STORE
             )
-        request_id_html = html.escape(result["request_id"])
-        client_name = html.escape(result["untrusted_client_name"])
-        safe_origin = redirect_origin(result["redirect_origin"])
-        origin = html.escape(safe_origin)
-        requested = "".join(
-            f"<li>{html.escape(scope)}</li>" for scope in result["requested_scopes"]
-        )
-        approval = (
-            "Waiting for authorization from your memory host."
-            if result["state"] == "pending"
-            else "Authorization was denied. Return to your AI tool."
-            if result["state"] == "denied"
-            else "Authorization is ready. Confirm below to return to your AI tool."
-        )
-        submit = (
-            ""
-            if result["state"] not in {"approved", "denied"} or not result["browser_bound"]
-            else '<form id="claim" method="post"><button type="submit">Continue</button></form>'
-        )
-        nonce = secrets.token_urlsafe(24)
-        submit_script = (
-            f'<script nonce="{nonce}">'
-            'const form=document.getElementById("claim");let submitted=false;'
-            'form.addEventListener("submit",event=>{'
-            "if(submitted){event.preventDefault();return;}submitted=true;"
-            'form.querySelector("button").disabled=true;});</script>'
-            if submit
-            else ""
-        )
-        browser_note = (
-            ""
-            if result["browser_bound"]
-            else "<p>Refresh this page in the browser that began this connection.</p>"
-        )
-        refresh_note = (
-            "<p>This page checks again in ten seconds. "
-            "You can also refresh it after the owner approves.</p>"
-            if result["state"] == "pending"
-            else ""
-        )
-        page = f"""<!doctype html><html lang="en"><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-{'<meta http-equiv="refresh" content="10">' if result["state"] == "pending" else ""}
-<title>Connect Dots Brain</title>
-<body><main><h1>Connect to your Dots Brain</h1>
-<p>{approval}</p>
-<p><strong>Untrusted client name:</strong> {client_name}</p>
-<p><strong>Redirect origin:</strong> {origin}</p>
-<p><strong>Requested scopes:</strong></p><ul>{requested}</ul>
-<p>Request ID: <code>{request_id_html}</code></p>
-<p>This request expires after five minutes. Never share memory credentials.</p>
-{refresh_note}
-{browser_note}{submit}{submit_script}
-</main></body></html>"""
-        response = HTMLResponse(
-            page,
-            headers={
-                **NO_STORE,
-                "Content-Security-Policy": (
-                    "default-src 'none'; base-uri 'none'; frame-ancestors 'none'; "
-                    # IPv6 callbacks use a post-claim navigation response, so
-                    # the form needs only its own origin in that case.
-                    "form-action 'self'"
-                    + ("" if ":" in urlsplit(safe_origin).hostname else f" {safe_origin}")
-                    + (f"; script-src 'nonce-{nonce}'" if submit else "")
-                ),
-                "X-Frame-Options": "DENY",
-                "X-Content-Type-Options": "nosniff",
-            },
-        )
-        return response
+        return _pairing_page(result)
 
-    routes = [Route("/authorize", authorize, methods=["GET", "POST"])]
-    metadata = build_metadata(
-        AnyHttpUrl(state.issuer), None, registration_options, RevocationOptions(enabled=True)
-    )
-    # SDK 1.30 accepts public clients but omits their auth method from discovery.
-    metadata.token_endpoint_auth_methods_supported = ["none", "client_secret_post"]
-    metadata.revocation_endpoint_auth_methods_supported = ["none", "client_secret_post"]
-    routes.append(
-        Route(
-            "/.well-known/oauth-authorization-server",
-            endpoint=cors_middleware(MetadataHandler(metadata).handle, ["GET", "OPTIONS"]),
-            methods=["GET", "OPTIONS"],
-        )
-    )
-    for path, endpoint in (("/token", token), ("/revoke", revoke), ("/register", register)):
-        routes.append(
-            Route(
-                path,
-                endpoint=cors_middleware(endpoint, ["POST", "OPTIONS"]),
-                methods=["POST", "OPTIONS"],
-            )
-        )
-    routes.extend(
-        create_protected_resource_routes(
-            AnyHttpUrl(state.resource),
-            [AnyHttpUrl(state.issuer)],
-            scopes_supported=sorted(SCOPES),
-            resource_name="Dots Brain",
-        )
-    )
-    routes.append(Route("/oauth/pair/{request_id}", pairing, methods=["GET", "HEAD", "POST"]))
-    router = Router(routes=routes)
-    limiter = OnboardingLimiter()
 
-    async def enabled(scope, receive, send):
+class OnboardingGate:
+    """Apply transport-independent availability, rate and exception boundaries."""
+
+    def __init__(self, app, state: OAuthStore, provider: OAuthProvider):
+        self.app = app
+        self.state = state
+        self.provider = provider
+        self.limiter = OnboardingLimiter()
+
+    async def __call__(self, scope, receive, send):
         if scope["type"] == "websocket":
             return await send({"type": "websocket.close", "code": 1008})
         if scope["type"] != "http":
-            return await router(scope, receive, send)
-        if not limiter.allow(scope):
+            return await self.app(scope, receive, send)
+        if not self.limiter.allow(scope):
             return await JSONResponse(
                 {"error": "rate_limited"},
                 status_code=429,
                 headers={**NO_STORE, "Retry-After": "10"},
             )(scope, receive, send)
-        if not await provider.run(state.enabled):
+        if not await self.provider.run(self.state.enabled):
             return await JSONResponse(
                 {"error": "temporarily_unavailable"}, status_code=503, headers=NO_STORE
             )(scope, receive, send)
@@ -390,7 +373,7 @@ def routes_app(state: OAuthStore):
             await send(message)
 
         try:
-            return await router(scope, receive, guarded_send)
+            return await self.app(scope, receive, guarded_send)
         except (
             ValueError,
             TypeError,
@@ -412,12 +395,14 @@ def routes_app(state: OAuthStore):
                 )(scope, receive, send)
             raise
 
-    protected = TrustedHostMiddleware(
-        RequestBodyLimitMiddleware(enabled, 16384),
-        allowed_hosts=[urlsplit(state.issuer).hostname, "localhost", "127.0.0.1", "[::1]"],
-    )
 
-    async def with_security_headers(scope, receive, send):
+class SecurityHeaders:
+    """Add common headers without replacing a handler's stricter CSP."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
         async def response_send(message):
             if message["type"] == "http.response.start":
                 headers = dict(message.get("headers", []))
@@ -429,6 +414,54 @@ def routes_app(state: OAuthStore):
                 message = {**message, "headers": list(headers.items())}
             await send(message)
 
-        return await protected(scope, receive, response_send)
+        return await self.app(scope, receive, response_send)
 
-    return with_security_headers
+
+def routes_app(state: OAuthStore):
+    handlers = OAuthEndpoints(state)
+    routes = [Route("/authorize", handlers.authorize, methods=["GET", "POST"])]
+    metadata = build_metadata(
+        AnyHttpUrl(state.issuer),
+        None,
+        handlers.registration_options,
+        RevocationOptions(enabled=True),
+    )
+    # SDK 1.30 accepts public clients but omits their auth method from discovery.
+    metadata.token_endpoint_auth_methods_supported = ["none", "client_secret_post"]
+    metadata.revocation_endpoint_auth_methods_supported = ["none", "client_secret_post"]
+    routes.append(
+        Route(
+            "/.well-known/oauth-authorization-server",
+            endpoint=cors_middleware(MetadataHandler(metadata).handle, ["GET", "OPTIONS"]),
+            methods=["GET", "OPTIONS"],
+        )
+    )
+    for path, endpoint in (
+        ("/token", handlers.token),
+        ("/revoke", handlers.revoke),
+        ("/register", handlers.register),
+    ):
+        routes.append(
+            Route(
+                path,
+                endpoint=cors_middleware(endpoint, ["POST", "OPTIONS"]),
+                methods=["POST", "OPTIONS"],
+            )
+        )
+    routes.extend(
+        create_protected_resource_routes(
+            AnyHttpUrl(state.resource),
+            [AnyHttpUrl(state.issuer)],
+            scopes_supported=sorted(SCOPES),
+            resource_name="Dots Brain",
+        )
+    )
+    routes.append(
+        Route("/oauth/pair/{request_id}", handlers.pairing, methods=["GET", "HEAD", "POST"])
+    )
+    enabled = OnboardingGate(Router(routes=routes), state, handlers.provider)
+    protected = TrustedHostMiddleware(
+        RequestBodyLimitMiddleware(enabled, 16384),
+        allowed_hosts=[urlsplit(state.issuer).hostname, "localhost", "127.0.0.1", "[::1]"],
+    )
+    return SecurityHeaders(protected)

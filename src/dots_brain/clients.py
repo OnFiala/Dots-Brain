@@ -18,7 +18,7 @@ from .auth import read_connection
 from .bridge import verify_command
 from .errors import InputError, StateError
 from .local import atomic_write, locked, read_json, write_json
-from .runtime import credential, up
+from .runtime import credential, operator_command, up
 from .store import Store
 
 PROVIDERS = {
@@ -43,9 +43,19 @@ def registrations(directory: Path) -> dict:
     path = directory / "integrations.json"
     if not path.exists():
         return {"version": 1, "items": {}}
-    document = read_json(path)
+    try:
+        document = read_json(path)
+    except InputError:
+        raise StateError(
+            f"Client registration file {path} is corrupt or unsafe; it was preserved. "
+            "Restore a known-good registration backup before retrying. Next command: "
+            + shlex.join(["dots-brain", "--data-dir", str(directory), "doctor"])
+        ) from None
     if document.get("version") != 1 or not isinstance(document.get("items"), dict):
-        raise InputError("Unsupported client registration file; existing state was preserved.")
+        raise StateError(
+            f"Unsupported client registration file {path}; existing state was preserved. "
+            "Next command: " + shlex.join(["dots-brain", "--data-dir", str(directory), "doctor"])
+        )
     return document
 
 
@@ -118,10 +128,18 @@ def target_path(provider: str, config: Path | None) -> Path:
     return normalized_path(Path.home() / default)
 
 
-def configure(path: Path, *, provider: str, entry: dict, replace_entry: dict | None = None) -> bool:
-    with locked(path.with_name(path.name + ".dots-brain.lock"), create_parent=True):
-        if path.is_symlink():
-            raise InputError("Client configuration must not be a symbolic link.")
+def _configuration_problem(path: Path, message: str) -> StateError:
+    return StateError(
+        f"{message} Review the preserved configuration file {path}. "
+        "Next command: dots-brain connect --help"
+    )
+
+
+def _read_configuration(path: Path, provider: str) -> tuple[str, dict]:
+    """Read one existing provider document without changing it or following links."""
+    if path.is_symlink():
+        raise _configuration_problem(path, "Client configuration must not be a symbolic link.")
+    try:
         original = path.read_text(encoding="utf-8") if path.exists() else ""
         document = (
             tomlkit.parse(original)
@@ -130,18 +148,29 @@ def configure(path: Path, *, provider: str, entry: dict, replace_entry: dict | N
             if original
             else {}
         )
-        if not isinstance(document, dict):
-            # TOMLDocument implements dict in supported tomlkit versions.
-            raise InputError("Client configuration must contain an object.")
+    except (ValueError, UnicodeError):
+        raise _configuration_problem(path, "Client configuration could not be parsed.") from None
+    if not isinstance(document, dict):
+        # TOMLDocument implements dict in supported tomlkit versions.
+        raise _configuration_problem(path, "Client configuration must contain an object.")
+    key = "mcp_servers" if PROVIDERS[provider]["format"] == "toml" else "mcpServers"
+    if not isinstance(document.get(key, {}), dict):
+        raise _configuration_problem(path, "The client's MCP server section is not an object.")
+    return original, document
+
+
+def configure(path: Path, *, provider: str, entry: dict, replace_entry: dict | None = None) -> bool:
+    with locked(path.with_name(path.name + ".dots-brain.lock"), create_parent=True):
+        original, document = _read_configuration(path, provider)
         key = "mcp_servers" if PROVIDERS[provider]["format"] == "toml" else "mcpServers"
         servers = document.setdefault(key, {})
-        if not isinstance(servers, dict):
-            raise InputError("The client's MCP server section is not an object.")
         existing = servers.get("dots-brain")
         if existing == entry:
             return False
         if existing is not None and existing != replace_entry:
-            raise InputError("A different dots-brain connection already exists; it was preserved.")
+            raise _configuration_problem(
+                path, "A different dots-brain connection already exists; it was preserved."
+            )
         servers["dots-brain"] = entry
         content = (
             tomlkit.dumps(document)
@@ -150,7 +179,9 @@ def configure(path: Path, *, provider: str, entry: dict, replace_entry: dict | N
         )
         # Detect an application write that occurred while this installer held its own lock.
         if (path.read_text(encoding="utf-8") if path.exists() else "") != original:
-            raise InputError("The application changed its configuration; retry the connection.")
+            raise _configuration_problem(
+                path, "The application changed its configuration; retry after its edit finishes."
+            )
         if original:
             backup = path.with_name(path.name + ".before-dots-brain")
             if not backup.exists():
@@ -163,25 +194,14 @@ def preflight_configure(
     path: Path, *, provider: str, entry: dict, replace_entry: dict | None = None
 ) -> None:
     """Reject an unsafe or conflicting client file before minting a credential."""
-    if path.is_symlink():
-        raise InputError("Client configuration must not be a symbolic link.")
-    original = path.read_text(encoding="utf-8") if path.exists() else ""
-    document = (
-        tomlkit.parse(original)
-        if PROVIDERS[provider]["format"] == "toml"
-        else json.loads(original)
-        if original
-        else {}
-    )
-    if not isinstance(document, dict):
-        raise InputError("Client configuration must contain an object.")
+    _, document = _read_configuration(path, provider)
     key = "mcp_servers" if PROVIDERS[provider]["format"] == "toml" else "mcpServers"
     servers = document.get(key, {})
-    if not isinstance(servers, dict):
-        raise InputError("The client's MCP server section is not an object.")
     existing = servers.get("dots-brain")
     if existing is not None and existing != entry and existing != replace_entry:
-        raise InputError("A different dots-brain connection already exists; it was preserved.")
+        raise _configuration_problem(
+            path, "A different dots-brain connection already exists; it was preserved."
+        )
 
 
 def local_connection_path(store: Store, value: str) -> Path:
@@ -226,8 +246,9 @@ def connect_client(
             "required": "Verified HTTPS ingress, configured OAuth, and supported web-client setup.",
         }
     if connection is None and not store.path.is_file():
-        raise InputError(
-            "Initialize the chosen memory host with up, or provide an existing connection."
+        raise StateError(
+            "Initialize the chosen memory host, or provide an existing connection. "
+            "Next command: " + operator_command(store, "setup")
         )
     # A remote client needs a local registration but must not initialize a local database.
     with locked(store.directory / "installation.lock", create_parent=connection is not None):
@@ -243,8 +264,7 @@ def _connect_client(store, *, provider, config, connection, projects):
     local = connection is None
     previous = registry["items"].get(key)
     if previous is None and target.is_file() and not target.is_symlink():
-        text = target.read_text(encoding="utf-8")
-        document = tomlkit.parse(text) if provider == "codex" else json.loads(text) if text else {}
+        _, document = _read_configuration(target, provider)
         section = "mcp_servers" if provider == "codex" else "mcpServers"
         if isinstance(document, dict) and isinstance(document.get(section, {}), dict):
             notice = legacy_client_notice(
@@ -257,16 +277,23 @@ def _connect_client(store, *, provider, config, connection, projects):
     if local:
         private = store.directory / "connections"
         if private.is_symlink():
-            raise InputError("Managed connection storage must not be a symbolic link.")
+            raise StateError(
+                "Managed connection storage must not be a symbolic link. Next command: "
+                + operator_command(store, "doctor")
+            )
         connection = private / f"{provider}-{key}.json"
         if previous is not None:
             if not valid_local_registration(previous, provider=provider, target=target):
-                raise InputError("Invalid integration registration; existing state was preserved.")
+                raise StateError(
+                    "Invalid integration registration; existing state was preserved. "
+                    "Next command: " + operator_command(store, "doctor")
+                )
             if previous["local"]:
                 previous_path = local_connection_path(store, previous["connection_file"])
                 if previous_path not in (connection, private / f"{provider}.json"):
-                    raise InputError(
-                        "Unexpected managed credential path; existing state was preserved."
+                    raise StateError(
+                        "Unexpected managed credential path; existing state was preserved. "
+                        "Next command: " + operator_command(store, "doctor")
                     )
                 connection = previous_path
                 replace_entry = previous["entry"]
@@ -309,8 +336,14 @@ def _connect_client(store, *, provider, config, connection, projects):
             )
         )
         if check["state"] == "verification_failed":
-            raise InputError(
-                "The generated bridge failed verification; client configuration was preserved."
+            raise StateError(
+                "The generated bridge failed verification; client configuration was preserved. "
+                "Next command: "
+                + (
+                    operator_command(store, "doctor")
+                    if local
+                    else shlex.join(["dots-brain", "verify", "--credential-file", str(connection)])
+                )
             )
     except BaseException:
         if local and created_credential:

@@ -20,7 +20,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from itertools import islice
 from pathlib import Path
-from typing import Protocol
+from typing import Literal, Protocol, TypedDict, cast
 from urllib.parse import urlsplit
 
 import anyio
@@ -491,6 +491,43 @@ def _exception_leaves(exc: BaseException) -> list[BaseException]:
 ContentGuard = Callable[[Mapping[str, object]], object]
 
 
+CortexOperationState = Literal["planned", "sending", "acknowledged", "uncertain"]
+
+
+class _CortexReceiptFields(TypedDict):
+    """Fields present in every public projection of a durable ledger state."""
+
+    operation_id: str
+    request_digest: str
+    state: CortexOperationState
+    source_ref: str
+    receipt: dict[str, str] | None
+    retrievable_source_ref: str | None
+    acknowledgement_only: bool
+    replayed: bool
+
+
+class CortexOperationReceipt(_CortexReceiptFields, total=False):
+    """The receipt projection, with optional response-only privacy warnings."""
+
+    warnings: list[dict[str, str]]
+
+
+@dataclass(frozen=True)
+class _CortexWritePlan:
+    """Validated request identity; only the ledger owns its delivery state."""
+
+    kind: str
+    principal: str
+    project: str
+    source_ref: str
+    operation_id: str
+    request_digest: str
+    request: Mapping[str, object]
+    planned: Mapping[str, object]
+    warnings: list[dict[str, str]]
+
+
 class CortexConnector:
     """Authorization, project boundary, bounded reads, and durable write receipts."""
 
@@ -559,7 +596,7 @@ class CortexConnector:
         content: str = "",
         topic: str | None = None,
         operation_id: str | None = None,
-    ) -> dict[str, object]:
+    ) -> CortexOperationReceipt:
         return await self._write(
             "note",
             policy=policy,
@@ -580,7 +617,7 @@ class CortexConnector:
         doctrine_statement: str | None = None,
         doctrine_level: str = "soft",
         operation_id: str | None = None,
-    ) -> dict[str, object]:
+    ) -> CortexOperationReceipt:
         return await self._write(
             "decision",
             policy=policy,
@@ -606,7 +643,7 @@ class CortexConnector:
         status: str,
         topic: str | None = None,
         operation_id: str | None = None,
-    ) -> dict[str, object]:
+    ) -> CortexOperationReceipt:
         return await self._write(
             "outcome",
             policy=policy,
@@ -625,7 +662,35 @@ class CortexConnector:
         source_ref: str,
         payload: Mapping[str, object],
         operation_id: str | None,
-    ) -> dict[str, object]:
+    ) -> CortexOperationReceipt:
+        plan = self._plan_write(
+            kind,
+            policy=policy,
+            project=project,
+            source_ref=source_ref,
+            payload=payload,
+            operation_id=operation_id,
+        )
+        replay = await self._acquire_write_receipt(plan)
+        if replay is not None:
+            return replay
+        replay = await self._prepare_and_claim_write(plan)
+        if replay is not None:
+            return replay
+        # Only this successful claimant may deliver or release a proven-unsent claim.
+        return await self._deliver_write(plan)
+
+    def _plan_write(
+        self,
+        kind: str,
+        *,
+        policy: object,
+        project: str,
+        source_ref: str,
+        payload: Mapping[str, object],
+        operation_id: str | None,
+    ) -> _CortexWritePlan:
+        """Authorize and check privacy before reading or changing any ledger state."""
         if kind not in _WRITE_KINDS:
             raise InputError("CORTEX write type is invalid.")
         cortex_project, principal = self._authorize(policy, _WRITE_SCOPE, project)
@@ -664,96 +729,122 @@ class CortexConnector:
             "source_ref": source_ref,
             "created_at": now(),
         }
+        return _CortexWritePlan(
+            kind=kind,
+            principal=principal,
+            project=project,
+            source_ref=source_ref,
+            operation_id=actual_id,
+            request_digest=digest,
+            request=request,
+            planned=planned,
+            warnings=warnings,
+        )
+
+    async def _acquire_write_receipt(self, plan: _CortexWritePlan) -> CortexOperationReceipt | None:
+        """Reuse a bound receipt or create a plan, including atomic outcome supersession."""
         # SQLite ledger calls are synchronous and can block on its writer lock;
         # never perform them in the MCP event loop.
-        existing = await asyncio.to_thread(self._ledger.get, actual_id)
+        existing = await asyncio.to_thread(self._ledger.get, plan.operation_id)
         superseded = False
-        if kind == "outcome" and existing is None:
+        if plan.kind == "outcome" and existing is None:
             supersede = getattr(self._ledger, "supersede_pre_send_outcomes", None)
             if callable(supersede):
                 superseded = await asyncio.to_thread(
                     supersede,
-                    principal=principal,
-                    project=project,
-                    source_ref=source_ref,
-                    replacement=planned,
+                    principal=plan.principal,
+                    project=plan.project,
+                    source_ref=plan.source_ref,
+                    replacement=plan.planned,
                 )
             if not superseded:
                 await asyncio.to_thread(
                     self._reject_prior_outcome,
-                    principal,
-                    project,
-                    source_ref,
-                    actual_id,
+                    plan.principal,
+                    plan.project,
+                    plan.source_ref,
+                    plan.operation_id,
                 )
         if existing is not None:
-            if existing.get("request_digest") != digest:
+            if existing.get("request_digest") != plan.request_digest:
                 raise ConflictError(
                     "CORTEX operation identity is already bound to different content."
                 )
             state = existing.get("state")
             if state == "acknowledged":
-                return _receipt_from_row(existing, replayed=True, warnings=warnings)
+                return _receipt_from_row(existing, replayed=True, warnings=plan.warnings)
             if state in {"sending", "uncertain"}:
-                raise CortexWriteUncertain(actual_id)
+                raise CortexWriteUncertain(plan.operation_id)
             if state != "planned":
                 raise CortexConnectorError("CORTEX operation receipt is invalid.")
         elif not superseded:
             await asyncio.to_thread(
                 self._ledger.create_planned,
-                planned,
+                plan.planned,
             )
+        return None
+
+    async def _prepare_and_claim_write(
+        self, plan: _CortexWritePlan
+    ) -> CortexOperationReceipt | None:
+        """Preflight before claiming; a lost claim may only replay its bound acknowledgement."""
         try:
             await _prepare_write(self._transport)
         except CortexConnectorError as exc:
             # Token/config validation happens before claim_sending.  Preserve a
             # durable, retryable reason without representing this as delivery risk.
             await asyncio.to_thread(
-                self._ledger.release_planned, actual_id, error_code=_error_code(exc)
+                self._ledger.release_planned, plan.operation_id, error_code=_error_code(exc)
             )
             raise
-        if not await asyncio.to_thread(self._ledger.claim_sending, actual_id, digest):
-            existing = await asyncio.to_thread(self._ledger.get, actual_id)
-            if existing is None or existing.get("request_digest") != digest:
+        if not await asyncio.to_thread(
+            self._ledger.claim_sending, plan.operation_id, plan.request_digest
+        ):
+            existing = await asyncio.to_thread(self._ledger.get, plan.operation_id)
+            if existing is None or existing.get("request_digest") != plan.request_digest:
                 raise ConflictError("CORTEX operation identity is bound to different content.")
             if existing.get("state") == "acknowledged":
-                return _receipt_from_row(existing, replayed=True, warnings=warnings)
-            raise CortexWriteUncertain(actual_id)
+                return _receipt_from_row(existing, replayed=True, warnings=plan.warnings)
+            raise CortexWriteUncertain(plan.operation_id)
+        return None
+
+    async def _deliver_write(self, plan: _CortexWritePlan) -> CortexOperationReceipt:
+        """Deliver one owned claim and preserve cancellation and failure persistence semantics."""
         try:
-            upstream = await self._transport.call_tool(f"cortex_record_{kind}", request)
+            upstream = await self._transport.call_tool(f"cortex_record_{plan.kind}", plan.request)
             upstream = _safe_receipt(upstream)
             await asyncio.to_thread(
                 self._ledger.mark_acknowledged,
-                actual_id,
+                plan.operation_id,
                 receipt=upstream,
                 upstream_object_id=_object_id(upstream),
             )
-            row = await asyncio.to_thread(self._ledger.get, actual_id)
+            row = await asyncio.to_thread(self._ledger.get, plan.operation_id)
             if row is None:
                 raise CortexConnectorError("CORTEX operation receipt is unavailable.")
-            return _receipt_from_row(row, replayed=False, warnings=warnings)
+            return _receipt_from_row(row, replayed=False, warnings=plan.warnings)
         except CortexWriteRejected as exc:
             # MCP isError is not proof of rollback: an upstream implementation
             # may commit and then fail while producing its response.
             try:
                 await asyncio.to_thread(
-                    self._ledger.mark_uncertain, actual_id, error_code=_error_code(exc)
+                    self._ledger.mark_uncertain, plan.operation_id, error_code=_error_code(exc)
                 )
             except Exception:
                 pass
-            raise CortexWriteUncertain(actual_id) from exc
+            raise CortexWriteUncertain(plan.operation_id) from exc
         except CortexPreSendError as exc:
             try:
                 released = await asyncio.to_thread(
                     self._ledger.return_pre_send,
-                    actual_id,
-                    digest,
+                    plan.operation_id,
+                    plan.request_digest,
                     error_code=_error_code(exc),
                 )
             except Exception:
                 released = False
             if not released:
-                raise CortexWriteUncertain(actual_id) from exc
+                raise CortexWriteUncertain(plan.operation_id) from exc
             raise
         except asyncio.CancelledError:
             # Cancellation after a claimed send never leaves an immortal
@@ -761,7 +852,9 @@ class CortexConnector:
             try:
                 await asyncio.shield(
                     asyncio.to_thread(
-                        self._ledger.mark_uncertain, actual_id, error_code="cancelled_after_send"
+                        self._ledger.mark_uncertain,
+                        plan.operation_id,
+                        error_code="cancelled_after_send",
                     )
                 )
             except Exception:
@@ -772,22 +865,24 @@ class CortexConnector:
                 await asyncio.shield(
                     asyncio.to_thread(
                         self._ledger.mark_uncertain,
-                        actual_id,
+                        plan.operation_id,
                         error_code="write_or_receipt_failure",
                     )
                 )
             except Exception:
                 # A committed sending state still blocks replay if persistence failed.
                 pass
-            raise CortexWriteUncertain(actual_id) from exc
+            raise CortexWriteUncertain(plan.operation_id) from exc
 
-    def operation_status(self, *, policy, project: str, operation_id: str) -> dict:
+    def operation_status(
+        self, *, policy, project: str, operation_id: str
+    ) -> CortexOperationReceipt:
         """Read the caller's receipt without expanding project or actor permissions."""
         return _receipt_from_row(
             self._owned_operation(policy, project, operation_id, _READ_SCOPE), replayed=False
         )
 
-    def operations(self, *, policy, project: str) -> list[dict[str, object]]:
+    def operations(self, *, policy, project: str) -> list[CortexOperationReceipt]:
         """Return the caller's own operation receipts without expanding scope."""
         _, principal = self._authorize(policy, _READ_SCOPE, project)
         if principal == "local-owner:stdio" and callable(
@@ -1122,21 +1217,25 @@ def _content_warnings(value: object) -> list[dict[str, str]]:
 
 def _receipt_from_row(
     row: Mapping[str, object], *, replayed: bool, warnings: list[dict[str, str]] | None = None
-) -> dict[str, object]:
+) -> CortexOperationReceipt:
     receipt_json = row.get("receipt_json")
-    receipt = json.loads(receipt_json) if isinstance(receipt_json, str) else None
+    receipt = cast(
+        dict[str, str] | None, json.loads(receipt_json) if isinstance(receipt_json, str) else None
+    )
     object_id = row.get("upstream_object_id")
-    return {
-        "operation_id": row["operation_id"],
-        "request_digest": row["request_digest"],
-        "state": row["state"],
-        "source_ref": row["source_ref"],
+    result: CortexOperationReceipt = {
+        "operation_id": cast(str, row["operation_id"]),
+        "request_digest": cast(str, row["request_digest"]),
+        "state": cast(CortexOperationState, row["state"]),
+        "source_ref": cast(str, row["source_ref"]),
         "receipt": receipt,
         "retrievable_source_ref": f"cortex://object/{object_id}" if object_id else None,
         "acknowledgement_only": object_id is None,
         "replayed": replayed,
-        **({"warnings": warnings} if warnings else {}),
     }
+    if warnings:
+        result["warnings"] = warnings
+    return result
 
 
 def _minimize_context(raw: Mapping[str, object], maximum: int):

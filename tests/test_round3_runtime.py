@@ -17,7 +17,7 @@ import pytest
 
 from dots_brain import local, runtime
 from dots_brain.auth import issue_client
-from dots_brain.errors import BusyError, InputError, StateError, StoreDisabledError
+from dots_brain.errors import BusyError, StateError, StoreDisabledError
 from dots_brain.local import locked, write_json
 from dots_brain.store import Store
 
@@ -371,7 +371,7 @@ def test_readiness_failure_without_lease_evidence_names_safe_local_diagnostics(
         raise ConnectionError("fixture-secret-must-not-be-returned")
 
     monkeypatch.setattr(runtime, "verify_connection", unavailable)
-    with pytest.raises(InputError) as error:
+    with pytest.raises(StateError) as error:
         runtime.verify_daemon(store, {"pid": 12345, "url": "http://127.0.0.1:1234/mcp"})
     message = str(error.value)
     assert "doctor" in message and "tail -n 40" in message and "service.log" in message

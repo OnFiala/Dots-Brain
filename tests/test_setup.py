@@ -14,7 +14,7 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
 from dots_brain.clients import configure, connect_client
-from dots_brain.errors import InputError
+from dots_brain.errors import StateError
 from dots_brain.runtime import down, process_identity, up
 from dots_brain.store import Store
 
@@ -69,7 +69,7 @@ def test_adapter_preserves_other_settings_is_idempotent_and_refuses_conflicts(tm
         assert document["theme"] == "dark"
         assert document[key]["other"] == {"command": "other"}
     assert path.with_name(path.name + ".before-dots-brain").read_text() == original
-    with pytest.raises(InputError):
+    with pytest.raises(StateError):
         configure(path, provider=provider, entry={"command": "different"})
     assert path.read_text() == text
 
@@ -113,7 +113,7 @@ def test_unsupported_provider_does_not_create_another_database(tmp_path):
 
 def test_connect_does_not_assume_a_client_device_is_the_memory_host(tmp_path):
     store = Store(tmp_path / "client-device")
-    with pytest.raises(InputError, match="chosen memory host"):
+    with pytest.raises(StateError, match="chosen memory host"):
         connect_client(store, provider="cursor", config=tmp_path / "cursor.json")
     assert not store.path.exists()
 

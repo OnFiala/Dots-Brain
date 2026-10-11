@@ -13,8 +13,9 @@ import shlex
 import stat as stat_module
 from base64 import b64decode, b64encode
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, BinaryIO
 
 from .errors import InputError
 from .local import locked, write_json
@@ -286,6 +287,18 @@ def _normalize_tool_blocks(record, source, record_id, expected_type):
     }
 
 
+@dataclass
+class _CollectionProgress:
+    """Counters shared by every source within one bounded collection pass."""
+
+    forwarded: int = 0
+    read_bytes: int = 0
+
+    @property
+    def limit_reached(self) -> bool:
+        return self.read_bytes >= MAX_BATCH_BYTES or self.forwarded >= MAX_BATCH_RECORDS
+
+
 class JSONLCollector:
     """A sink-injected collector that checkpoints only completed, acknowledged lines."""
 
@@ -337,91 +350,30 @@ class JSONLCollector:
             return self._collect()
 
     def _collect(self) -> int:
-        cursor, forwarded, read_bytes = self._load_cursor(), 0, 0
+        cursor, progress = self._load_cursor(), _CollectionProgress()
         self.completed = True
         for path in self.paths:
-            # Bind offsets to the descriptor we read, even if the pathname is rotated.
-            key, previous = str(path), cursor["files"].get(str(path), {})
-            offset = int(previous.get("offset", 0))
-            try:
-                stat = path.stat()
-            except FileNotFoundError:
-                if not previous.get("unavailable"):
-                    gap = _gap(
-                        "collector", _identity(key, offset, b"missing"), "source_unavailable"
-                    )
-                    if self.sink(gap) is not True:
-                        raise InputError("Capture sink did not acknowledge record.") from None
-                    cursor["files"][key] = {
-                        **previous,
-                        "device": previous.get("device", 0),
-                        "inode": previous.get("inode", 0),
-                        "offset": offset,
-                        "unavailable": True,
-                    }
-                    self._save_cursor(cursor)
-                    forwarded += 1
-                continue
-            if not stat_module.S_ISREG(stat.st_mode):
-                raise InputError("Capture source must be a regular file.")
-            if previous.get("source_reset_required"):
-                self.completed = False
-                continue
-            # Check type before opening and use non-blocking/no-follow flags so a
-            # pathname race cannot turn a collector into a FIFO/device reader.
-            flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NONBLOCK", 0)
-            flags |= getattr(os, "O_NOFOLLOW", 0)
-            try:
-                descriptor = os.open(path, flags)
-            except OSError as exc:
-                raise InputError(
-                    "Capture source could not be opened safely; retry collection."
-                ) from exc
-            try:
-                opened = os.fstat(descriptor)
-                if not stat_module.S_ISREG(opened.st_mode) or (opened.st_dev, opened.st_ino) != (
-                    stat.st_dev,
-                    stat.st_ino,
-                ):
-                    raise InputError(
-                        "Capture source changed or is not a regular file; retry collection."
-                    )
-                fingerprints = _fingerprints(
-                    descriptor, offset, prefix_length=previous.get("prefix_length")
-                )
-            except Exception:
-                os.close(descriptor)
-                raise
-            identity_changed = (
-                previous.get("device") != stat.st_dev or previous.get("inode") != stat.st_ino
-            )
-            checkpoint_matches = _fingerprints_match(previous, fingerprints)
-            checkpoint_is_verifiable = isinstance(
-                previous.get("prefix_fingerprint", previous.get("fingerprint")), str
-            )
-            replacement_continuity = (
-                identity_changed
-                and checkpoint_is_verifiable
-                and checkpoint_matches
-                and _prefix_chain_matches(previous, descriptor, offset)
-            )
-            # Exports are commonly written to a temporary file then atomically
-            # renamed over the old path.  An inode is therefore a file handle,
-            # not a source generation.  Keep the old generation only when the
-            # acknowledged prefix and its checkpoint boundary prove continuity.
-            # Legacy cursors without a fingerprint retain their old same-inode
-            # behavior, but do not trust a replacement inode as continuous.
-            rotated = bool(previous) and (
-                stat.st_size < offset
-                or (
-                    identity_changed
-                    and not (
-                        replacement_continuity or (previous.get("unavailable") and offset == 0)
-                    )
-                )
-                or (not identity_changed and checkpoint_is_verifiable and not checkpoint_matches)
-            )
-            if rotated:
+            if not self._collect_path(path, cursor, progress):
+                break
+        return progress.forwarded
+
+    def _collect_path(self, path: Path, cursor: dict, progress: _CollectionProgress) -> bool:
+        key, previous = str(path), cursor["files"].get(str(path), {})
+        offset = int(previous.get("offset", 0))
+        try:
+            stat = path.stat()
+        except FileNotFoundError:
+            self._record_unavailable(key, previous, cursor, progress)
+            return True
+        if not stat_module.S_ISREG(stat.st_mode):
+            raise InputError("Capture source must be a regular file.")
+        if previous.get("source_reset_required"):
+            self.completed = False
+            return True
+        descriptor, fingerprints = _open_capture_source(path, stat, previous, offset)
+        # The verified descriptor owns all reads, including continuity evidence.
+        with os.fdopen(descriptor, "rb", closefd=True) as stream:
+            if _source_requires_reset(previous, stat, fingerprints, stream.fileno(), offset):
                 gap = _gap(
                     "collector",
                     _identity(key, offset, b"source-reset-required"),
@@ -431,15 +383,15 @@ class JSONLCollector:
                     raise InputError("Capture sink did not acknowledge record.")
                 cursor["files"][key] = {**previous, "source_reset_required": True}
                 self._save_cursor(cursor)
-                forwarded += 1
+                progress.forwarded += 1
                 self.completed = False
-                os.close(descriptor)
-                continue
-            elif previous and (identity_changed or previous.get("unavailable")):
-                # Persist the replacement identity even when it has no new
-                # complete line.  This is safe only after the verified
-                # continuity check above and prevents a retry from treating the
-                # same snapshot as a fresh generation.
+                return True
+            identity_changed = (
+                previous.get("device") != stat.st_dev or previous.get("inode") != stat.st_ino
+            )
+            if previous and (identity_changed or previous.get("unavailable")):
+                # Save a verified replacement identity even without a complete
+                # next line, so retry cannot mistake it for a fresh generation.
                 state = {
                     **previous,
                     "device": stat.st_dev,
@@ -451,47 +403,79 @@ class JSONLCollector:
                 state.pop("unavailable", None)
                 cursor["files"][key] = state
                 self._save_cursor(cursor)
-            with os.fdopen(descriptor, "rb", closefd=True) as stream:
-                stream.seek(offset)
-                discard = not rotated and previous.get("discard_until_newline", False)
-                while True:
-                    if read_bytes >= MAX_BATCH_BYTES or forwarded >= MAX_BATCH_RECORDS:
-                        self.completed = False
-                        return forwarded
-                    start, raw = stream.tell(), stream.readline(MAX_LINE_BYTES + 1)
-                    read_bytes += len(raw)
-                    if not raw:
-                        break
-                    oversized = len(raw) > MAX_LINE_BYTES
-                    if not discard and not oversized and not raw.endswith(b"\n"):
-                        break
-                    next_offset = stream.tell()
-                    current = cursor["files"].get(key, previous)
-                    generation = int(current.get("generation", previous.get("generation", 0)))
-                    record_id = _identity(f"{key}:g{generation}", start, raw)
-                    if discard:
-                        event = None  # The previously acknowledged gap covers these bytes.
-                    elif oversized:
-                        event = _gap("collector", record_id, "oversized_line")
-                    else:
-                        event = self._decode(raw, record_id)
-                    discard = (discard or oversized) and not raw.endswith(b"\n")
-                    if event is not None:
-                        event = sanitize(event, max_text=32000).value
-                        if self.sink(event) is not True:
-                            raise InputError("Capture sink did not acknowledge record.")
-                        forwarded += 1
-                    cursor["files"][key] = {
-                        "device": stat.st_dev,
-                        "inode": stat.st_ino,
-                        "offset": next_offset,
-                        "generation": generation,
-                        **_fingerprints(stream.fileno(), next_offset),
-                        **_extend_prefix_chain(current, raw, start),
-                        "discard_until_newline": discard,
-                    }
-                    self._save_cursor(cursor)
-        return forwarded
+            stream.seek(offset)
+            return self._collect_lines(stream, stat, key, previous, cursor, progress)
+
+    def _record_unavailable(
+        self,
+        key: str,
+        previous: dict,
+        cursor: dict,
+        progress: _CollectionProgress,
+    ) -> None:
+        if previous.get("unavailable"):
+            return
+        offset = int(previous.get("offset", 0))
+        gap = _gap("collector", _identity(key, offset, b"missing"), "source_unavailable")
+        if self.sink(gap) is not True:
+            raise InputError("Capture sink did not acknowledge record.") from None
+        cursor["files"][key] = {
+            **previous,
+            "device": previous.get("device", 0),
+            "inode": previous.get("inode", 0),
+            "offset": offset,
+            "unavailable": True,
+        }
+        self._save_cursor(cursor)
+        progress.forwarded += 1
+
+    def _collect_lines(
+        self,
+        stream: BinaryIO,
+        stat: os.stat_result,
+        key: str,
+        previous: dict,
+        cursor: dict,
+        progress: _CollectionProgress,
+    ) -> bool:
+        discard = previous.get("discard_until_newline", False)
+        while True:
+            if progress.limit_reached:
+                self.completed = False
+                return False
+            start, raw = stream.tell(), stream.readline(MAX_LINE_BYTES + 1)
+            progress.read_bytes += len(raw)
+            if not raw:
+                return True
+            oversized = len(raw) > MAX_LINE_BYTES
+            if not discard and not oversized and not raw.endswith(b"\n"):
+                return True
+            next_offset = stream.tell()
+            current = cursor["files"].get(key, previous)
+            generation = int(current.get("generation", previous.get("generation", 0)))
+            record_id = _identity(f"{key}:g{generation}", start, raw)
+            if discard:
+                event = None  # The previously acknowledged gap covers these bytes.
+            elif oversized:
+                event = _gap("collector", record_id, "oversized_line")
+            else:
+                event = self._decode(raw, record_id)
+            discard = (discard or oversized) and not raw.endswith(b"\n")
+            if event is not None:
+                event = sanitize(event, max_text=32000).value
+                if self.sink(event) is not True:
+                    raise InputError("Capture sink did not acknowledge record.")
+                progress.forwarded += 1
+            cursor["files"][key] = {
+                "device": stat.st_dev,
+                "inode": stat.st_ino,
+                "offset": next_offset,
+                "generation": generation,
+                **_fingerprints(stream.fileno(), next_offset),
+                **_extend_prefix_chain(current, raw, start),
+                "discard_until_newline": discard,
+            }
+            self._save_cursor(cursor)
 
     def _decode(self, raw: bytes, record_id: str) -> dict:
         try:
@@ -503,6 +487,71 @@ class JSONLCollector:
             )
         except (UnicodeDecodeError, json.JSONDecodeError, RecursionError, ValueError):
             return _gap("collector", record_id, "invalid_json_line")
+
+
+def _open_capture_source(
+    path: Path,
+    expected: os.stat_result,
+    previous: dict,
+    offset: int,
+) -> tuple[int, dict[str, Any]]:
+    """Open a regular descriptor bound to the observed path, without following links."""
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NONBLOCK", 0)
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(path, flags)
+    except OSError as exc:
+        raise InputError("Capture source could not be opened safely; retry collection.") from exc
+    try:
+        opened = os.fstat(descriptor)
+        if not stat_module.S_ISREG(opened.st_mode) or (opened.st_dev, opened.st_ino) != (
+            expected.st_dev,
+            expected.st_ino,
+        ):
+            raise InputError("Capture source changed or is not a regular file; retry collection.")
+        fingerprints = _fingerprints(
+            descriptor,
+            offset,
+            prefix_length=previous.get("prefix_length"),
+        )
+    except Exception:
+        os.close(descriptor)
+        raise
+    return descriptor, fingerprints
+
+
+def _source_requires_reset(
+    previous: dict,
+    stat: os.stat_result,
+    fingerprints: dict,
+    descriptor: int,
+    offset: int,
+) -> bool:
+    """Acknowledge a rewrite barrier unless prior source continuity is proven.
+
+    Replacement inodes retain their generation only when the acknowledged
+    prefix, boundary and full-prefix chain agree. Legacy same-inode checkpoints
+    keep their historical behavior; a missing zero-offset source may appear.
+    """
+    identity_changed = previous.get("device") != stat.st_dev or previous.get("inode") != stat.st_ino
+    checkpoint_matches = _fingerprints_match(previous, fingerprints)
+    checkpoint_is_verifiable = isinstance(
+        previous.get("prefix_fingerprint", previous.get("fingerprint")),
+        str,
+    )
+    replacement_continuity = (
+        identity_changed
+        and checkpoint_is_verifiable
+        and checkpoint_matches
+        and _prefix_chain_matches(previous, descriptor, offset)
+    )
+    if not previous:
+        return False
+    if stat.st_size < offset:
+        return True
+    if identity_changed:
+        return not (replacement_continuity or (previous.get("unavailable") and offset == 0))
+    return checkpoint_is_verifiable and not checkpoint_matches
 
 
 def _fingerprints(

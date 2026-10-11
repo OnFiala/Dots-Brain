@@ -22,7 +22,7 @@ from pathlib import Path
 from . import __version__
 from .auth import authenticate, issue_client, read_connection, revoke_client
 from .bridge import verify_connection
-from .errors import BusyError, InputError, StateError
+from .errors import BusyError, CapabilityError, InputError, StateError
 from .installation_state import ensure_enabled, resume_uninstalled
 from .local import lock_status, locked, read_json, write_json
 from .store import Store
@@ -323,7 +323,8 @@ def load_state(store: Store) -> dict:
     except (OSError, ValueError, InputError):
         raise StateError(
             "Managed service state is corrupt; it was preserved. "
-            "Identify the running process before repairing service.json."
+            "Identify the running process before repairing service.json. Next command: "
+            + operator_command(store, "doctor")
         ) from None
 
 
@@ -345,12 +346,23 @@ def credential(
     )
     if path.exists():
         if path.is_symlink():
-            raise InputError("The connection file must not be a symbolic link.")
+            raise StateError(
+                "The connection file must not be a symbolic link. Next command: "
+                + operator_command(store, "doctor")
+            )
         try:
             current = read_connection(path)
         except InputError:
             if not replace_invalid:
-                raise
+                raise StateError(
+                    f"Existing client credential {path} is corrupt; it was preserved. "
+                    "Review its grants, then preserve the file with mv -n "
+                    + shlex.quote(str(path))
+                    + " "
+                    + shlex.quote(str(path) + ".before-replacement")
+                    + " and retry the original command. Next command: "
+                    + operator_command(store, "client list")
+                ) from None
             path.unlink()
             current = None
         if current is None:
@@ -361,7 +373,10 @@ def credential(
         if policy is not None:
             expected_projects = None if projects is None else tuple(sorted(set(projects)))
             if policy.principal != f"local-client:{current['client_id']}":
-                raise StateError("Credential identity does not match its authenticated client.")
+                raise StateError(
+                    "Credential identity does not match its authenticated client. Next command: "
+                    + operator_command(store, "client list")
+                )
             same_permissions = policy.projects == expected_projects and policy.scopes == frozenset(
                 scopes
             )
@@ -394,7 +409,11 @@ def credential(
                 store, name=name, scopes=scopes, projects=projects, days=365, output=path, url=url
             )["client_id"]
         if not replace_invalid:
-            raise InputError("Existing client credential is expired or invalid; it was preserved.")
+            raise StateError(
+                "Existing client credential is expired or invalid; it was preserved. "
+                "Review its grant before replacing the credential file. Next command: "
+                + operator_command(store, "client list")
+            )
         with contextlib.suppress(InputError):
             revoke_client(store, current["client_id"])
         path.unlink()
@@ -407,11 +426,15 @@ def stop_process(store: Store, state: dict) -> None:
     if not active(state):
         return
     if not owns_process(store, state):
-        raise InputError(
-            "Managed service state does not identify this installation; it was preserved."
+        raise StateError(
+            "Managed service state does not identify this installation; it was preserved. "
+            "Next command: " + operator_command(store, "doctor")
         )
     if not hasattr(os, "pidfd_open") or not hasattr(signal, "pidfd_send_signal"):
-        raise InputError("Safe process stopping requires Linux pidfd support.")
+        raise CapabilityError(
+            "Safe process stopping requires Linux pidfd support. Next command: "
+            + operator_command(store, "doctor")
+        )
     try:
         fd = os.pidfd_open(state["pid"])
     except ProcessLookupError:
@@ -422,7 +445,10 @@ def stop_process(store: Store, state: dict) -> None:
         if not owns_process(store, state):
             if exited.poll(0):
                 return
-            raise InputError("Managed process identity changed; it was preserved.")
+            raise StateError(
+                "Managed process identity changed; it was preserved. Next command: "
+                + operator_command(store, "doctor")
+            )
         with contextlib.suppress(ProcessLookupError):
             signal.pidfd_send_signal(fd, signal.SIGTERM)
         # /proc command/executable metadata can disappear before leases are
@@ -431,7 +457,10 @@ def stop_process(store: Store, state: dict) -> None:
             with contextlib.suppress(ProcessLookupError):
                 signal.pidfd_send_signal(fd, signal.SIGKILL)
             if not exited.poll(3000):
-                raise InputError("The managed service did not stop after SIGKILL.")
+                raise BusyError(
+                    "The managed service did not stop after SIGKILL. Next command: "
+                    + operator_command(store, "doctor")
+                )
     finally:
         os.close(fd)
     with contextlib.suppress(ChildProcessError):
@@ -492,7 +521,10 @@ def reserve_listener(port: int | None, previous: dict):
                     time.sleep(0.05)
                     continue
                 if port is not None or previous:
-                    raise InputError("The configured local port is already occupied.") from None
+                    raise BusyError(
+                        "The configured local port is already occupied. Next command: "
+                        f"lsof -nP -iTCP:{selected}"
+                    ) from None
                 listener.bind(("127.0.0.1", 0))
                 break
         listener.listen(128)
@@ -508,7 +540,10 @@ def start_daemon(store: Store, previous: dict, *, port, semantic, issuer) -> dic
         verify_model_artifacts(store)  # Do not load a second model in the parent.
     log_path = store.directory / "service.log"
     if log_path.is_symlink():
-        raise InputError("Managed service log must not be a symbolic link.")
+        raise StateError(
+            "Managed service log must not be a symbolic link. Next command: "
+            + operator_command(store, "doctor")
+        )
     if log_path.exists() and log_path.stat().st_size > 1024 * 1024:
         os.replace(log_path, log_path.with_name("service.log.1"))
     with reserve_listener(port, previous) as listener:
@@ -599,7 +634,7 @@ def verify_daemon(store: Store, state: dict) -> None:
                     "Recheck the owner and stop it with its supervisor; next command: "
                     + next_command
                 )
-            raise InputError(
+            raise StateError(
                 "The managed service did not pass its MCP readiness check. Next command: "
                 + operator_command(store, "doctor")
                 + "; inspect the local service log with tail -n 40 "
@@ -614,8 +649,9 @@ def up(
     from .oauth import configuration
 
     if sys.platform != "linux":
-        raise InputError(
-            "Background startup currently requires Linux; use supervised serve elsewhere."
+        raise CapabilityError(
+            "Background startup currently requires Linux; use supervised serve elsewhere. "
+            "Next command: " + operator_command(store, "serve --help")
         )
     if port is not None and not 0 <= port <= 65535:
         raise InputError("Port must be between 0 and 65535; zero selects an available port.")
@@ -633,14 +669,20 @@ def up(
             or type(state.get("semantic")) is not bool
             or state.get("url") != f"http://127.0.0.1:{state['port']}/mcp"
         ):
-            raise StateError("Managed service endpoint/options are invalid; state was preserved.")
+            raise StateError(
+                "Managed service endpoint/options are invalid; state was preserved. "
+                "Next command: " + operator_command(store, "doctor")
+            )
         oauth = configuration(store)
         issuer = oauth["issuer"] if oauth else None
         managed = owns_process(store, state)
         if active(state) and not managed:
-            raise InputError("Managed service state refers to a foreign process; it was preserved.")
+            raise StateError(
+                "Managed service state refers to a foreign process; it was preserved. "
+                "Next command: " + operator_command(store, "doctor")
+            )
         if managed and (state.get("version") != __version__ or state.get("oauth_issuer") != issuer):
-            raise InputError(
+            raise StateError(
                 f"Managed service PID {state['pid']} version or OAuth issuer differs. "
                 "Next command: " + operator_command(store, "down")
             )
@@ -648,7 +690,7 @@ def up(
             if port not in (None, 0, state["port"]) or (
                 semantic is not None and semantic != state["semantic"]
             ):
-                raise InputError(
+                raise StateError(
                     f"Managed service PID {state['pid']} has different runtime options. "
                     "Next command: " + operator_command(store, "down")
                 )
