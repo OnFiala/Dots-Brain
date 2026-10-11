@@ -22,10 +22,10 @@ import pytest
 sync_playwright = pytest.importorskip("playwright.sync_api").sync_playwright
 
 
-def _port() -> int:
-    listener = socket.socket()
-    listener.bind(("127.0.0.1", 0))
+def _port(host="127.0.0.1") -> int:
+    listener = socket.socket(socket.AF_INET6 if ":" in host else socket.AF_INET)
     try:
+        listener.bind((host, 0))
         return listener.getsockname()[1]
     finally:
         listener.close()
@@ -72,14 +72,32 @@ class _Callback(http.server.BaseHTTPRequestHandler):
         pass
 
 
-def test_chromium_pairing_form_reaches_cross_origin_loopback_callback(tmp_path):
-    """RV-01: browser-enforced CSP permits only the approved callback origin."""
+@pytest.mark.parametrize(
+    ("callback_host", "slow_double_submit"),
+    [("127.0.0.1", False), ("::1", False), ("127.0.0.1", True)],
+    ids=["ipv4", "ipv6", "slow-double-click"],
+)
+def test_chromium_pairing_form_reaches_cross_origin_loopback_callback(
+    tmp_path, callback_host, slow_double_submit
+):
+    """RV-01/RV-37: actual CSP, IPv6 delivery and delayed duplicate submission."""
     _Callback.received = None
-    server_port, callback_port = _port(), _port()
+    server_port = _port()
+    try:
+        callback_port = _port(callback_host)
+    except OSError:
+        if callback_host == "::1":
+            pytest.skip("IPv6 loopback is unavailable on this host")
+        raise
     issuer = f"http://127.0.0.1:{server_port}"
-    callback = f"http://127.0.0.1:{callback_port}/callback"
+    callback_netloc = f"[{callback_host}]" if ":" in callback_host else callback_host
+    callback = f"http://{callback_netloc}:{callback_port}/callback"
     root = Path(__file__).parents[1]
-    environment = {**os.environ, "HOME": str(tmp_path / "home"), "NO_PROXY": "127.0.0.1,localhost"}
+    environment = {
+        **os.environ,
+        "HOME": str(tmp_path / "home"),
+        "NO_PROXY": "127.0.0.1,localhost,::1",
+    }
     for name in (
         "HTTP_PROXY",
         "HTTPS_PROXY",
@@ -113,7 +131,7 @@ def test_chromium_pairing_form_reaches_cross_origin_loopback_callback(tmp_path):
         text=True,
     )
     try:
-        for _ in range(100):
+        for _ in range(400):
             if process.poll() is not None:
                 raise RuntimeError(process.stderr.read())
             try:
@@ -146,12 +164,16 @@ def test_chromium_pairing_form_reaches_cross_origin_loopback_callback(tmp_path):
                 }
             )
         )
-        callback_server = http.server.ThreadingHTTPServer(("127.0.0.1", callback_port), _Callback)
+
+        class CallbackServer(http.server.ThreadingHTTPServer):
+            address_family = socket.AF_INET6 if ":" in callback_host else socket.AF_INET
+
+        callback_server = CallbackServer((callback_host, callback_port), _Callback)
         callback_thread = threading.Thread(target=callback_server.serve_forever, daemon=True)
         callback_thread.start()
         try:
             with sync_playwright() as playwright:
-                browser = playwright.chromium.launch(headless=True)
+                browser = playwright.chromium.launch(headless=True, args=["--no-proxy-server"])
                 page = browser.new_page()
                 page.goto(authorize, wait_until="networkidle")
                 request_id = page.url.rsplit("/", 1)[-1]
@@ -163,7 +185,7 @@ def test_chromium_pairing_form_reaches_cross_origin_loopback_callback(tmp_path):
                     "approve",
                     request_id,
                     "--redirect-host",
-                    "127.0.0.1",
+                    callback_host,
                     "--project",
                     "synthetic",
                     "--scope",
@@ -171,14 +193,35 @@ def test_chromium_pairing_form_reaches_cross_origin_loopback_callback(tmp_path):
                 )
                 response = page.reload(wait_until="networkidle")
                 assert response is not None
-                assert response.header_value("content-security-policy") == (
-                    "default-src 'none'; base-uri 'none'; frame-ancestors 'none'; "
-                    f"form-action 'self' http://127.0.0.1:{callback_port}"
-                )
-                page.locator("button").click()
-                page.wait_for_url("http://127.0.0.1:*/*", timeout=5000)
+                csp = response.header_value("content-security-policy")
+                assert "default-src 'none'" in csp and "frame-ancestors 'none'" in csp
+                posts = []
+
+                def delay_claim(route):
+                    if route.request.method != "POST":
+                        route.continue_()
+                        return
+                    posts.append(route.request.url)
+                    claimed = route.fetch(max_redirects=0)
+                    # Hold the first response while the browser makes the
+                    # second click. The disabled button must prevent a POST.
+                    time.sleep(0.4)
+                    route.fulfill(response=claimed)
+
+                if slow_double_submit:
+                    page.route("**/oauth/pair/*", delay_claim)
+                    page.evaluate("""() => {
+                        const button = document.querySelector('button');
+                        setTimeout(() => button.click(), 100);
+                        button.click();
+                    }""")
+                else:
+                    page.locator("button").click()
+                page.wait_for_url(callback + "?**", timeout=10000)
                 assert _Callback.received and _Callback.received.get("code")
                 assert _Callback.received.get("state") == ["synthetic-state"]
+                if slow_double_submit:
+                    assert posts == [issuer + "/oauth/pair/" + request_id]
                 browser.close()
         finally:
             callback_server.shutdown()

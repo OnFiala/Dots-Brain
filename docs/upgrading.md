@@ -19,6 +19,27 @@ release tag for a production upgrade. A development branch is not a release.
 Use a reviewed commit or published tag. This unreleased candidate is not a normal
 upgrade path and this documentation makes no production-upgrade claim.
 
+### HTTP and OAuth listener upgrade
+
+Update the supervisor's command before reconnecting a public gateway. Use one
+service with `serve --transport http --port 8765 --public-port 8787`; local static
+clients keep port 8765 and the gateway must target only port 8787. A previous
+single public listener can still use `--public-gateway`, but cannot also serve
+private static credentials on that socket. Do not run a second service for the
+same store. See [OAuth](oauth.md) for the full policy and diagnostics.
+
+```sh
+dots-brain --data-dir /absolute/private/memory oauth status
+dots-brain --data-dir /absolute/private/memory oauth recover
+dots-brain --data-dir /absolute/private/memory serve --transport http --port 8765 --public-port 8787
+```
+
+`oauth recover` is a no-op when no configuration journal exists. It restores a
+valid interrupted transition without discarding prior grants. Invalid journals
+remain for explicit owner recovery. On first HTTP startup, absent legacy listener
+diagnostics are replaced by version-1 `http-listeners.json`; this derived state
+does not change the database schema, tokens or listener authorization policy.
+
 ## Schema v1 or v2 to v3
 
 The `0.4.0a3` candidate requires schema v3. The earlier unreleased `0.4.0a2`

@@ -89,7 +89,7 @@ def request_code(
     assert http.get(pairing, follow_redirects=False).status_code == 200
     if not approve:
         return request_id, pairing
-    state.decide(request_id, projects=["work"])
+    state.decide(request_id, redirect_host="127.0.0.1", projects=["work"])
     result = http.post(pairing, follow_redirects=False)
     assert result.status_code == 303
     query = parse_qs(urlsplit(result.headers["location"]).query)
@@ -158,7 +158,9 @@ def test_registration_without_scope_requires_owner_approval_for_memory_access(in
         with store.connection() as db:
             for table in ("oauth_codes", "oauth_grants", "oauth_tokens"):
                 assert db.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] == 0
-        state.decide(request_id, projects=["work"], scopes=["memory:read"])
+        state.decide(
+            request_id, redirect_host="127.0.0.1", projects=["work"], scopes=["memory:read"]
+        )
         redirect = http.post(pairing, follow_redirects=False)
         code = parse_qs(urlsplit(redirect.headers["location"]).query)["code"][0]
         exchanged = http.post(
@@ -237,7 +239,9 @@ def test_pairing_get_and_head_do_not_consume_and_post_is_browser_bound(installat
         request_id, pairing = request_code(
             browser, client, state, approve=False, scopes="memory:read"
         )
-        state.decide(request_id, projects=["work"], scopes=["memory:read"])
+        state.decide(
+            request_id, redirect_host="127.0.0.1", projects=["work"], scopes=["memory:read"]
+        )
         shown = browser.get(pairing, follow_redirects=False)
         assert shown.status_code == 200
         assert "Synthetic test client" in shown.text
@@ -475,15 +479,22 @@ def test_pending_consent_is_local_exact_and_requires_explicit_deletion_permissio
         assert pending["requests"][0]["request_id"] == request_id
         assert http.post("/oauth/approve", json={"request_id": request_id}).status_code == 404
         with pytest.raises(InputError, match="allow-forget"):
-            state.decide(request_id, projects=["work"], scopes=["memory:read", "memory:forget"])
-        narrowed = state.decide(request_id, projects=["work"])
+            state.decide(
+                request_id,
+                redirect_host="127.0.0.1",
+                projects=["work"],
+                scopes=["memory:read", "memory:forget"],
+            )
+        narrowed = state.decide(request_id, redirect_host="127.0.0.1", projects=["work"])
         assert narrowed["scopes"] == ["memory:read"]
         state.decide(request_id, deny=True)
         denied = http.post(pairing, follow_redirects=False)
         assert parse_qs(urlsplit(denied.headers["location"]).query)["error"] == ["access_denied"]
         assert http.get(pairing).status_code == 410
         with pytest.raises(InputError, match="unavailable"):
-            state.decide(request_id, projects=["work"], allow_forget=True)
+            state.decide(
+                request_id, redirect_host="127.0.0.1", projects=["work"], allow_forget=True
+            )
 
 
 def test_concurrent_code_exchange_issues_at_most_one_grant(installation):
@@ -511,7 +522,9 @@ def test_pairing_provenance_survives_exchange_restart_refresh_and_revocation(ins
         client = register(http)
         verifier = secrets.token_urlsafe(48)
         request_id, pairing = request_code(http, client, state, approve=False, verifier=verifier)
-        state.decide(request_id, projects=["work"], scopes=["memory:read"])
+        state.decide(
+            request_id, redirect_host="127.0.0.1", projects=["work"], scopes=["memory:read"]
+        )
         response = http.post(pairing, follow_redirects=False)
         code = parse_qs(urlsplit(response.headers["location"]).query)["code"][0]
         assert http.get(pairing, follow_redirects=False).status_code == 410
@@ -653,7 +666,7 @@ def test_provenance_write_failure_rolls_back_consumption_and_allows_exact_retry(
     with TestClient(app, base_url=ISSUER) as http:
         client = register(http)
         request_id, _ = request_code(http, client, state, approve=False)
-        state.decide(request_id, projects=["work"])
+        state.decide(request_id, redirect_host="127.0.0.1", projects=["work"])
         if stage == "claim":
             table = "oauth_code_provenance"
 
@@ -939,7 +952,7 @@ def test_expired_requests_codes_tokens_and_owner_revocation(installation):
         with store.connection(write=True) as db:
             db.execute("UPDATE oauth_requests SET expires=0")
         with pytest.raises(InputError, match="expired"):
-            state.decide(request_id, projects=["work"])
+            state.decide(request_id, redirect_host="127.0.0.1", projects=["work"])
         assert http.get(pairing).status_code == 410
         form = request_code(http, client, state)
         with store.connection(write=True) as db:
@@ -1045,9 +1058,9 @@ def test_registration_and_pending_capacity_fail_cleanly_and_expired_entries_reco
                 "response_types": ["code"],
             },
         )
-        assert response.status_code == 201
+        assert response.status_code == 400
+        assert response.json()["error"] == "invalid_client_metadata"
         assert state.get_client(client["client_id"]) is not None
-        client = response.json()
         request_code(http, client, state, approve=False)
         response = http.get(
             "/authorize",
@@ -1276,7 +1289,7 @@ def test_pairing_link_cannot_bind_a_second_browser_even_before_first_visit(insta
         )
         pairing = response.headers["location"]
         request_id = pairing.rsplit("/", 1)[-1]
-        state.decide(request_id, projects=["work"])
+        state.decide(request_id, redirect_host="127.0.0.1", projects=["work"])
         cookies = dict(browser.cookies)
         browser.cookies.clear()  # An independent browser has no authorizing cookie.
         assert browser.get(pairing, follow_redirects=False).status_code == 200
@@ -1365,13 +1378,18 @@ def test_pairing_csp_permits_the_validated_callback_origin(installation):
         request_id, pairing = request_code(
             browser, client, state, approve=False, scopes="memory:read"
         )
-        state.decide(request_id, projects=["work"], scopes=["memory:read"])
+        state.decide(
+            request_id, redirect_host="127.0.0.1", projects=["work"], scopes=["memory:read"]
+        )
         page = browser.get(pairing, follow_redirects=False)
         assert page.status_code == 200
-        assert page.headers["content-security-policy"] == (
+        policy = page.headers["content-security-policy"]
+        assert policy.startswith(
             "default-src 'none'; base-uri 'none'; frame-ancestors 'none'; "
-            "form-action 'self' http://127.0.0.1:9999"
+            "form-action 'self' http://127.0.0.1:9999; script-src 'nonce-"
         )
+        nonce = policy.rsplit("'nonce-", 1)[1].removesuffix("'")
+        assert f'<script nonce="{nonce}">' in page.text
 
 
 def test_onboarding_treats_far_future_or_wrong_version_marker_as_closed(installation):
@@ -1438,7 +1456,7 @@ def test_existing_client_can_reauthorize_at_live_client_capacity(installation, m
         assert {row["client_id"] for row in state.pending()["requests"]} == {existing["client_id"]}
 
 
-def test_purge_removes_ungranted_pending_clients_before_selecting_other_clients(installation):
+def test_purge_keeps_pending_clients_and_removes_ungranted_idle_clients(installation):
     _, state, _, app = installation
     with TestClient(app, base_url=ISSUER) as http:
         ordinary = register(http, name="ordinary")
@@ -1446,8 +1464,8 @@ def test_purge_removes_ungranted_pending_clients_before_selecting_other_clients(
         request_code(http, pending, state, approve=False)
     state.purge()
     assert state.get_client(ordinary["client_id"]) is None
-    assert state.get_client(pending["client_id"]) is None
-    assert state.pending()["requests"] == []
+    assert state.get_client(pending["client_id"]) is not None
+    assert {row["client_id"] for row in state.pending()["requests"]} == {pending["client_id"]}
 
 
 def _state_directory_bytes(directory):
@@ -1466,17 +1484,19 @@ def test_configuration_and_doctor_inspect_valid_journal_without_mutating_state(i
         json.dumps({"version": 1, "id": transition, "previous": previous, "next": previous})
     )
     with store.connection(write=True) as db:
+        db.execute("DELETE FROM oauth_config_commits")
         db.execute("INSERT INTO oauth_config_commits(id) VALUES (?)", (transition,))
     before = _state_directory_bytes(store.directory)
     assert configuration(store) == previous
     assert _state_directory_bytes(store.directory) == before
-    assert doctor(store)["checks"]["oauth"] == {"state": "configured"}
+    assert doctor(store)["checks"]["oauth"]["state"] == "configured"
+    assert doctor(store)["checks"]["oauth"]["reason"] == "recovery_pending"
     assert _state_directory_bytes(store.directory) == before
     assert configure(store, ISSUER)["state"] == "configured"
     assert not (store.directory / "oauth-config-pending.json").exists()
 
 
-def test_ambiguous_uncommitted_journal_stays_fail_closed_until_owner_discards_it(installation):
+def test_malformed_journal_stays_invalid_until_owner_discards_it(installation):
     from dots_brain.errors import StateError
 
     store, _, _, _ = installation
@@ -1487,16 +1507,17 @@ def test_ambiguous_uncommitted_journal_stays_fail_closed_until_owner_discards_it
             {
                 "version": 1,
                 "id": "b" * 32,
-                "previous": {"version": 1, "issuer": "https://attacker.example"},
+                "previous": {"version": 1, "issuer": "invalid issuer"},
                 "next": original,
             }
         )
     )
     before = _state_directory_bytes(store.directory)
-    assert configuration(store) is None
-    assert doctor(store)["checks"]["oauth"] == {"state": "not_configured"}
+    with pytest.raises(StateError, match="oauth configure"):
+        configuration(store)
+    assert doctor(store)["checks"]["oauth"]["state"] == "invalid"
     assert _state_directory_bytes(store.directory) == before
-    with pytest.raises(StateError, match="ambiguous"):
+    with pytest.raises(StateError, match="journal is invalid"):
         configure(store, ISSUER)
     assert (
         configure(store, ISSUER, discard_journal=True, replace_issuer=True)["state"] == "configured"
@@ -1576,6 +1597,8 @@ def test_public_gateway_cannot_use_stdio_or_the_managed_probe_listener(tmp_path,
 
 
 def test_serve_cli_applies_public_gateway_policy(installation, monkeypatch, tmp_path):
+    import contextlib
+
     import uvicorn
 
     from dots_brain.auth import issue_client
@@ -1594,13 +1617,16 @@ def test_serve_cli_applies_public_gateway_policy(installation, monkeypatch, tmp_
     token = json.loads(credential.read_text(encoding="utf-8"))["token"]
     observed = []
 
-    def inspect_app(app, **binding):
-        assert binding["host"] == "127.0.0.1"
-        with TestClient(app, base_url=ISSUER) as http:
+    def inspect_app(server, sockets=None):
+        assert server.config.proxy_headers is False
+        with TestClient(server.config.app, base_url=ISSUER) as http:
             response = http.post("/mcp", json={}, headers={"Authorization": "Bearer " + token})
             observed.append(response.status_code)
 
-    monkeypatch.setattr(uvicorn, "run", inspect_app)
+    monkeypatch.setattr(uvicorn.Server, "run", inspect_app)
+    monkeypatch.setattr(
+        "dots_brain.http_runtime.listener_sockets", lambda *args: contextlib.nullcontext([])
+    )
     args = parser().parse_args(
         ["--data-dir", str(store.directory), "serve", "--transport", "http", "--public-gateway"]
     )
@@ -1657,6 +1683,9 @@ def test_purge_retains_historical_grants_and_their_provenance(installation, term
         db.execute(
             "UPDATE oauth_grants SET " + ("revoked=1" if terminal == "revoked" else "expires=0")
         )
+        db.execute(
+            "UPDATE oauth_requests SET expires=0 WHERE client_id=?", (ungranted["client_id"],)
+        )
         grants = [tuple(row) for row in db.execute("SELECT * FROM oauth_grants")]
         provenance = [tuple(row) for row in db.execute("SELECT * FROM oauth_grant_provenance")]
     result = state.purge()
@@ -1690,7 +1719,9 @@ def test_conflicting_second_approval_preserves_original_request_and_scopes(insta
         request_id, _ = request_code(
             http, client, state, approve=False, scopes="memory:read memory:write"
         )
-        state.decide(request_id, projects=["work"], scopes=["memory:read"])
+        state.decide(
+            request_id, redirect_host="127.0.0.1", projects=["work"], scopes=["memory:read"]
+        )
         with store.connection() as db:
             before = tuple(
                 db.execute(
@@ -1700,7 +1731,9 @@ def test_conflicting_second_approval_preserves_original_request_and_scopes(insta
                 ).fetchone()
             )
         with pytest.raises(InputError, match="different approval"):
-            state.decide(request_id, projects=["other"], scopes=["memory:write"])
+            state.decide(
+                request_id, redirect_host="127.0.0.1", projects=["other"], scopes=["memory:write"]
+            )
         with store.connection() as db:
             after = tuple(
                 db.execute(

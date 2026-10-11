@@ -290,6 +290,7 @@ def _add_oauth_commands(commands):
         help="Explicitly revoke old grants when changing the issuer.",
     )
     oauth_actions.add_parser("disable")
+    oauth_actions.add_parser("recover", help="Recover an interrupted OAuth configuration journal.")
     for name in ("status", "pending", "grants", "clients", "purge"):
         action = oauth_actions.add_parser(name)
         if name == "pending":
@@ -358,6 +359,11 @@ def _add_service_commands(commands):
         "--public-gateway",
         action="store_true",
         help="Accept OAuth grants only on this HTTP listener.",
+    )
+    serve.add_argument(
+        "--public-port",
+        type=port_number,
+        help="Add a loopback OAuth-only listener for a gateway; --port remains private.",
     )
     serve.add_argument(
         "--semantic", action="store_true", help="Enable the prepared local embedding model."
@@ -590,6 +596,7 @@ def main() -> None:
                 "partial",
                 "capture_partial",
                 "capture_recovery_required",
+                "invalid",
             }:
                 raise SystemExit(1)
     except Exception as exc:

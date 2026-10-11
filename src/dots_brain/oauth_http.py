@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import html
+import json
 import logging
 import re
+import secrets
 import time
 from collections import OrderedDict
 from urllib.parse import urlencode, urlsplit
@@ -31,7 +33,7 @@ from starlette.routing import Route, Router
 
 from .auth import SCOPES
 from .errors import InputError
-from .oauth import OAuthProvider, OAuthStore
+from .oauth import OAuthProvider, OAuthStore, redirect_origin
 
 NO_STORE = {
     "Cache-Control": "no-store",
@@ -43,6 +45,26 @@ NO_STORE = {
         "default-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
     ),
 }
+
+
+def _claimed_redirect(url):
+    """IPv6 is not a CSP host-source; navigate from a protected response instead."""
+    origin = redirect_origin(url)
+    if ":" not in urlsplit(origin).hostname:
+        return RedirectResponse(url, status_code=303, headers=NO_STORE)
+    nonce = secrets.token_urlsafe(24)
+    encoded_url = json.dumps(url).replace("<", "\\u003c")
+    return HTMLResponse(
+        '<!doctype html><html lang="en"><meta charset="utf-8">'
+        "<title>Return to your AI tool</title>"
+        f'<a href="{html.escape(url, quote=True)}">Return to your AI tool</a>'
+        f'<script nonce="{nonce}">window.location.replace({encoded_url});</script></html>',
+        headers={
+            **NO_STORE,
+            "Content-Security-Policy": NO_STORE["Content-Security-Policy"]
+            + f"; script-src 'nonce-{nonce}'",
+        },
+    )
 
 
 class OnboardingLimiter:
@@ -103,11 +125,18 @@ def routes_app(state: OAuthStore):
                 return JSONResponse(
                     {"error": "invalid_client_metadata"}, status_code=415, headers=NO_STORE
                 )
-            if not isinstance(await request.json(), dict):
+            metadata = await request.json()
+            if not isinstance(metadata, dict):
                 return JSONResponse(
                     {"error": "invalid_client_metadata"}, status_code=400, headers=NO_STORE
                 )
-        except (ValueError, UnicodeError, TypeError, RecursionError):
+            # Validate raw input before the SDK's URL model can normalize away
+            # whitespace/control characters or a malformed host.
+            redirects = metadata.get("redirect_uris", [])
+            if isinstance(redirects, list):
+                for uri in redirects:
+                    redirect_origin(uri)
+        except (InputError, ValueError, UnicodeError, TypeError, RecursionError):
             return JSONResponse(
                 {"error": "invalid_client_metadata"}, status_code=400, headers=NO_STORE
             )
@@ -203,7 +232,7 @@ def routes_app(state: OAuthStore):
                     state.claim, request_id, provided_nonce, require_browser=True
                 )
                 if result["state"] == "redirect":
-                    response = RedirectResponse(result["url"], status_code=303, headers=NO_STORE)
+                    response = _claimed_redirect(result["url"])
                     response.delete_cookie(cookie_name, path=f"/oauth/pair/{request_id}")
                     return response
                 if result["state"] == "browser_mismatch":
@@ -227,16 +256,14 @@ def routes_app(state: OAuthStore):
             return HTMLResponse(
                 "<h1>OAuth onboarding is unavailable.</h1>", status_code=503, headers=NO_STORE
             )
-        if result["state"] == "redirect":
-            # GET and HEAD intentionally never consume an approved grant.
-            return RedirectResponse(result["url"], status_code=303, headers=NO_STORE)
         if result["state"] == "expired":
             return HTMLResponse(
                 "<h1>This connection request has expired.</h1>", status_code=410, headers=NO_STORE
             )
         request_id_html = html.escape(result["request_id"])
         client_name = html.escape(result["untrusted_client_name"])
-        origin = html.escape(result["redirect_origin"])
+        safe_origin = redirect_origin(result["redirect_origin"])
+        origin = html.escape(safe_origin)
         requested = "".join(
             f"<li>{html.escape(scope)}</li>" for scope in result["requested_scopes"]
         )
@@ -250,7 +277,17 @@ def routes_app(state: OAuthStore):
         submit = (
             ""
             if result["state"] not in {"approved", "denied"} or not result["browser_bound"]
-            else '<form method="post"><button type="submit">Continue</button></form>'
+            else '<form id="claim" method="post"><button type="submit">Continue</button></form>'
+        )
+        nonce = secrets.token_urlsafe(24)
+        submit_script = (
+            f'<script nonce="{nonce}">'
+            'const form=document.getElementById("claim");let submitted=false;'
+            'form.addEventListener("submit",event=>{'
+            "if(submitted){event.preventDefault();return;}submitted=true;"
+            'form.querySelector("button").disabled=true;});</script>'
+            if submit
+            else ""
         )
         browser_note = (
             ""
@@ -275,7 +312,7 @@ def routes_app(state: OAuthStore):
 <p>Request ID: <code>{request_id_html}</code></p>
 <p>This request expires after five minutes. Never share memory credentials.</p>
 {refresh_note}
-{browser_note}{submit}
+{browser_note}{submit}{submit_script}
 </main></body></html>"""
         response = HTMLResponse(
             page,
@@ -283,21 +320,16 @@ def routes_app(state: OAuthStore):
                 **NO_STORE,
                 "Content-Security-Policy": (
                     "default-src 'none'; base-uri 'none'; frame-ancestors 'none'; "
-                    f"form-action 'self' {origin}"
+                    # IPv6 callbacks use a post-claim navigation response, so
+                    # the form needs only its own origin in that case.
+                    "form-action 'self'"
+                    + ("" if ":" in urlsplit(safe_origin).hostname else f" {safe_origin}")
+                    + (f"; script-src 'nonce-{nonce}'" if submit else "")
                 ),
                 "X-Frame-Options": "DENY",
                 "X-Content-Type-Options": "nosniff",
             },
         )
-        if result["browser_nonce"] is not None:
-            response.set_cookie(
-                cookie_name,
-                result["browser_nonce"],
-                httponly=True,
-                samesite="lax",
-                secure=urlsplit(state.issuer).scheme == "https",
-                path=f"/oauth/pair/{request_id}",
-            )
         return response
 
     routes = [Route("/authorize", authorize, methods=["GET", "POST"])]

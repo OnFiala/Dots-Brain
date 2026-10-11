@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
+import shlex
 import sqlite3
 import tempfile
 from pathlib import Path
@@ -67,19 +69,27 @@ def run_storage(store, args):
 
 
 def run_oauth(store, args):
-    from .oauth import OAuthStore, configuration, configure, record_auth_change, revoke_all
+    from .oauth import (
+        OAuthStore,
+        configuration_status,
+        configure,
+        record_auth_change,
+        recover_configuration,
+        revoke_all,
+    )
 
     if args.oauth_action == "status":
-        config = configuration(store)
         return {
-            "state": "configured" if config else "not_configured",
-            "issuer": config["issuer"] if config else None,
+            "issuer": None,
+            **configuration_status(store),
             "service_disabled": marker_path(store).exists(),
             "public_ingress": "not_verified",
             "secret_isolation": False,
         }
     store.status()
     with locked(store.directory / "installation.lock"):
+        if args.oauth_action == "recover":
+            return recover_configuration(store)
         if args.oauth_action == "configure":
             return {
                 **configure(
@@ -95,6 +105,8 @@ def run_oauth(store, args):
                 revoked = revoke_all(db)
                 record_auth_change(store, db, "oauth_disabled", details=revoked)
             (store.directory / "oauth.json").unlink(missing_ok=True)
+            (store.directory / "oauth-config-pending.json").unlink(missing_ok=True)
+            (store.directory / "oauth-onboarding.json").unlink(missing_ok=True)
             sync_directory(store.directory)
             return {"state": "oauth_disabled", **revoked, "restart_required": True}
         state = OAuthStore(store)
@@ -127,7 +139,8 @@ def run_oauth(store, args):
 def doctor(store):
     """Return independent diagnoses, including an unreadable or older database."""
     from .database_checks import validate_snapshot
-    from .oauth import configuration
+    from .http_runtime import listener_status
+    from .oauth import configuration_status
     from .runtime import managed_status
     from .schema import SCHEMA_VERSION
 
@@ -139,7 +152,8 @@ def doctor(store):
     checks = {}
     for name, probe in {
         "database": database,
-        "oauth": lambda: {"state": "configured" if configuration(store) else "not_configured"},
+        "oauth": lambda: configuration_status(store),
+        "http_listeners": lambda: listener_status(store),
         "managed_service": lambda: managed_status(store),
     }.items():
         try:
@@ -147,7 +161,7 @@ def doctor(store):
             checks[name] = value
         except (BrainError, OSError, ValueError, sqlite3.Error) as exc:
             checks[name] = {"state": "error", "error": safe_error(exc)}
-    blocked = any(value.get("state") == "error" for value in checks.values())
+    blocked = any(value.get("state") in {"error", "invalid"} for value in checks.values())
     return {
         "state": "diagnosis_completed",
         "healthy": not blocked and not marker_path(store).exists(),
@@ -202,18 +216,49 @@ def client_url(store, supplied):
 
 
 def run_serve(store, args):
-    import socket
-
+    from .http_runtime import ListenerPlan, listener_sockets, record_listeners
     from .integration_tools import load_cortex
+    from .oauth import configuration, configuration_status, recover_configuration
     from .runtime import ensure_enabled, serve_locks
     from .server import create_http_app, create_server
     from .service import MemoryService
 
     if args.public_gateway and (args.transport != "http" or args.listen_fd is not None):
         raise InputError("Public gateway mode requires a separately supervised HTTP listener.")
+    if args.public_port is not None and args.transport != "http":
+        raise InputError("Use serve --transport http with --public-port.")
+    if args.listen_fd is not None and (args.transport != "http" or args.listen_fd < 3):
+        raise InputError("An inherited listener is valid only for managed HTTP startup; run up.")
+    plan = ListenerPlan(args.port, args.public_port, args.public_gateway)
     store.status()  # No lock files or new directories for an uninitialized store.
     with serve_locks(store, http=args.transport == "http"):
         ensure_enabled(store)
+        if args.transport == "http":
+            try:
+                with locked(store.directory / "installation.lock"):
+                    recover_configuration(store)
+                config = configuration(store)
+            except StateError:
+                if plan.mode != "private":
+                    raise
+                detail = configuration_status(store)
+                logging.getLogger("dots_brain").warning(
+                    "OAuth configuration is invalid. Next command: %s", detail["next_command"]
+                )
+                config = None
+            if config is None and plan.mode != "private":
+                raise StateError(
+                    "A public listener requires OAuth; run dots-brain --data-dir "
+                    f"{shlex.quote(str(store.directory))} oauth configure "
+                    "--issuer https://memory.example before starting serve."
+                )
+            for warning in plan.warnings(config, store.directory):
+                logging.getLogger("dots_brain").warning(
+                    "%s: %s Next command: %s",
+                    warning["code"],
+                    warning["message"],
+                    warning["next_command"],
+                )
         semantic = None
         if args.semantic:
             from .semantic import SemanticIndex
@@ -225,27 +270,19 @@ def run_serve(store, args):
         except BrainError:
             service.cortex_error = "invalid_configuration"
         server = create_server(service, http=args.transport == "http", port=args.port)
-        if args.listen_fd is not None:
-            if args.transport != "http" or args.listen_fd < 3:
-                raise InputError("An inherited listener is valid only for managed HTTP startup.")
-            with socket.socket(fileno=os.dup(args.listen_fd)) as listener:
-                if listener.getsockname() != ("127.0.0.1", args.port) or not listener.getsockopt(
-                    socket.SOL_SOCKET, socket.SO_ACCEPTCONN
-                ):
-                    raise InputError("The inherited listener does not match the loopback endpoint.")
         if args.transport == "http":
             import uvicorn
 
-            binding = (
-                {"fd": args.listen_fd}
-                if args.listen_fd is not None
-                else {"host": "127.0.0.1", "port": args.port}
-            )
-            uvicorn.run(
-                create_http_app(server, service, public_gateway=args.public_gateway),
-                **binding,
-                access_log=False,
-                log_level="warning",
-            )
+            app = create_http_app(server, service, listeners=plan)
+            with listener_sockets(plan, args.listen_fd) as sockets:
+                with record_listeners(store, plan, config):
+                    uvicorn.Server(
+                        uvicorn.Config(
+                            app,
+                            access_log=False,
+                            log_level="warning",
+                            proxy_headers=False,
+                        )
+                    ).run(sockets=sockets)
         else:
             server.run(transport="stdio")

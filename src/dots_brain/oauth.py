@@ -1,12 +1,14 @@
-"""VM-local OAuth persistence and owner authorization for the official MCP SDK."""
+"""Host-local OAuth persistence and owner authorization for the official MCP SDK."""
 
 from __future__ import annotations
 
 import hashlib
+import ipaddress
 import json
 import math
 import re
 import secrets
+import shlex
 import time
 import unicodedata
 import uuid
@@ -89,7 +91,11 @@ def issuer_url(value: str) -> str:
 
 def _read_configuration_file(path) -> dict:
     config = read_json(path)
-    if config.get("version") != 1 or not isinstance(config.get("issuer"), str):
+    if (
+        type(config.get("version")) is not int
+        or config["version"] != 1
+        or not isinstance(config.get("issuer"), str)
+    ):
         raise InputError("Unsupported OAuth configuration.")
     return {"version": 1, "issuer": issuer_url(config["issuer"])}
 
@@ -101,17 +107,43 @@ def _read_configuration(store: Store) -> dict | None:
     return None if not path.exists() else _read_configuration_file(path)
 
 
-def configuration(store: Store) -> dict | None:
-    """Read OAuth without letting broken OAuth disable local static access.
+def _recovery_command(store: Store, *, discard: bool = False) -> str:
+    base = f"dots-brain --data-dir {shlex.quote(str(store.directory))} oauth"
+    return (
+        base + " configure --issuer https://memory.example --discard-journal --replace-issuer"
+        if discard
+        else base + " recover"
+    )
 
-    A pending journal is inspected but never altered by a read. Corrupt or
-    ambiguous OAuth state stays unavailable to OAuth callers; the HTTP host can
-    still expose its separate local static-credential path.
-    """
+
+def configuration(store: Store) -> dict | None:
+    """Read the logical configuration without repairing files or concealing corruption."""
     try:
         return _read_configuration(store)
     except (InputError, StateError, OSError, ValueError):
-        return None
+        command = _recovery_command(store, discard=True)
+        raise StateError(
+            "OAuth configuration is invalid. Preserve oauth.json and oauth-config-pending.json "
+            "for inspection; explicit replacement revokes all grants. Run: " + command
+        ) from None
+
+
+def configuration_status(store: Store) -> dict:
+    """Report safe, read-only operator status without echoing invalid file contents."""
+    try:
+        config = configuration(store)
+    except StateError:
+        return {
+            "state": "invalid",
+            "reason": "invalid_configuration_or_journal",
+            "next_command": _recovery_command(store, discard=True),
+        }
+    result = {"state": "not_configured" if config is None else "configured"}
+    if config is not None:
+        result["issuer"] = config["issuer"]
+    if (store.directory / "oauth-config-pending.json").exists():
+        result.update(reason="recovery_pending", next_command=_recovery_command(store))
+    return result
 
 
 def onboarding_path(store: Store):
@@ -141,47 +173,64 @@ def revoke_all(db) -> dict:
 
 
 def _inspect_pending_configuration(store: Store) -> tuple[dict | None, bool]:
-    """Return an unambiguous pending configuration without changing on-disk state."""
-    journal = store.directory / "oauth-config-pending.json"
-    pending = read_json(journal)
-    if pending.get("version") != 1 or not re.fullmatch(r"[0-9a-f]{32}", str(pending.get("id", ""))):
-        raise StateError("OAuth configuration journal is invalid; preserve it for inspection.")
+    """Select previous before DB commit and next after it, without publishing files."""
+    pending = read_json(store.directory / "oauth-config-pending.json")
+    if (
+        type(pending.get("version")) is not int
+        or pending["version"] != 1
+        or not re.fullmatch(r"[0-9a-f]{32}", str(pending.get("id", "")))
+        or "previous" not in pending
+        or "next" not in pending
+    ):
+        raise StateError("OAuth configuration journal is invalid.")
+    values = {}
+    for key in ("previous", "next"):
+        value = pending[key]
+        if value is None and key == "previous":
+            values[key] = None
+        elif (
+            isinstance(value, dict) and type(value.get("version")) is int and value["version"] == 1
+        ):
+            values[key] = {"version": 1, "issuer": issuer_url(value.get("issuer"))}
+        else:
+            raise StateError("OAuth configuration journal is invalid.")
     with store.connection() as db:
-        exists = db.execute(
-            "SELECT 1 FROM sqlite_master WHERE name='oauth_config_commits'"
-        ).fetchone()
-        committed = (
-            exists
-            and db.execute(
-                "SELECT 1 FROM oauth_config_commits WHERE id=?", (pending["id"],)
-            ).fetchone()
-        )
-    value = pending.get("next" if committed else "previous")
-    if value is None:
-        expected = None
-    elif isinstance(value, dict) and value.get("version") == 1:
-        expected = {"version": 1, "issuer": issuer_url(value.get("issuer"))}
-    else:
-        raise StateError("OAuth configuration journal is invalid; preserve it for inspection.")
-    path = store.directory / "oauth.json"
-    actual = None if not path.exists() else _read_configuration_file(path)
-    if actual != expected:
-        raise StateError(
-            "OAuth configuration journal is ambiguous; preserve it for explicit owner recovery."
-        )
-    return actual, bool(committed)
+        markers = db.execute("SELECT id FROM oauth_config_commits").fetchall()
+        if len(markers) > 1:
+            raise StateError("OAuth configuration commit marker is ambiguous.")
+        committed = bool(markers and markers[0][0] == pending["id"])
+    return values["next" if committed else "previous"], committed
 
 
-def _recover_configuration(store: Store) -> None:
-    """Clear only an unambiguous journal during explicit owner configuration."""
+def recover_configuration(store: Store) -> dict:
+    """Publish a validated journal selection; the caller holds the installation lock."""
+    store.ensure_writable()
     journal = store.directory / "oauth-config-pending.json"
     if not journal.exists():
-        return
-    _, committed = _inspect_pending_configuration(store)
+        return {"state": "not_pending"}
+    try:
+        selected, committed = _inspect_pending_configuration(store)
+    except (InputError, StateError, OSError, ValueError):
+        raise StateError(
+            "OAuth configuration journal is invalid; preserve it for inspection. "
+            "Explicit replacement revokes all grants; run: "
+            + _recovery_command(store, discard=True)
+        ) from None
+    path = store.directory / "oauth.json"
+    if selected is None:
+        path.unlink(missing_ok=True)
+        sync_directory(store.directory)
+    else:
+        write_json(path, selected)
     if committed:
         onboarding_path(store).unlink(missing_ok=True)
     journal.unlink()
     sync_directory(store.directory)
+    return {"state": "recovered", "committed": committed}
+
+
+def _recover_configuration(store: Store) -> None:
+    recover_configuration(store)
 
 
 def configure(
@@ -214,8 +263,8 @@ def configure(
             if previous != config:
                 revoked = revoke_all(db)
                 record_auth_change(store, db, "oauth_issuer_configured", details=revoked)
-            # Readers fail closed while the journal exists. Publish the file
-            # before commit, so a failed replace rolls back credential changes.
+            # The DB marker selects logical state across a publication crash.
+            # Publish first; rollback retains the previous grants and issuer.
             write_json(store.directory / "oauth.json", config)
             db.execute("DELETE FROM oauth_config_commits")
             db.execute("INSERT INTO oauth_config_commits(id) VALUES (?)", (transition,))
@@ -357,35 +406,42 @@ class OAuthStore:
                 "temporarily_unavailable",
                 "OAuth onboarding is closed; try again after it is opened.",
             )
+        for uri in client.redirect_uris:
+            try:
+                redirect_origin(str(uri))
+            except InputError:
+                raise RegistrationError(
+                    "invalid_redirect_uri",
+                    "Use a valid HTTPS or loopback callback; "
+                    "retry client registration with that URI.",
+                ) from None
         if len(client.model_dump_json()) > 8192 or len(client.redirect_uris) > 8:
             raise RegistrationError("invalid_client_metadata", "Client metadata exceeds limits.")
         if not self._safe_client_name(client.client_name):
             raise RegistrationError(
                 "invalid_client_metadata", "Client name contains unsupported characters."
             )
-        for uri in client.redirect_uris:
-            parts = urlsplit(str(uri))
-            if (
-                parts.username
-                or parts.password
-                or parts.fragment
-                or not parts.hostname
-                or (
-                    parts.scheme != "https"
-                    and not (
-                        parts.scheme == "http"
-                        and parts.hostname in {"localhost", "127.0.0.1", "::1"}
-                    )
-                )
-            ):
-                raise RegistrationError("invalid_redirect_uri", "Use HTTPS or a loopback callback.")
         with self.store.connection(write=True) as db:
             self._cleanup(db)
-            # Registration itself grants no access. Keep it until the short
-            # cleanup TTL rather than evicting an arbitrary new client.
-            db.execute(
-                "INSERT INTO oauth_clients VALUES (?,?,?)",
-                (client.client_id, client.model_dump_json(), time.time()),
+            ungranted = db.execute(
+                "SELECT COUNT(*) FROM oauth_clients WHERE id NOT IN "
+                "(SELECT client_id FROM oauth_grants "
+                "UNION SELECT client_id FROM oauth_client_revocations)"
+            ).fetchone()[0]
+            capacity_reached = ungranted >= MAX_CLIENTS
+            if not capacity_reached:
+                # Registration grants no access; retain until the short TTL.
+                db.execute(
+                    "INSERT INTO oauth_clients VALUES (?,?,?)",
+                    (client.client_id, client.model_dump_json(), time.time()),
+                )
+        # SDK errors are frozen dataclasses; raise after the context manager,
+        # which otherwise attempts to assign their traceback during rollback.
+        if capacity_reached:
+            raise RegistrationError(
+                "temporarily_unavailable",
+                "Registration capacity reached; wait 15 minutes or ask the operator to run: "
+                "dots-brain oauth purge",
             )
 
     def authorize(self, client, params):
@@ -507,18 +563,13 @@ class OAuthStore:
         self.require_enabled()
         with self.store.connection(write=True) as db:
             self._cleanup(db)
-            # Purge is an explicit owner action. Remove ungranted pending
-            # requests first, so attacker entries cannot protect themselves by
-            # staying pending while unrelated registrations are selected.
-            db.execute(
-                "DELETE FROM oauth_requests WHERE client_id NOT IN "
-                "(SELECT client_id FROM oauth_grants WHERE revoked=0 AND expires>?)",
-                (time.time(),),
-            )
+            # Preserve valid pending authorizations and issued codes. Removing
+            # their clients cascades the exchange and silently breaks pairing.
             removed = db.execute(
                 "DELETE FROM oauth_clients WHERE id NOT IN (SELECT client_id FROM oauth_grants "
+                "UNION SELECT client_id FROM oauth_requests WHERE expires>? "
                 "UNION SELECT client_id FROM oauth_codes WHERE expires>?)",
-                (time.time(),),
+                (time.time(), time.time()),
             ).rowcount
             record_auth_change(
                 self.store, db, "oauth_unused_clients_purged", details={"removed": removed}
@@ -536,6 +587,27 @@ class OAuthStore:
         redirect_host=None,
     ):
         self.require_enabled()
+        if not deny and (
+            not isinstance(redirect_host, str)
+            or not redirect_host
+            or redirect_host != redirect_host.strip()
+        ):
+            raise InputError(
+                "Approval requires the expected redirect host; run dots-brain oauth approve "
+                "REQUEST_ID --redirect-host HOST --project PROJECT."
+            )
+        expected_host = None
+        if not deny:
+            try:
+                value = redirect_host
+                if value.startswith("[") and value.endswith("]"):
+                    value = str(ipaddress.IPv6Address(value[1:-1]))
+                expected_host = _normalized_host(value)
+            except (ValueError, UnicodeError):
+                raise InputError(
+                    "Approval requires a valid redirect host; run dots-brain oauth approve "
+                    "REQUEST_ID --redirect-host HOST --project PROJECT."
+                ) from None
         projects = normalize_projects(projects)
         if projects is not None:
             if not projects:
@@ -554,9 +626,13 @@ class OAuthStore:
             if (
                 not deny
                 and redirect_host is not None
-                and urlsplit(params["redirect_uri"]).hostname != redirect_host.lower()
+                and urlsplit(redirect_origin(params["redirect_uri"])).hostname != expected_host
             ):
-                raise InputError("The expected redirect host does not match this request.")
+                raise InputError(
+                    "The expected redirect host does not match this request; inspect it with "
+                    "dots-brain oauth pending and retry dots-brain oauth approve REQUEST_ID "
+                    "--redirect-host HOST --project PROJECT."
+                )
             requested = params["scopes"]
             scopes = sorted(
                 set(
@@ -969,9 +1045,51 @@ class OAuthStore:
         return {"grant_id": grant_id, "revoked": True}
 
 
+def _normalized_host(host: str) -> str:
+    if ":" in host:
+        if "%" in host:
+            raise ValueError("IPv6 zone identifiers are unsupported.")
+        return str(ipaddress.IPv6Address(host))
+    host = host.encode("idna").decode("ascii").lower()
+    if len(host) > 253 or any(
+        not re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", label)
+        for label in host.rstrip(".").split(".")
+    ):
+        raise ValueError("Invalid hostname.")
+    return host
+
+
 def redirect_origin(uri: str) -> str:
-    parts = urlsplit(uri)
-    return f"{parts.scheme}://{parts.netloc}"
+    """Validate a callback and serialize a safe origin, including bracketed IPv6."""
+    recovery = "Retry client registration with a valid HTTPS or loopback callback URI."
+    if not isinstance(uri, str) or any(
+        char.isspace() or unicodedata.category(char).startswith("C") for char in uri
+    ):
+        raise InputError(recovery)
+    try:
+        parts = urlsplit(uri)
+        host, port = parts.hostname, parts.port
+        if (
+            not host
+            or parts.username is not None
+            or parts.password is not None
+            or parts.fragment
+            or "\\" in uri
+            or (port is not None and not 1 <= port <= 65535)
+        ):
+            raise ValueError
+        host = _normalized_host(host)
+        if parts.scheme != "https" and not (
+            parts.scheme == "http" and host in {"localhost", "127.0.0.1", "::1"}
+        ):
+            raise ValueError
+        rendered = f"[{host}]" if ":" in host else host
+        suffix = (
+            "" if port is None or port == (443 if parts.scheme == "https" else 80) else f":{port}"
+        )
+        return f"{parts.scheme}://{rendered}{suffix}"
+    except (ValueError, UnicodeError):
+        raise InputError(recovery) from None
 
 
 class OAuthProvider:

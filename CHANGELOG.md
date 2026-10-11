@@ -32,6 +32,12 @@ state.
 
 ### Fixed
 
+- Bind OAuth-only access to a second listener in the same supervised service,
+  preserve concurrent static access on its private port, and ignore transport
+  proxy headers. Report invalid OAuth state and recover readable configuration
+  journals without revoking pre-commit grants. Bound ungranted registrations,
+  preserve valid pending clients on purge, and validate callback origins before
+  SDK normalization. Prevent pairing double-submit and support IPv6 callbacks.
 - Replace the semantic calibration fixture with independently authored neutral
   synthetic objects and record its provenance. Re-measure both the baseline and
   candidate, including the current inability to reject its unrelated questions.

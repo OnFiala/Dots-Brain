@@ -6,8 +6,8 @@ addresses, executable path, service user, and data directory before use.
 
 ## What the template provides
 
-- `systemd/dots-brain.service` runs a loopback HTTP MCP server with
-  `--public-gateway`: only OAuth grants are accepted on this listener.
+- `systemd/dots-brain.service` runs one HTTP service with private port 8765
+  (static credentials and OAuth) and gateway port 8787 (OAuth only).
 - `systemd/dots-brain-ingress.service` starts a small dedicated nginx gateway.
 - `systemd/dots-brain-onboarding.service` opens the gateway pairing gate for ten
   minutes when explicitly started.
@@ -32,7 +32,8 @@ authentication policy. No request header can enable or disable public mode.
 4. With writers stopped, configure OAuth for the intended HTTPS origin as
    described in [OAuth](../docs/oauth.md). Record the private backup and rollback.
 5. Copy and edit the unit and nginx files to the host's system locations. Preserve
-   `--public-gateway` in the memory unit. Validate both with the host tools.
+   `--public-port 8787` in the memory unit, and route nginx only to that port.
+   Validate both with the host tools.
 6. Start the memory service, then the gateway and the existing TLS route. A request
    without a grant must return 401. This check proves access is closed, not that a
    client is connected. Complete the onboarding flow below and verify a real MCP

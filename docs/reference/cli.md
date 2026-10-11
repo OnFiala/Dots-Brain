@@ -4,7 +4,7 @@ Operator commands write a JSON result. `serve` and `bridge` carry MCP protocol
 traffic; `--help` and `--version` print text. Invalid command arguments exit 2.
 Other failures exit 1 with `state: "error"` and a typed `code`; a successful
 command exits 0 unless its result state is `partial`, `blocked`,
-`verification_failed`, `capture_partial`, or `capture_recovery_required`. Those
+`verification_failed`, `capture_partial`, `capture_recovery_required`, or `invalid`. Those
 states require operator action even when a result was written. Use a private
 absolute data directory outside the checkout.
 
@@ -19,7 +19,7 @@ not make a remote service or client UI verified.
 | Command | Purpose |
 | --- | --- |
 | `setup` | Initialize or reuse the local database. |
-| `doctor` | Diagnose the database, OAuth configuration, and managed-service record. |
+| `doctor` | Diagnose the database, OAuth configuration, managed-service record and recorded HTTP listener mode. |
 | `preflight [--network-policy PATH]` | Inspect host capabilities without changing state; only inspects a policy file explicitly supplied by the operator. |
 | `serve` | Run one stdio or loopback HTTP MCP server. |
 | `up` / `down` | Start or stop the managed loopback HTTP service. |
@@ -34,6 +34,7 @@ dots-brain preflight
 dots-brain preflight --network-policy /absolute/path/network-policy.json
 dots-brain --data-dir /absolute/private/memory serve
 dots-brain --data-dir /absolute/private/memory serve --transport http --port 8765
+dots-brain --data-dir /absolute/private/memory serve --transport http --port 8765 --public-port 8787
 dots-brain --data-dir /absolute/private/memory up
 dots-brain --data-dir /absolute/private/memory up --port 8766 --semantic
 dots-brain --data-dir /absolute/private/memory down
@@ -103,9 +104,15 @@ credentials are rejected rather than renewed.
 
 ```sh
 dots-brain --data-dir /absolute/private/memory oauth configure --issuer https://memory.example
+dots-brain --data-dir /absolute/private/memory oauth status
+dots-brain --data-dir /absolute/private/memory oauth recover
 dots-brain --data-dir /absolute/private/memory oauth onboarding open --minutes 10
+dots-brain --data-dir /absolute/private/memory oauth onboarding status
 dots-brain --data-dir /absolute/private/memory oauth pending
 dots-brain --data-dir /absolute/private/memory oauth approve request-id --redirect-host client.example --project work --scope memory:read
+dots-brain --data-dir /absolute/private/memory oauth deny request-id
+dots-brain --data-dir /absolute/private/memory oauth clients
+dots-brain --data-dir /absolute/private/memory oauth purge
 dots-brain --data-dir /absolute/private/memory oauth grants
 dots-brain --data-dir /absolute/private/memory oauth revoke grant-id
 dots-brain --data-dir /absolute/private/memory oauth onboarding close
@@ -114,6 +121,11 @@ dots-brain --data-dir /absolute/private/memory oauth disable
 
 Changing issuer needs `oauth configure --replace-issuer` and revokes old OAuth
 grants. The CLI onboarding TTL and the public gateway gate are separate controls.
+`oauth recover` completes a valid interrupted configuration change. An invalid
+configuration or journal makes `oauth status` exit with status 1 and print an
+explicit recovery command. Preserve the named files before using a replacement
+command, which revokes existing grants. `oauth purge` removes expired requests and
+unused registrations while retaining grant provenance and active approvals.
 See [OAuth](../oauth.md) for the approval procedure and request-size limits.
 
 ## Audit, capture, and optional CORTEX

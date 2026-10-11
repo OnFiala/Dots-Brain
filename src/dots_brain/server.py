@@ -15,7 +15,7 @@ from mcp.types import ToolAnnotations
 from pydantic import Field
 
 from .auth import Policy
-from .errors import ForbiddenError, StoreDisabledError
+from .errors import ForbiddenError, StateError, StoreDisabledError
 from .installation_state import marker_path
 from .protocol import (
     BrainMCP,
@@ -58,15 +58,32 @@ async def indexing_lifespan(service: MemoryService):
                 await worker
 
 
-def create_http_app(server: FastMCP, service: MemoryService, *, public_gateway: bool = False):
+def _http_configuration(store):
+    from .oauth import configuration, configuration_status
+
+    try:
+        return configuration(store)
+    except StateError:
+        status = configuration_status(store)
+        logging.getLogger("dots_brain").warning(
+            "OAuth configuration is invalid; static private access remains available. "
+            "Next command: %s",
+            status["next_command"],
+        )
+        return None
+
+
+def create_http_app(
+    server: FastMCP, service: MemoryService, *, public_gateway: bool = False, listeners=None
+):
     from .auth import BearerAuth
-    from .oauth import OAuthStore, configuration
+    from .oauth import OAuthStore
     from .oauth_http import routes_app
 
-    oauth = OAuthStore(service.store) if configuration(service.store) else None
-    protected = BearerAuth(
-        server.streamable_http_app(), service.store, oauth=oauth, public_gateway=public_gateway
-    )
+    oauth = OAuthStore(service.store) if _http_configuration(service.store) else None
+    transport = server.streamable_http_app()
+    protected = BearerAuth(transport, service.store, oauth=oauth, public_gateway=public_gateway)
+    public = BearerAuth(transport, service.store, oauth=oauth, public_gateway=True)
     authorization = routes_app(oauth) if oauth else None
 
     async def app(scope, receive, send):
@@ -76,7 +93,15 @@ def create_http_app(server: FastMCP, service: MemoryService, *, public_gateway: 
         elif authorization is not None and scope.get("path") != "/mcp":
             await authorization(scope, receive, send)
         else:
-            await protected(scope, receive, send)
+            mode = listeners.policy_for(scope) if listeners is not None else None
+            if mode == "unknown":
+                from starlette.responses import JSONResponse
+
+                await JSONResponse({"error": "unknown_listener"}, status_code=503)(
+                    scope, receive, send
+                )
+                return
+            await (public if mode == "public" else protected)(scope, receive, send)
 
     return app
 
@@ -84,8 +109,6 @@ def create_http_app(server: FastMCP, service: MemoryService, *, public_gateway: 
 def create_server(service: MemoryService, *, http: bool = False, port: int = 8765) -> FastMCP:
 
     from mcp.server.transport_security import TransportSecuritySettings
-
-    from .oauth import configuration
 
     read_limiter = anyio.CapacityLimiter(8)
     search_limiter = anyio.CapacityLimiter(2)
@@ -117,7 +140,7 @@ def create_server(service: MemoryService, *, http: bool = False, port: int = 876
             async with indexing_lifespan(service):
                 yield {}
 
-    config = configuration(service.store) if http else None
+    config = _http_configuration(service.store) if http else None
     transport_security = None
     if config:
         transport_security = TransportSecuritySettings(
