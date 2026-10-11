@@ -40,6 +40,17 @@ remain for explicit owner recovery. On first HTTP startup, absent legacy listene
 diagnostics are replaced by version-1 `http-listeners.json`; this derived state
 does not change the database schema, tokens or listener authorization policy.
 
+### Legacy client entries
+
+Automatic support for unregistered 0.2.0-alpha.1 client entries has ended. A
+matching old entry is preserved and reported by its configuration filename,
+including during removal. Manually remove only `mcpServers.dots-brain` (JSON) or
+`mcp_servers.dots-brain` (TOML), preserving unrelated entries, then run the printed
+`connect PROVIDER --config PATH` command. The old credential file is retained;
+revoke its grant when retiring it. Registered clients from 0.3 onward remain
+supported, including a retained older credential filename. Database migration
+from 0.3/schema v1 and every supported newer schema remains supported.
+
 ## Schema v1, v2 or v3 to v4
 
 The `0.4.0a4` candidate requires schema v4. The earlier unreleased `0.4.0a2`
@@ -50,11 +61,21 @@ missing tables. `doctor` reports `migration_required` until migration completes.
 
 Stop the old process with its original supervisor and interpreter. Keep that
 interpreter and the installation configuration for rollback. The new `down`
-recognizes the exact managed command from 0.3.0-alpha.2 and
-0.4.0-alpha.1 using PID start time, data path and port. It never adopts a different
+recognizes the exact managed commands from 0.3.0-alpha.1/alpha.2 and
+0.4.0-alpha.1 through alpha.3 using PID start time, data path and port. It never adopts a different
 release during `up`: stop it explicitly, migrate, then start. Startup replaces only
 the old installation probe with a read-only credential; ordinary client scope
 changes still require explicit replacement.
+
+On Linux, `doctor`, `down`, `up` and offline migration also inspect matching
+untracked server processes when `service.json` or the writer lease is missing.
+These are observations of the supported Python entrypoints for the exact data
+directory, with executable and process-start checks. They do not identify every
+possible wrapper, embedded SQLite user or writer on another host. Untracked
+processes are reported with their PID and a stop command; they are never adopted
+or automatically signalled. Stop their supervisor first and recheck the PID before
+manual termination. `--writers-stopped` remains the operator's explicit check of
+all writers. Migration refuses a detected running server.
 
 Use the new interpreter for these commands, with all writers stopped. Choose a
 new backup filename in an existing private directory. `migrate --apply` takes a
@@ -181,6 +202,12 @@ offline cutover validates current deletion and history state. Do not use a backu
 as host-loss recovery: a surviving current store is required for reconciliation.
 If validation fails, preserve both stores and follow the command's recovery result;
 do not overwrite the current store or delete markers to force startup.
+
+A validated v1/v2/v3 backup is reported as `migration_required`, rather than as an
+unknown database. Keep the original backup, copy it to a new private working
+directory as `brain.sqlite3`, and run the migration command printed by the error.
+Retry restore using the migrated copy as `--backup`. This upgrades a copy; it does
+not make an old snapshot current or remove the need for surviving deletion state.
 
 With every writer stopped, these are the current-schema commands. The source is
 still canonical until activation succeeds:

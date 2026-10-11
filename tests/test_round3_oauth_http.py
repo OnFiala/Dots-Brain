@@ -217,7 +217,11 @@ def test_one_service_two_sockets_keep_static_private_and_share_oauth_store(tmp_p
             )
             assert response.status_code == 401
         status = doctor(store)["checks"]["http_listeners"]
-        assert status["mode"] == "dual" and status["state"] == "recorded"
+        assert status["mode"] == "dual"
+        assert status["state"] == ("recorded" if sys.platform == "linux" else "unknown")
+        if sys.platform != "linux":
+            assert status["process_verified"] is False
+            assert status["next_command"].startswith("lsof ")
         assert status["private_port"] == urlsplit(private).port
         assert status["public_port"] == urlsplit(public).port
 

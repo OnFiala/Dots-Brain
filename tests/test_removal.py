@@ -201,17 +201,22 @@ def test_profiles_have_distinct_credentials_and_disconnect_does_not_break_other_
         down(store)
 
 
-def test_legacy_custom_path_requires_inventory_and_shared_token_is_not_silently_revoked(tmp_path):
+def test_unregistered_legacy_custom_path_requires_manual_cleanup(tmp_path):
     store = Store(tmp_path / "memory")
     config = tmp_path / "custom.json"
     _, token = record_connection(store, config, legacy=True)
     assert uninstall(store, dry_run=True)["clients"] == []
+    original = config.read_bytes()
     preview = uninstall(store, dry_run=True, extra_configs=[f"cursor={config}"])
-    assert preview["clients"][0]["state"] == "would_remove"
+    assert preview["clients"] == []
+    assert preview["notes"][0]["state"] == "unsupported_legacy_client"
     result = disconnect_client(store, provider="cursor", config=config)
-    assert result["state"] == "partial" and result["access"] == "shared_credential_retained"
+    assert result["state"] == "already_absent"
+    assert result["notes"] == preview["notes"]
     assert authenticate(store, token) is not None
-    assert uninstall(store)["state"] == "uninstalled"
+    assert config.read_bytes() == original
+    assert uninstall(store, extra_configs=[f"cursor={config}"])["state"] == "uninstalled"
+    assert config.read_bytes() == original
     assert authenticate(store, token) is None
 
 
@@ -310,8 +315,11 @@ def test_default_unowned_entry_is_reported_even_without_installation(tmp_path):
     write_json(config, {"mcpServers": {"dots-brain": {"command": "owner-managed"}}})
     before = config.read_bytes()
     result = uninstall(store)
-    assert result["state"] == "partial"
-    assert result["issues"] == [{"config_file": str(config), "state": "preserved_unowned"}]
+    assert result["state"] == "not_installed"
+    assert result["issues"] == []
+    assert result["notes"] == [
+        {"config_file": str(config), "state": "preserved_unowned", "severity": "info"}
+    ]
     assert config.read_bytes() == before
     assert not store.directory.exists()
 

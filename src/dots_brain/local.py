@@ -28,7 +28,11 @@ def publish_new(temporary: Path, target: Path) -> None:
 
 
 def lock_status(path: Path) -> dict:
-    """Inspect a lease without creating it. Owner PIDs come from the Linux kernel."""
+    """Read a Linux flock snapshot without acquiring or creating a lease.
+
+    Taking even a momentary exclusive lock would reject legitimate shared
+    writers. Platforms without kernel lock inspection must report unknown.
+    """
     try:
         descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
     except FileNotFoundError:
@@ -36,28 +40,35 @@ def lock_status(path: Path) -> dict:
     except OSError:
         return {"state": "unknown", "owners": []}
     try:
+        info = os.fstat(descriptor)
+        owners = []
+        modes = set()
         try:
-            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            rows = Path("/proc/locks").read_text(encoding="ascii").splitlines()
+            for row in rows:
+                fields = row.split()
+                # Waiting entries have an extra '->' field and own no lease.
+                if len(fields) < 6 or fields[1] != "FLOCK":
+                    continue
+                major, minor, inode = fields[5].split(":")
+                if (int(major, 16), int(minor, 16), int(inode)) != (
+                    os.major(info.st_dev),
+                    os.minor(info.st_dev),
+                    info.st_ino,
+                ):
+                    continue
+                modes.add({"READ": "shared", "WRITE": "exclusive"}[fields[3]])
+                if int(fields[4]) > 0:
+                    owners.append(int(fields[4]))
+        except (OSError, UnicodeError, ValueError, KeyError):
+            return {"state": "unknown", "owners": []}
+        if not modes:
             return {"state": "free", "owners": []}
-        except BlockingIOError:
-            info = os.fstat(descriptor)
-            owners = []
-            try:
-                rows = Path("/proc/locks").read_text(encoding="ascii").splitlines()
-                for row in rows:
-                    fields = row.split()
-                    if len(fields) < 6 or fields[1] != "FLOCK":
-                        continue
-                    major, minor, inode = fields[5].split(":")
-                    if (int(major, 16), int(minor, 16), int(inode)) == (
-                        os.major(info.st_dev),
-                        os.minor(info.st_dev),
-                        info.st_ino,
-                    ) and int(fields[4]) > 0:
-                        owners.append(int(fields[4]))
-            except (OSError, ValueError):
-                pass
-            return {"state": "held", "owners": sorted(set(owners))}
+        return {
+            "state": "held",
+            "owners": sorted(set(owners)),
+            "mode": "exclusive" if "exclusive" in modes else "shared",
+        }
     finally:
         os.close(descriptor)
 

@@ -2,10 +2,12 @@
 
 Operator commands write a JSON result. `serve` and `bridge` carry MCP protocol
 traffic; `--help` and `--version` print text. Invalid command arguments exit 2.
-Other failures exit 1 with `state: "error"` and a typed `code`; a successful
+Parser errors identify a known option or missing argument and a scoped `--help`
+command, without echoing the rejected value. Other failures exit 1 with
+`state: "error"` and a typed `code`; a successful
 command exits 0 unless its result state is `partial`, `blocked`,
 `verification_failed`, `capture_partial`, `capture_recovery_required`,
-`probe_recovery_needed`, or `invalid`. Those
+`probe_recovery_needed`, `external_writers_remain`, `writer_state_unknown`, or `invalid`. Those
 states require operator action even when a result was written. Use a private
 absolute data directory outside the checkout.
 

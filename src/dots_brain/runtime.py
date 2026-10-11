@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import ast
 import asyncio
 import contextlib
 import errno
 import os
+import re
 import select
+import shlex
 import shutil
 import signal
 import socket
@@ -19,8 +22,8 @@ from pathlib import Path
 from . import __version__
 from .auth import authenticate, issue_client, read_connection, revoke_client
 from .bridge import verify_connection
-from .errors import InputError, StateError, StoreDisabledError
-from .installation_state import marker_path, resume_uninstalled
+from .errors import BusyError, InputError, StateError
+from .installation_state import ensure_enabled, resume_uninstalled
 from .local import lock_status, locked, read_json, write_json
 from .store import Store
 
@@ -144,12 +147,168 @@ def owns_process(store: Store, state: dict) -> bool:
         return False
     identity_fields = {"data_dir", "executable", "boot_id"}
     if not identity_fields.intersection(state):
-        return state.get("version") in {"0.3.0a2", "0.4.0a1"}
+        return state.get("version") in {"0.3.0a1", "0.3.0a2", "0.4.0a1", "0.4.0a2", "0.4.0a3"}
     return (
         state.get("data_dir") == directory
         and state.get("boot_id") == boot_identity()
         and state.get("executable") == executable
     )
+
+
+def operator_command(store: Store, command: str) -> str:
+    return f"dots-brain --data-dir {shlex.quote(str(store.directory))} {command}"
+
+
+def _console_entrypoint(path: Path) -> bool:
+    """Inspect current disk entrypoint evidence, never grant signaling authority.
+
+    This is not proof of the script bytes originally executed by the process.
+    """
+    if not path.is_absolute() or path.name != "dots-brain" or not path.is_file():
+        return False
+    try:
+        with path.open(encoding="utf-8") as stream:
+            source = stream.read(8193)
+        if len(source) > 8192:
+            return False
+        tree = ast.parse(source)
+    except (OSError, UnicodeError, SyntaxError):
+        return False
+    imports = {
+        ast.dump(ast.parse(value).body[0])
+        for value in ("import sys", "import re", "from dots_brain.cli import main")
+    }
+    required = {
+        ast.dump(ast.parse(value).body[0])
+        for value in ("import sys", "from dots_brain.cli import main")
+    }
+    if not tree.body or any(ast.dump(node) not in imports for node in tree.body[:-1]):
+        return False
+    if not required <= {ast.dump(node) for node in tree.body[:-1]}:
+        return False
+    guard = tree.body[-1]
+    expected_test = ast.parse('if __name__ == "__main__": pass').body[0].test
+    if (
+        not isinstance(guard, ast.If)
+        or guard.orelse
+        or ast.dump(guard.test) != ast.dump(expected_test)
+    ):
+        return False
+    # uv/pip vary in argv suffix cleanup inside the guard; the imported callable
+    # and terminal entrypoint remain the same. This evidence only blocks startup.
+    return bool(guard.body) and ast.dump(guard.body[-1]) == ast.dump(
+        ast.parse("sys.exit(main())").body[0]
+    )
+
+
+def unmanaged_writers(store: Store) -> list[dict]:
+    """Observe untracked Python module/console servers for this directory on Linux.
+
+    This bounded scan recognizes supported module/console invocations, not arbitrary
+    wrappers, embedded API users or writers on other hosts. It never adopts or
+    signals a process. Evidence includes the identity needed for reinspection.
+    """
+    if sys.platform != "linux":
+        return []
+    state = load_state(store)
+    managed_pid = state.get("pid") if owns_process(store, state) else None
+    boot = boot_identity()
+    if boot is None:
+        return []
+    try:
+        processes = list(Path("/proc").iterdir())
+    except OSError:
+        return []
+    result = []
+    for process in processes:
+        if not process.name.isdigit():
+            continue
+        pid = int(process.name)
+        if pid <= 1 or pid == managed_pid:
+            continue
+        start = process_identity(pid)
+        if start is None:
+            continue
+        try:
+            if process.stat().st_uid != os.getuid():
+                continue
+            arguments = [
+                value.decode("utf-8", "surrogateescape")
+                for value in (process / "cmdline").read_bytes().split(b"\0")
+                if value
+            ]
+            module = arguments[1:3] == ["-m", "dots_brain.cli"]
+            serve_arguments = []
+            for argument in arguments[3 if module else 2 :]:
+                option, separator, value = argument.partition("=")
+                serve_arguments.extend(
+                    [option, value] if argument.startswith("--") and separator else [argument]
+                )
+            if (
+                len(serve_arguments) < 3
+                or serve_arguments[0] != "--data-dir"
+                or serve_arguments[2] != "serve"
+                or not Path(serve_arguments[1]).is_absolute()
+                or Path(serve_arguments[1]).resolve() != store.directory
+                or not module
+                and not _console_entrypoint(Path(arguments[1]))
+            ):
+                continue
+            executable = os.readlink(process / "exe").removesuffix(" (deleted)")
+            if not re.fullmatch(r"python(?:\d+(?:\.\d+)*)?", Path(executable).name):
+                continue
+            interpreter = Path(arguments[0])
+            if interpreter.is_absolute() and str(interpreter.resolve()) != executable:
+                continue
+            if not interpreter.is_absolute() and not re.fullmatch(
+                r"python(?:\d+(?:\.\d+)*)?", arguments[0]
+            ):
+                continue
+            options = iter(serve_arguments[3:])
+            transport = "stdio"
+            for option in options:
+                if option in {"--semantic", "--public-gateway"}:
+                    continue
+                value = next(options)
+                if option == "--transport" and value in {"http", "stdio"}:
+                    transport = value
+                elif option in {"--port", "--public-port", "--listen-fd"} and (
+                    value.isdigit() and 0 <= int(value) <= 65535
+                ):
+                    continue
+                else:
+                    raise ValueError
+            # Recheck after reading argv/executable: never reuse stale PID data.
+            if (
+                process_identity(pid) != start
+                or boot_identity() != boot
+                or os.readlink(process / "exe").removesuffix(" (deleted)") != executable
+            ):
+                continue
+            result.append(
+                {
+                    "pid": pid,
+                    "process_start": start,
+                    "boot_id": boot,
+                    "executable": executable,
+                    "transport": transport,
+                    "stop_command": f"kill -TERM {pid}",
+                }
+            )
+        except (OSError, ValueError, StopIteration):
+            continue
+    return sorted(result, key=lambda value: value["pid"])
+
+
+def require_no_unmanaged_writers(store: Store) -> None:
+    processes = unmanaged_writers(store)
+    if processes:
+        raise BusyError(
+            "Unmanaged serve process(es) still use this installation: PID(s) "
+            + ", ".join(str(process["pid"]) for process in processes)
+            + ". Stop them with their supervisor, or after rechecking the PID, "
+            "run: " + "; ".join(process["stop_command"] for process in processes)
+        )
 
 
 def load_state(store: Store) -> dict:
@@ -216,7 +375,13 @@ def credential(
             )
             if not same_permissions and not installation_probe:
                 raise StateError(
-                    "Existing client permissions differ; explicitly replace this client."
+                    "Existing client permissions differ. Revoke this credential with "
+                    + operator_command(store, "client revoke " + shlex.quote(current["client_id"]))
+                    + "; preserve its file with mv -n "
+                    + shlex.quote(str(path))
+                    + " "
+                    + shlex.quote(str(path) + ".before-replacement")
+                    + ", then retry the original command to issue the requested permissions."
                 )
             if same_permissions:
                 if current["url"] != url:
@@ -286,13 +451,6 @@ def serve_locks(store: Store, *, http: bool):
                 yield
         else:
             yield
-
-
-def ensure_enabled(store: Store) -> None:
-    if marker_path(store).exists():
-        raise StoreDisabledError(
-            "This installation is disabled. Inspect its recovery or removal state."
-        )
 
 
 def daemon_environment() -> dict[str, str]:
@@ -422,7 +580,31 @@ def verify_daemon(store: Store, state: dict) -> None:
         except Exception:
             pass
         if not owns_process(store, state) or time.monotonic() >= deadline:
-            raise InputError("The managed service did not pass its MCP readiness check.")
+            for name in ("http.lock", "writers.lock"):
+                lease = lock_status(store.directory / name)
+                if lease["state"] != "held" or (
+                    name == "writers.lock" and lease.get("mode") != "exclusive"
+                ):
+                    continue
+                owners = lease["owners"]
+                if state["pid"] in owners or (not owners and active(state)):
+                    continue  # A live child's own lease does not explain unreadiness.
+                detail = f" by PID(s) {', '.join(map(str, owners))}" if owners else ""
+                next_command = (
+                    f"kill -TERM {owners[0]}" if owners else operator_command(store, "doctor")
+                )
+                raise BusyError(
+                    f"Managed startup is blocked by {lease.get('mode', 'unknown')} "
+                    f"lease {name}{detail}. "
+                    "Recheck the owner and stop it with its supervisor; next command: "
+                    + next_command
+                )
+            raise InputError(
+                "The managed service did not pass its MCP readiness check. Next command: "
+                + operator_command(store, "doctor")
+                + "; inspect the local service log with tail -n 40 "
+                + shlex.quote(str(store.directory / "service.log"))
+            )
         time.sleep(0.1)
 
 
@@ -442,6 +624,7 @@ def up(
         resume_uninstalled(store, requested=resume),
     ):
         ensure_enabled(store)
+        require_no_unmanaged_writers(store)
         store.initialize()
         state = load_state(store)
         if state and (
@@ -458,14 +641,17 @@ def up(
             raise InputError("Managed service state refers to a foreign process; it was preserved.")
         if managed and (state.get("version") != __version__ or state.get("oauth_issuer") != issuer):
             raise InputError(
-                "Managed service version or OAuth issuer differs; "
-                "stop it explicitly before changing it."
+                f"Managed service PID {state['pid']} version or OAuth issuer differs. "
+                "Next command: " + operator_command(store, "down")
             )
         if managed:
             if port not in (None, 0, state["port"]) or (
                 semantic is not None and semantic != state["semantic"]
             ):
-                raise InputError("Stop the existing service before changing its runtime options.")
+                raise InputError(
+                    f"Managed service PID {state['pid']} has different runtime options. "
+                    "Next command: " + operator_command(store, "down")
+                )
         else:
             state = start_daemon(store, state, port=port, semantic=semantic, issuer=issuer)
         started = not managed
@@ -508,20 +694,52 @@ def managed_status(store: Store) -> dict:
             else "stopped"
         )
     )
-    return {"state": status, "writers": lock_status(store.directory / "writers.lock")}
+    processes = unmanaged_writers(store)
+    result = {"state": status, "writers": lock_status(store.directory / "writers.lock")}
+    if processes:
+        result.update(
+            state="unmanaged_writers",
+            processes=processes,
+            next_command=processes[0]["stop_command"],
+        )
+    return result
 
 
 def down(store: Store) -> dict:
     if not store.directory.exists():
-        return {"state": "stopped", "data_preserved": True}
+        processes = unmanaged_writers(store)
+        if processes:
+            return {
+                "state": "external_writers_remain",
+                "processes": processes,
+                "next_command": processes[0]["stop_command"],
+                "data_preserved": True,
+            }
+        return {
+            "state": "writer_state_unknown",
+            "data_preserved": True,
+            "evidence": "Installation directory is absent; no process or lease proves stopped.",
+            "next_command": operator_command(store, "doctor"),
+        }
     with locked(store.directory / "service.lock"):
         if state_path(store).exists():
             stop_process(store, load_state(store))
         leases = lock_status(store.directory / "writers.lock")
-        return {
+        processes = unmanaged_writers(store)
+        result = {
             "state": "stopped"
-            if leases["state"] in {"absent", "free"}
+            if leases["state"] in {"absent", "free"} and not processes
+            else "writer_state_unknown"
+            if leases["state"] == "unknown" and not processes
             else "external_writers_remain",
             "writers": leases,
             "data_preserved": True,
         }
+        if processes:
+            result.update(processes=processes, next_command=processes[0]["stop_command"])
+        elif leases["state"] == "unknown":
+            result.update(
+                next_command="lsof " + shlex.quote(str(store.directory / "writers.lock")),
+                evidence="Kernel flock inspection is unavailable; writer presence is unknown.",
+            )
+        return result

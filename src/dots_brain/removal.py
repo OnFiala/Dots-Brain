@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shlex
 import sqlite3
 from pathlib import Path
 
@@ -13,14 +14,15 @@ from .clients import (
     PROVIDERS,
     bridge_entry,
     integration_key,
+    legacy_client_notice,
     local_connection_path,
     registrations,
     target_path,
 )
 from .errors import BrainError, InputError
-from .installation_state import mark_uninstalled
+from .installation_state import mark_uninstalled, marker_path
 from .local import atomic_write, lock_status, locked, read_json, write_json
-from .runtime import state_path, stop_process
+from .runtime import active, state_path, stop_process, unmanaged_writers
 from .store import Store
 
 
@@ -69,7 +71,13 @@ def remove_entry(record: dict, *, dry_run: bool) -> dict:
         return {**result, "state": "preserved_unreadable"}
 
 
-def inventory(store: Store, extra_configs: list[str]) -> tuple[dict, list[dict]]:
+def inventory(
+    store: Store,
+    extra_configs: list[str],
+    *,
+    discover_defaults: bool = True,
+    requested_key: str | None = None,
+) -> tuple[dict, list[dict]]:
     issues = []
     try:
         raw = registrations(store.directory)
@@ -89,7 +97,10 @@ def inventory(store: Store, extra_configs: list[str]) -> tuple[dict, list[dict]]
                 or key != integration_key(item["provider"], Path(item["config_file"]))
             ):
                 invalid_items[key] = item
-                issues.append({"state": "registry_invalid_entry", "key": str(key)})
+                issue = {"state": "registry_invalid_entry", "key": str(key)}
+                if requested_key is not None and key != requested_key:
+                    issue["severity"] = "info"
+                issues.append(issue)
                 continue
             valid_items[key] = item
         registry = {"version": 1, "items": valid_items, "_invalid_items": invalid_items}
@@ -99,7 +110,11 @@ def inventory(store: Store, extra_configs: list[str]) -> tuple[dict, list[dict]]
             {"state": "registry_unreadable", "action": "Preserve and repair the registry."}
         )
 
-    candidates = [(p, target_path(p, None)) for p in PROVIDERS if p != "mcp-json"]
+    candidates = (
+        [(p, target_path(p, None)) for p in PROVIDERS if p != "mcp-json"]
+        if discover_defaults
+        else []
+    )
     for option in extra_configs:
         provider, separator, path = option.partition("=")
         if not separator or not path or provider not in PROVIDERS:
@@ -111,9 +126,14 @@ def inventory(store: Store, extra_configs: list[str]) -> tuple[dict, list[dict]]
             continue
         private = store.directory / "connections"
         connections = [private / f"{provider}-{key}.json", private / f"{provider}.json"]
+        owned = False
         try:
             _, document, section = inspect_config(path, provider)
             entry = document.get(section, {}).get("dots-brain")
+            notice = legacy_client_notice(provider, path, entry)
+            if notice is not None:
+                issues.append(notice)
+                continue
             connection = next(
                 (
                     candidate
@@ -123,6 +143,7 @@ def inventory(store: Store, extra_configs: list[str]) -> tuple[dict, list[dict]]
                 None,
             )
             if connection is not None:
+                owned = True
                 client_id = read_connection(connection)["client_id"] if connection.exists() else ""
                 registry["items"][key] = {
                     "provider": provider,
@@ -133,10 +154,37 @@ def inventory(store: Store, extra_configs: list[str]) -> tuple[dict, list[dict]]
                     "local": True,
                 }
             elif entry is not None:
-                issues.append({"config_file": str(path), "state": "preserved_unowned"})
+                issues.append(
+                    {"config_file": str(path), "state": "preserved_unowned", "severity": "info"}
+                )
         except (OSError, ValueError, InputError):
-            issues.append({"config_file": str(path), "state": "preserved_unreadable"})
+            issue = {"config_file": str(path), "state": "preserved_unreadable"}
+            if not owned:
+                issue["severity"] = "info"
+            issues.append(issue)
     return registry, issues
+
+
+def discovery_results(findings: list[dict]) -> tuple[list[dict], list[dict]]:
+    """Only failures tied to owned state prevent completed removal."""
+    return (
+        [item for item in findings if item.get("severity") != "info"],
+        [item for item in findings if item.get("severity") == "info"],
+    )
+
+
+def installation_present(store: Store) -> bool:
+    """An empty directory is not evidence of an installed service or client."""
+    return any(
+        path.exists() or path.is_symlink()
+        for path in (
+            store.path,
+            state_path(store),
+            marker_path(store),
+            store.directory / "integrations.json",
+            store.directory / "connections",
+        )
+    )
 
 
 def persist_registry(store: Store, registry: dict, issues: list[dict]) -> None:
@@ -175,13 +223,29 @@ def disconnect_client(
     key = integration_key(provider, target)
 
     def disconnect():
-        registry, issues = inventory(store, [f"{provider}={target}"])
+        registry, findings = inventory(
+            store,
+            [f"{provider}={target}"],
+            discover_defaults=False,
+            requested_key=key,
+        )
+        issues, notes = discovery_results(findings)
         record = registry["items"].get(key)
         if record is None:
-            return {"state": "partial" if issues else "already_absent", "issues": issues}
+            return {
+                "state": "partial" if issues else "already_absent",
+                "issues": issues,
+                "notes": notes,
+            }
         result = remove_entry(record, dry_run=dry_run)
         if dry_run:
-            return {"state": "preview", "client": result, "changes_applied": False}
+            return {
+                "state": "preview",
+                "client": result,
+                "changes_applied": False,
+                "issues": issues,
+                "notes": notes,
+            }
         if result["state"] not in {"removed", "already_absent"}:
             return {
                 "state": "partial",
@@ -189,6 +253,7 @@ def disconnect_client(
                 "access": "preserved",
                 "data_preserved": True,
                 "issues": issues,
+                "notes": notes,
             }
         credential = managed_credential(store, record)
         unique = credential is not None and credential.name == f"{provider}-{key}.json"
@@ -197,9 +262,13 @@ def disconnect_client(
             for other, item in registry["items"].items()
         )
         if unique and not shared and store.path.is_file():
-            revoke_client(store, record["client_id"])
-            credential.unlink(missing_ok=True)
-            access = "revoked"
+            try:
+                revoke_client(store, record["client_id"])
+                credential.unlink(missing_ok=True)
+                access = "revoked"
+            except (OSError, ValueError, BrainError, sqlite3.Error):
+                issues.append({"state": "credential_revocation_failed"})
+                access = "revocation_incomplete"
         else:
             access = (
                 "issuer_revocation_required"
@@ -223,6 +292,7 @@ def disconnect_client(
             "access": access,
             "data_preserved": True,
             "issues": issues,
+            "notes": notes,
         }
 
     if dry_run or not store.directory.exists():
@@ -235,7 +305,20 @@ def uninstall(
     store: Store, *, dry_run: bool = False, extra_configs: list[str] | None = None
 ) -> dict:
     def remove():
-        registry, issues = inventory(store, extra_configs or [])
+        registry, findings = inventory(store, extra_configs or [])
+        issues, notes = discovery_results(findings)
+        present = installation_present(store)
+        if not present and registry["items"]:
+            issues.append({"state": "credential_revocation_unavailable"})
+        for record in registry["items"].values():
+            if not record["local"]:
+                issues.append(
+                    {
+                        "provider": record["provider"],
+                        "client_id": record["client_id"],
+                        "state": "issuer_revocation_required",
+                    }
+                )
         results = [remove_entry(record, dry_run=True) for record in registry["items"].values()]
         common = {
             "data_dir": str(store.directory),
@@ -252,6 +335,7 @@ def uninstall(
                 "python_environment",
             ],
             "discovery": "registered paths, default paths, and explicitly supplied legacy paths",
+            "notes": notes,
         }
         if dry_run:
             return {
@@ -261,25 +345,55 @@ def uninstall(
                 "clients": results,
                 "issues": issues,
             }
-        if not store.directory.exists() and not registry["items"]:
+        if not present:
+            results = [remove_entry(record, dry_run=False) for record in registry["items"].values()]
             return {
                 **common,
                 "state": "partial" if issues else "not_installed",
-                "clients": [],
+                "clients": results,
+                "service_disabled": False,
+                "managed_process_stopped": "unknown",
+                "local_credentials_revoked": False,
                 "issues": issues,
             }
         with locked(store.directory / "service.lock", create_parent=True):
             # Disable first: stale bridges cannot restart, and running MCP tools reject calls.
             mark_uninstalled(store)
-            stopped = False
+            stopped = "unknown"
             try:
                 if state_path(store).exists():
-                    stop_process(store, read_json(state_path(store)))
+                    state = read_json(state_path(store))
+                    was_active = active(state)
+                    stop_process(store, state)
+                    if was_active:
+                        stopped = True
                 leases = lock_status(store.directory / "writers.lock")
-                stopped = leases["state"] in {"free", "absent"}
-                if not stopped:
+                if leases["state"] == "held":
+                    stopped = False
                     issues.append({"state": "external_writers_remain", "writers": leases})
+                elif leases["state"] not in {"free", "absent"}:
+                    stopped = "unknown"
+                    issues.append(
+                        {
+                            "state": "writers_status_unknown",
+                            "writers": leases,
+                            "action": "Inspect external owners with "
+                            + shlex.join(["lsof", str(store.directory / "writers.lock")])
+                            + ".",
+                        }
+                    )
+                processes = unmanaged_writers(store)
+                if processes:
+                    stopped = False
+                    issues.append(
+                        {
+                            "state": "external_writers_remain",
+                            "processes": processes,
+                            "next_command": processes[0]["stop_command"],
+                        }
+                    )
             except (OSError, ValueError, BrainError):
+                stopped = False
                 issues.append({"state": "managed_process_stop_failed"})
             credentials_revoked = False
             if store.path.is_file():
@@ -300,14 +414,6 @@ def uninstall(
                 results.append(result)
                 if result["state"] not in {"removed", "already_absent"}:
                     remaining[key] = record
-                if not record["local"]:
-                    issues.append(
-                        {
-                            "provider": record["provider"],
-                            "client_id": record["client_id"],
-                            "state": "issuer_revocation_required",
-                        }
-                    )
                 path = managed_credential(store, record)
                 if path is not None:
                     credentials.append(path)
@@ -328,7 +434,7 @@ def uninstall(
             "issues": issues,
         }
 
-    if dry_run or not store.directory.exists():
+    if dry_run or not installation_present(store):
         return remove()
     with locked(store.directory / "installation.lock", create_parent=True):
         return remove()

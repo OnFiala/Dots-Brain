@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import os
+import shlex
 import sqlite3
 import uuid
 from itertools import zip_longest
@@ -11,7 +12,7 @@ from pathlib import Path
 
 from .database_checks import validate_snapshot
 from .database_io import open_readonly, snapshot
-from .errors import InputError, IntegrityError, StateError
+from .errors import InputError, IntegrityError, MigrationRequiredError, StateError
 from .installation_state import marker_path, read_marker, write_marker
 from .local import locked, read_json, sync_file_and_parent, write_json
 from .store import SCHEMA_VERSION, Store, enable_wal, rebuild_fts, secure_fts
@@ -19,7 +20,7 @@ from .store import SCHEMA_VERSION, Store, enable_wal, rebuild_fts, secure_fts
 
 def migrate(store: Store, *, apply: bool, writers_stopped: bool, backup: Path | None) -> dict:
     from .migrations import migrate_store
-    from .runtime import active, state_path
+    from .runtime import active, operator_command, require_no_unmanaged_writers, state_path
 
     if not apply:
         if backup is not None or writers_stopped:
@@ -31,7 +32,11 @@ def migrate(store: Store, *, apply: bool, writers_stopped: bool, backup: Path | 
             raise InputError("Stop managed, supervised, and stdio writers; pass --writers-stopped.")
         state = read_json(state_path(store)) if state_path(store).exists() else {}
         if active(state):
-            raise InputError("The managed service is still running. Stop it before migration.")
+            raise StateError(
+                f"The managed service is still running (PID {state['pid']}). Next command: "
+                + operator_command(store, "down")
+            )
+        require_no_unmanaged_writers(store)
 
     if not store.path.is_file():
         raise InputError("Memory is not initialized. Run dots-brain setup first.")
@@ -71,6 +76,27 @@ def restore_store(backup: Path, target: Store, *, latest_deletions: Store) -> di
         legacy = [tuple(row) for row in current.execute("SELECT * FROM suppressions")]
         scoped = [tuple(row) for row in current.execute("SELECT * FROM scoped_suppressions")]
     with contextlib.closing(open_readonly(backup, immutable=True)) as source:
+        version = source.execute("PRAGMA user_version").fetchone()[0]
+        if version in (1, 2, 3):
+            validate_snapshot(source, version)
+            working = target.directory.with_name(target.directory.name + "-backup-upgrade")
+            command = shlex.join(
+                [
+                    "dots-brain",
+                    "--data-dir",
+                    str(working),
+                    "migrate",
+                    "--apply",
+                    "--writers-stopped",
+                ]
+            )
+            raise MigrationRequiredError(
+                f"Backup uses schema v{version}; restore requires v{SCHEMA_VERSION}. "
+                f"Preserve the original backup. Copy it as brain.sqlite3 into a new private "
+                f"directory {working}; if that path exists, choose another new directory. "
+                f"Next command for the copy: {command}. Then retry restore with "
+                f"--backup pointing to that migrated brain.sqlite3."
+            )
         validate_snapshot(source, SCHEMA_VERSION)
         try:
             target.directory.mkdir(parents=True, mode=0o700)
@@ -186,7 +212,7 @@ def activate_restore(source: Store, target: Store, *, writers_stopped: bool) -> 
     writes. Its durable disabled marker prevents queued/new memory writes. Only
     then can the target become available, with all old credentials revoked.
     """
-    from .runtime import active, state_path
+    from .runtime import active, operator_command, require_no_unmanaged_writers, state_path
 
     if not writers_stopped:
         raise InputError("Stop all managed, supervised, and stdio writers; pass --writers-stopped.")
@@ -215,7 +241,11 @@ def activate_restore(source: Store, target: Store, *, writers_stopped: bool) -> 
         for store in (source, target):
             runtime = read_json(state_path(store)) if state_path(store).exists() else {}
             if active(runtime):
-                raise InputError("A managed recovery service is still running; stop it first.")
+                raise StateError(
+                    f"A managed recovery service is still running (PID {runtime['pid']}). "
+                    "Next command: " + operator_command(store, "down")
+                )
+            require_no_unmanaged_writers(store)
         with target.connection() as db:
             validate_snapshot(db, SCHEMA_VERSION)
         with source.connection(write=True) as current:

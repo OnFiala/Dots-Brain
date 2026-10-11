@@ -29,13 +29,31 @@ def default_directory() -> Path:
 
 class ArgumentParser(argparse.ArgumentParser):
     def error(self, message):
-        # argparse includes user-supplied values; use a stable, non-reflective error.
+        # Only parser-owned argument names may be reflected. Values can be secrets.
+        names = {
+            name for action in self._actions for name in (action.option_strings or [action.dest])
+        }
+        argument = message.removeprefix("argument ").partition(":")[0]
+        if message.startswith("argument ") and argument in names:
+            description = (
+                f"Missing value for {argument}."
+                if "expected one argument" in message
+                else f"Invalid value or combination for {argument}."
+            )
+        elif message.startswith("the following arguments are required: "):
+            required = message.partition(": ")[2].split(", ")
+            known = [name for name in required if name in names]
+            description = "Missing required argument(s): " + ", ".join(known) + "."
+        elif message.startswith("unrecognized arguments:"):
+            description = "Unrecognized option or positional argument."
+        else:
+            description = "Invalid command arguments."
         print(
             json.dumps(
                 {
                     "state": "error",
                     "code": "invalid_input",
-                    "message": "Invalid command arguments; use --help.",
+                    "message": description + f" Next command: {self.prog} --help",
                 }
             ),
             file=sys.stderr,
@@ -55,7 +73,9 @@ def managed_port(value):
 
 
 def parser() -> argparse.ArgumentParser:
-    root = ArgumentParser(description="One source-aware memory for your AI tools.")
+    root = ArgumentParser(
+        prog="dots-brain", description="One source-aware memory for your AI tools."
+    )
     root.add_argument(
         "--version", action="version", version=__version__, help="Print the installed version."
     )
@@ -635,6 +655,8 @@ def main() -> None:
                 "capture_recovery_required",
                 "invalid",
                 "probe_recovery_needed",
+                "external_writers_remain",
+                "writer_state_unknown",
             }:
                 raise SystemExit(1)
     except Exception as exc:

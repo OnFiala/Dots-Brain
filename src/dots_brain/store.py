@@ -24,10 +24,9 @@ from .errors import (
     IntegrityError,
     MigrationRequiredError,
     NotFoundError,
-    StoreDisabledError,
     SuppressedError,
 )
-from .installation_state import marker_path
+from .installation_state import ensure_enabled
 from .local import locked, publish_new, sync_directory, sync_file_and_parent
 from .schema import APPLICATION_ID as APPLICATION_ID
 from .schema import SCHEMA_VERSION, create_schema, validate_schema
@@ -176,8 +175,7 @@ class Store:
 
     def initialize(self) -> None:
         require_sqlite()
-        if marker_path(self).exists():
-            raise StoreDisabledError("This installation is disabled; inspect its recovery state.")
+        ensure_enabled(self)
         self.directory.mkdir(parents=True, exist_ok=True, mode=0o700)
         # A distinct schema lock avoids reentering installation/service locks held by callers.
         with locked(self.directory / "schema.lock"):
@@ -519,10 +517,7 @@ class Store:
     def ensure_writable(self) -> None:
         # Check after acquiring the SQLite writer lock: a recovery cutover may
         # have disabled this store while this request was waiting for that lock.
-        if marker_path(self).exists():
-            raise StoreDisabledError(
-                "This installation is disabled; memory writes are unavailable."
-            )
+        ensure_enabled(self)
 
     def status(self, *, projects: tuple[str, ...] | None = None) -> dict:
         clause, args = self._filter(projects)

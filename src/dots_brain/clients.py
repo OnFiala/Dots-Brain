@@ -8,6 +8,7 @@ import copy
 import hashlib
 import json
 import os
+import shlex
 import sys
 from pathlib import Path
 
@@ -15,7 +16,7 @@ import tomlkit
 
 from .auth import read_connection
 from .bridge import verify_command
-from .errors import InputError
+from .errors import InputError, StateError
 from .local import atomic_write, locked, read_json, write_json
 from .runtime import credential, up
 from .store import Store
@@ -56,6 +57,40 @@ def bridge_entry(connection: Path, directory: Path | None, provider: str) -> dic
     if provider == "claude-code":
         entry["type"] = "stdio"
     return entry
+
+
+def legacy_client_notice(provider: str, path: Path, entry: object) -> dict | None:
+    """Describe an unregistered alpha.1 entry without claiming ownership of it."""
+    if not isinstance(entry, dict):
+        return None
+    args = entry.get("args")
+    if (
+        not isinstance(args, list)
+        or len(args) != 7
+        or not all(isinstance(value, str) for value in args)
+        or args[:4] != ["-m", "dots_brain.cli", "bridge", "--credential-file"]
+        or args[5] != "--local-data-dir"
+    ):
+        return None
+    connection = Path(args[4])
+    if connection.parent.name != "connections" or connection.name != f"{provider}.json":
+        return None
+    section = "mcp_servers" if provider == "codex" else "mcpServers"
+    command = shlex.join(
+        ["dots-brain", "--data-dir", args[6], "connect", provider, "--config", str(path)]
+    )
+    return {
+        "state": "unsupported_legacy_client",
+        "severity": "info",
+        "provider": provider,
+        "config_file": str(path),
+        "action": (
+            f"Unregistered 0.2.0-alpha.1 client format is no longer supported. "
+            f"Manually remove only {section}.dots-brain from {path}; preserve other settings, "
+            f"then run {command}. The previous credential was preserved."
+        ),
+        "next_command": command,
+    }
 
 
 def providers() -> dict:
@@ -207,6 +242,16 @@ def _connect_client(store, *, provider, config, connection, projects):
     key = integration_key(provider, target)
     local = connection is None
     previous = registry["items"].get(key)
+    if previous is None and target.is_file() and not target.is_symlink():
+        text = target.read_text(encoding="utf-8")
+        document = tomlkit.parse(text) if provider == "codex" else json.loads(text) if text else {}
+        section = "mcp_servers" if provider == "codex" else "mcpServers"
+        if isinstance(document, dict) and isinstance(document.get(section, {}), dict):
+            notice = legacy_client_notice(
+                provider, target, document.get(section, {}).get("dots-brain")
+            )
+            if notice:
+                raise StateError(notice["action"])
     replace_entry = None
     created_credential = False
     if local:
@@ -225,16 +270,6 @@ def _connect_client(store, *, provider, config, connection, projects):
                     )
                 connection = previous_path
                 replace_entry = previous["entry"]
-        elif (private / f"{provider}.json").is_file() and target.is_file():
-            # Preserve alpha.1 connections when their generated entry is unchanged.
-            legacy = private / f"{provider}.json"
-            text = target.read_text(encoding="utf-8")
-            document = tomlkit.parse(text) if provider == "codex" else json.loads(text)
-            section = "mcp_servers" if provider == "codex" else "mcpServers"
-            if document.get(section, {}).get("dots-brain") == bridge_entry(
-                legacy, store.directory, provider
-            ):
-                connection = legacy
         entry = bridge_entry(connection, store.directory, provider)
         preflight_configure(target, provider=provider, entry=entry, replace_entry=replace_entry)
         runtime = up(store)

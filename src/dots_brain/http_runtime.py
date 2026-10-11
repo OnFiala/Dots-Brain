@@ -144,15 +144,26 @@ def listener_status(store):
     except (OSError, InputError, ValueError):
         return {"state": "invalid", "mode": "unknown", "next_command": "dots-brain serve --help"}
     lease = lock_status(store.directory / "http.lock")
-    running = not value.get("stopped") and lease["state"] == "held"
+    state = (
+        "stopped"
+        if value.get("stopped") or lease["state"] in {"free", "absent"}
+        else "recorded"
+        if lease["state"] == "held"
+        else "unknown"
+    )
     config = configuration_status(store)
     return {
-        "state": "recorded" if running else "stopped",
+        "state": state,
         "mode": value["mode"],
         "private_port": private,
         "public_port": public,
         "pid": value["pid"],
-        "process_verified": running and value["pid"] in lease["owners"],
+        "process_verified": state == "recorded" and value["pid"] in lease["owners"],
+        **(
+            {"next_command": shlex.join(["lsof", str(store.directory / "http.lock")])}
+            if state == "unknown"
+            else {}
+        ),
         "readiness": "not_probed",
         "warnings": plan.warnings(
             config if config["state"] == "configured" else None,

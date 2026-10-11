@@ -32,6 +32,14 @@ state.
 
 ### Fixed
 
+- Avoid creating disabled state when uninstalling a missing or empty installation;
+  keep process-stop evidence unknown when it cannot be established. Scope
+  disconnect to its requested client and report unrelated discovery as notes.
+- Inspect Linux leases without acquiring them, report matching untracked servers,
+  and refuse migration/startup while a detected old server remains. Preserve
+  process ownership checks and include lease/PID evidence in readiness failures.
+- Name actionable recovery commands for disabled stores, old backup schemas and
+  client conflicts; identify parser-owned option names without echoing values.
 - Progress past large accepted audit events through an explicit host-verified
   review projection, retain original hashes and record omitted content as a finding.
   Verify the same projection when it becomes the next scan's anchor.
@@ -96,6 +104,10 @@ state.
 
 ### Breaking
 
+- End automatic support for unregistered 0.2.0-alpha.1 client entries. Report the
+  exact file and manual cleanup steps; retain registered 0.3+ clients and schema
+  v1 onward migration support. A non-Linux existing lease without kernel evidence
+  now reports unknown; `down` returns exit 1 instead of claiming it stopped.
 - Capture cursors and private review state now use explicit format version 1.
   The review helper requires `audit events --review-projection` on the memory host;
   it never silently falls back to an incompatible helper. Preserve older state

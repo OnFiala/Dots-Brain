@@ -161,7 +161,11 @@ def doctor(store):
             checks[name] = value
         except (BrainError, OSError, ValueError, sqlite3.Error) as exc:
             checks[name] = {"state": "error", "error": safe_error(exc)}
-    blocked = any(value.get("state") in {"error", "invalid"} for value in checks.values())
+    blocked = any(
+        value.get("state")
+        in {"error", "invalid", "unknown", "unmanaged_writers", "foreign_process"}
+        for value in checks.values()
+    )
     return {
         "state": "diagnosis_completed",
         "healthy": not blocked and not marker_path(store).exists(),

@@ -12,6 +12,11 @@ dots-brain --data-dir /absolute/private/memory doctor
 Run the preview first. `doctor` then reports `service_disabled: true` and `healthy: false`. A partial result
 names the remaining configuration or remote-revocation work; it is not success.
 
+For a missing or empty installation, uninstall reports `not_installed` and does
+not create a data directory, marker, registry or lock. It reports
+`managed_process_stopped: "unknown"` when it has no process-stop evidence. Deleting
+a directory under a live process does not stop that process.
+
 `down` only stops the managed background process. Manually supervised services and
 stdio clients need their own shutdown. Removing a source checkout or package is a
 separate operation after data and client configuration have been identified. Do
@@ -26,9 +31,23 @@ request with a separately verified target.
 still holds a server lease. `doctor.checks.managed_service.writers` shows the
 observed lease and Linux owner PIDs when available. A free lease is not proof
 that an external program without the lease protocol has stopped.
+Inspection reads the Linux kernel lock table without acquiring a lease. When an
+existing lock file cannot be inspected, `down` reports `writer_state_unknown`
+with a local `lsof` command and exit status 1. It does not report a stopped process.
+Uninstall retains the same uncertainty in its partial result. Missing files remain
+`absent`, which alone is still not process-stop evidence.
+HTTP listener diagnostics also report `unknown` when an existing lease cannot be
+inspected; `doctor` then marks the overall diagnosis unhealthy until verified.
 
 `disconnect` preserves both credentials and registration when the client entry
 was changed. Inspect that entry before retrying. An unchanged orphaned entry can
 be found at the provider's default path or an explicit `--config PROVIDER=PATH`.
 An unrecognized default entry is reported and retained even if the data directory
 is missing. Remote credential revocation remains the issuer's responsibility.
+
+Disconnect examines the requested provider and configuration. Unreadable or
+unowned files discovered elsewhere are informational `notes`; they do not turn
+completed removal into `partial`. Failures involving an owned registration,
+credential or modified managed entry remain material `issues`. Preview includes
+both. Unregistered 0.2.0-alpha.1 entries are preserved with a filename and manual
+cleanup instructions; see [upgrading clients](upgrading.md#legacy-client-entries).

@@ -201,16 +201,24 @@ def test_existing_supervised_writer_is_reported_without_signalling_it(tmp_path):
     store.initialize()
     with locked(store.directory / "writers.lock", shared=True):
         status = lock_status(store.directory / "writers.lock")
-        assert status["state"] == "held"
+        assert status["state"] == ("held" if sys.platform == "linux" else "unknown")
         if sys.platform == "linux":
             assert os.getpid() in status["owners"]
-        assert down(store)["state"] == "external_writers_remain"
-        assert doctor(store)["checks"]["managed_service"]["writers"]["state"] == "held"
+        assert down(store)["state"] == (
+            "external_writers_remain" if sys.platform == "linux" else "writer_state_unknown"
+        )
+        assert doctor(store)["checks"]["managed_service"]["writers"]["state"] == (
+            "held" if sys.platform == "linux" else "unknown"
+        )
         removed = uninstall(store)
         assert removed["state"] == "partial"
-        assert removed["managed_process_stopped"] is False
+        assert removed["managed_process_stopped"] == (
+            False if sys.platform == "linux" else "unknown"
+        )
         assert doctor(store)["healthy"] is False
-    assert down(store)["state"] == "stopped"
+    assert down(store)["state"] == (
+        "stopped" if sys.platform == "linux" else "writer_state_unknown"
+    )
 
 
 def test_lock_diagnosis_does_not_create_missing_files(tmp_path):

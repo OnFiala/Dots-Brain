@@ -4,10 +4,11 @@ Only an ordinary uninstall is resumable. Recovery transitions retain their
 identity and require an explicit cutover or cancellation.
 """
 
+import shlex
 from contextlib import contextmanager
 from datetime import UTC, datetime
 
-from .errors import StateError
+from .errors import InputError, StateError, StoreDisabledError
 from .local import read_json, sync_directory, write_json
 
 
@@ -18,6 +19,29 @@ def marker_path(store):
 def read_marker(store) -> dict:
     path = marker_path(store)
     return read_json(path) if path.exists() else {}
+
+
+def ensure_enabled(store) -> None:
+    path = marker_path(store)
+    if not (path.exists() or path.is_symlink()):
+        return
+    command = ["dots-brain", "--data-dir", str(store.directory)]
+    try:
+        state = read_marker(store)
+    except (InputError, OSError):
+        raise StoreDisabledError(
+            f"Cannot read disabled state file {path}. Next command: "
+            + shlex.join([*command, "doctor"])
+        ) from None
+    resumable = state.get("version") == 1 and (
+        state.get("reason") == "uninstalled"
+        or state.get("disabled") is True
+        and set(state) <= {"version", "disabled", "uninstalled_at"}
+    )
+    command.extend(["up", "--resume"] if resumable else ["doctor"])
+    raise StoreDisabledError(
+        f"This installation is disabled by state file {path}. Next command: " + shlex.join(command)
+    )
 
 
 def write_marker(store, *, reason: str, **fields) -> None:
