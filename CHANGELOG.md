@@ -32,6 +32,10 @@ state.
 
 ### Fixed
 
+- Replace the semantic calibration fixture with independently authored neutral
+  synthetic objects and record its provenance. Re-measure both the baseline and
+  candidate, including the current inability to reject its unrelated questions.
+  Published branch history is retained.
 - Accept historical v1/v2 stores touched by `7085841`, comparing SQL tokens
   against frozen historical DDL while preserving constraints and literals.
 - Validate canonical data during migration planning, reject unsupported stores

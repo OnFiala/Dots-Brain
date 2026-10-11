@@ -67,11 +67,26 @@ The pending-source query still examines the source set when all records are
 indexed. Bounded result size is not a constant-time guarantee; see the
 [stress measurements](stress-tests.md).
 
-The fixed semantic score floor remains 0.20. The checked-in 24-fact
-Czech/English calibration corpus has 11 query forms, or 264 relevant queries.
-With the pinned local model it measured 231/264 recall at ten (87.5%) at 0.20
-and 181/264 (68.6%) at 0.30. Its 24 supplied out-of-domain queries still
-produced a semantic candidate for 14 queries at 0.20 and 4 at 0.30. The trade-off
-is not strong enough to raise the floor globally, especially for short queries.
-Treat the floor as bounded noise reduction only; full-text ranking and source
-review remain necessary.
+The fixed semantic score floor remains 0.20. The public `neutral-objects-v1`
+regression fixture contains 24 imaginary objects in Czech and English and 11
+query forms, or 264 relevant queries. It is repository-authored synthetic data,
+not an independent held-out evaluation. Its reviewed SHA-256 is pinned by
+`tests/test_calibration_fixture.py`.
+
+On a MacBook Pro, macOS 26.6.2 arm64, Python 3.11.14 and the pinned local CPU
+model, both `555f615` and the candidate after `800eeda` measured **232/264
+recall at ten (87.9%)**. Both returned a semantic candidate for **24/24
+out-of-domain questions**. These are retrieval counts, not latency or memory
+measurements. This fixture replacement does not improve ranking. The current
+floor provides no useful rejection of those unrelated questions; verify source
+relevance before using a result. Short cross-language retrieval also remains a
+known limitation pending the separate ranking change.
+
+Reproduce with a locally prepared model (the test never downloads one):
+
+```sh
+BRAIN_TEST_MODEL_DIR=/path/to/prepared/model uv run pytest -q tests/test_semantic.py -k calibration --junitxml=calibration.xml -o junit_family=xunit1
+```
+
+The XML records recall and unrelated-candidate counts. The test enforces a broad
+80% retrieval regression floor; it makes no out-of-domain accuracy guarantee.
