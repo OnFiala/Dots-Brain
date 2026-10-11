@@ -284,9 +284,9 @@ class Store:
         if projects is not None and project not in projects:
             raise NotFoundError("Project is not available to this client.")
         validate_text(writer_principal, "writer_principal", 500)
-        from .privacy import guard_content
+        from .privacy import check_content
 
-        guard_content(
+        warnings = check_content(
             {
                 "content": content,
                 "source": source,
@@ -297,6 +297,7 @@ class Store:
                 "source_uri": source_uri,
             }
         )
+        metadata = {"warnings": warnings} if warnings else {}
         key = source_key(source, account, event_id)
         digest = hashlib.sha256(
             json.dumps([content, title, source_uri], ensure_ascii=False).encode()
@@ -337,6 +338,7 @@ class Store:
                         "revision": existing["current_revision"],
                         "replayed_revision": replay["revision"],
                         "changed": False,
+                        **metadata,
                     }
                 if expected_revision != existing["current_revision"]:
                     raise ConflictError("Content changed; supply the current expected_revision.")
@@ -380,7 +382,7 @@ class Store:
             if existing:
                 db.execute("DELETE FROM memory_fts WHERE memory_id=?", (memory_id,))
             db.execute("INSERT INTO memory_fts VALUES (?,?,?)", (memory_id, title, content))
-        return {"id": memory_id, "revision": revision, "changed": True}
+        return {"id": memory_id, "revision": revision, "changed": True, **metadata}
 
     def get(
         self,

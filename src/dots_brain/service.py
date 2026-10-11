@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import uuid
 from dataclasses import replace
 
@@ -45,31 +46,34 @@ class MemoryService:
             action={"tool": action},
             target=target,
         )
+
+        def receipt(details):
+            try:
+                self.audit.observed(
+                    observer,
+                    project=audit_project,
+                    kind="receipt",
+                    client_event_id=event_id + ":receipt",
+                    intent_event_id=event_id,
+                    target=target,
+                    details=details,
+                )
+                return True
+            except Exception:
+                logging.getLogger("dots_brain").error(
+                    "Memory audit receipt missing; intent_event_id=%s", event_id
+                )
+                return False
+
         try:
             result = function(**arguments)
         except Exception as exc:
-            self.audit.observed(
-                observer,
-                project=audit_project,
-                kind="receipt",
-                client_event_id=event_id + ":receipt",
-                intent_event_id=event_id,
-                target=target,
-                details={
-                    "status": "failed",
-                    "error_code": getattr(exc, "code", "operation_failed"),
-                },
-            )
+            receipt({"status": "failed", "error_code": getattr(exc, "code", "operation_failed")})
             raise
-        self.audit.observed(
-            observer,
-            project=audit_project,
-            kind="receipt",
-            client_event_id=event_id + ":receipt",
-            intent_event_id=event_id,
-            target=target,
-            details={"status": "completed", "result": result},
-        )
+        if not receipt({"status": "completed", "result": result}):
+            result = dict(
+                result, audit_warning={"code": "audit_receipt_missing", "intent_event_id": event_id}
+            )
         return result
 
     def search(
