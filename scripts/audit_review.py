@@ -19,7 +19,7 @@ from pathlib import Path
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
-ORIGIN = "openclaw-appliance-tailnet:/var/lib/dots-brain"
+ORIGIN = "memory-host.example.invalid:/var/lib/dots-brain"
 DEFAULT_STATE = Path.home() / ".local/state/dots-brain-audit"
 PAGE_SIZE = 100
 MAX_PAGES = 20
@@ -73,7 +73,7 @@ def fetch_page(after_id, limit):
             "BatchMode=yes",
             "-o",
             "ConnectTimeout=10",
-            "openclaw-appliance-tailnet",
+            "memory-host.example.invalid",
             command,
         ],
         capture_output=True,

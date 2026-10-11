@@ -1,134 +1,220 @@
 # Changelog
 
+## 0.4.0-alpha.4 — Unreleased
+
+This candidate has not been tagged, published, or deployed by this repository
+state.
+
+### Added
+
+- Add CLI and MCP reference guides, plus a generic Linux deployment template.
+- Add local CORTEX operation inspection, explicit uncertain-delivery resolution,
+  and guarded recovery of an interrupted `sending` receipt.
+- Add bounded audit review checkpoints, adaptive page reduction, and verification
+  of new audit hashes including event IDs and server timestamps.
+- Add Linux CI on Python 3.13, deployment syntax checks, isolated test homes,
+  resource-warning failures, and regression tests for recovery and client boundaries.
+- Exercise the installed wheel outside the checkout, Chromium OAuth callbacks and
+  the pinned embedding model in separate CI jobs.
+
+### Changed
+
+- Require SQLite 3.42 or newer for secure FTS deletion behavior.
+- Use one versioned schema definition for setup and offline migration. V1/v2/v3
+  stores require migration to v4, including indexed IDs in the derived FTS table.
+- Make backup creation standalone and atomic, and preserve a safe recovery state
+  when restore cutover validation fails.
+- Retain the best semantic body passage in hybrid search.
+- Reuse the local bridge connection and report overload without replaying writes.
+- Separate OAuth handlers, capture collection/delivery, sanitizer traversal and
+  CORTEX write planning/claim/delivery into bounded responsibilities, with a typed
+  CORTEX operation receipt on the public write path.
+- Clarify unchanged credential lifetimes: `client create` defaults to 30 days,
+  `connect` issues new managed credentials for 365 days, and retained credentials
+  keep their expiry.
+
+### Fixed
+
+- Avoid creating disabled state when uninstalling a missing or empty installation;
+  keep process-stop evidence unknown when it cannot be established. Scope
+  disconnect to its requested client and report unrelated discovery as notes.
+- Inspect Linux leases without acquiring them, report matching untracked servers,
+  and refuse migration/startup while a detected old server remains. Preserve
+  process ownership checks and include lease/PID evidence in readiness failures.
+- Name actionable recovery commands for disabled stores, old backup schemas and
+  client conflicts; identify parser-owned option names without echoing values.
+- Preserve corrupt managed client state with scoped diagnostics, and retain
+  uninstall's disable/revoke/partial behavior when registry reads raise a state
+  error. Close capture source descriptors if rewrite acknowledgement fails.
+- Progress past large accepted audit events through an explicit host-verified
+  review projection, retain original hashes and record omitted content as a finding.
+  Verify the same projection when it becomes the next scan's anchor.
+- Version capture cursors and review state, validate legacy upgrades before writes,
+  and preserve unsupported state with concrete diagnostic/recovery commands.
+  Document capture's path/account/project suppression boundary.
+- Aggregate semantic status without loading vectors, drain late vector repairs
+  through CLI, and back off failed embeddings with a global retry rate limit.
+- Preserve Unicode word boundaries and short boundary terms in long queries;
+  report omitted terms and check the actual body before including title hits.
+- Remove all duplicate FTS copies by indexed UUID plus exact identity, retaining
+  a safe equality fallback for unusual historical IDs and damaged rowid maps.
+- Isolate oversized bridge requests, enforce the deadline immediately before
+  sending, and classify shared-session loss per call without replaying writes.
+  Check current caller policy independently of the SDK discovery cache.
+- Recover existing v1 probe receipts without replay; provide an explicit private
+  archival path when a remote outcome cannot be resolved.
+- Bind OAuth-only access to a second listener in the same supervised service,
+  preserve concurrent static access on its private port, and ignore transport
+  proxy headers. Report invalid OAuth state and recover readable configuration
+  journals without revoking pre-commit grants. Bound ungranted registrations,
+  preserve valid pending clients on purge, and validate callback origins before
+  SDK normalization. Prevent pairing double-submit and support IPv6 callbacks.
+- Replace the semantic calibration fixture with independently authored neutral
+  synthetic objects and record its provenance. Re-measure both the baseline and
+  candidate, including the current inability to reject its unrelated questions.
+  Published branch history is retained.
+- Accept historical v1/v2 stores touched by `7085841`, comparing SQL tokens
+  against frozen historical DDL while preserving constraints and literals.
+- Validate canonical data during migration planning, reject unsupported stores
+  before a writable connection, and remove only owned automatic backups after a
+  proved rollback. Document retained explicit snapshots and interrupted attempts.
+- Replace backtracking credential rules with bounded category scans. Preserve
+  quoted literal boundaries during capture redaction and return safe warnings
+  for uncertain memory/CORTEX inputs without changing accepted content.
+- Add a partial abort-recovery command for a failed cutover. It requires the
+  documented offline operator checks and cancels only a pending cutover.
+- Replace owner-specific deployment records with public Linux installation and
+  ingress guidance.
+- Preserve refresh scope and recover interrupted configuration changes.
+- Omit client names from default OAuth request inspection. Show them only with
+  `--verbose` as untrusted client text.
+- Bound text and JSON keys before credential matching. Minimize CORTEX context
+  outside the request thread.
+- Preserve typed MCP errors, strict input types, and confirmed mutation results
+  when the later audit receipt cannot be saved.
+- Keep capture moving past terminally rejected records and detect replacement or
+  rewrite without automatically replaying acknowledged rows.
+- Preserve CORTEX operation ownership, retain superseded pre-send outcomes as
+  terminal history, and treat post-send failures as uncertain.
+- Close backup connections, securely remove forgotten full-text terms, and avoid
+  adopting incomplete databases.
+- Coordinate managed and supervised writers, preserve recovery markers during
+  uninstall, and prevent an older client from replacing a newer daemon.
+- Replace incompatible historical installer probes and revoke their old credentials.
+- Bound bridge concurrency and request deadlines; require full probe provenance
+  before cleanup and preserve unresolved recovery receipts.
+- Keep normal long queries usable, report context clipping, and share the model's
+  tokenizer to avoid a second large native allocation.
+- Remove unlinked host-specific benchmark snapshots and obsolete internal paths.
+
+### Breaking
+
+- End automatic support for unregistered 0.2.0-alpha.1 client entries. Report the
+  exact file and manual cleanup steps; retain registered 0.3+ clients and schema
+  v1 onward migration support. A non-Linux existing lease without kernel evidence
+  now reports unknown; `down` returns exit 1 instead of claiming it stopped.
+- Capture cursors and private review state now use explicit format version 1.
+  The review helper requires `audit events --review-projection` on the memory host;
+  it never silently falls back to an incompatible helper. Preserve older state
+  copies and follow the documented upgrade/rollback path.
+- Advance the package to `0.4.0a4` for schema v4; `0.4.0a3` used v3 and earlier
+  `0.4.0a2` builds reused a version across formats. All v1/v2/v3 stores require
+  an explicit offline upgrade. V4 is unsupported by older binaries. Indexed IDs enlarge
+  FTS and may change BM25 scores/order, while text membership remains confined
+  to titles/content. See [upgrade and rollback](docs/upgrading.md).
+- Existing stores backed by unsupported SQLite versions cannot be safely upgraded
+  or rolled back through this candidate.
+- CLI and MCP callers should use structured error codes and the updated result
+  contracts. A boolean or numeric string is no longer accepted as a revision.
+- Runtime and client state failures use `invalid_state`, unsupported capabilities
+  use `capability_unavailable`, and occupied listeners use `busy`; malformed
+  caller input still uses `invalid_input`.
+- Unknown tool arguments are rejected instead of ignored. The serialized MCP
+  request body is limited to 1 MiB, including the protocol envelope.
+- Capture returns `capture_partial` or `capture_recovery_required` with exit 1
+  for incomplete or blocked collection. Callers must inspect gaps and retained
+  receipts before continuing.
+- Remove `oauth configure --no-start` and `oauth disable --no-start`; these
+  commands never start or restart a daemon. Use the existing supervisor when
+  a restart is needed.
+- Close OAuth onboarding by default. Open a bounded window explicitly, supply
+  `--redirect-host` for approval, and use `--replace-issuer` for issuer changes.
+  Browser approval is consumed only by POST from the initiating browser.
+- Semantic search excludes scores below 0.20 and indexing stops at 128 chunks
+  per memory. The fixed threshold is not a guarantee of relevance; larger
+  memories can have incomplete semantic coverage. See [using memory](docs/using-memory.md).
+- The credential filter uses category-based policy: high-confidence secret forms
+  are rejected on memory/CORTEX writes, uncertain forms return safe warnings, and
+  capture redacts recognized forms. Existing callers must inspect warnings and
+  partial capture results; no filter guarantees detection of every secret.
+- `preflight` inspects a managed network policy only when `--network-policy PATH`
+  is supplied; without it, policy state is `not_supplied` and destination state
+  is unknown. It no longer assumes a provider-specific policy location.
+- `uninstall` returns `partial` when owned client entries cannot be safely removed
+  or required credential revocation fails. Unrelated discovered entries are notes.
+  Process-stop evidence is unknown when it cannot be verified.
+- A listener started with `--public-gateway` accepts OAuth grants only. Static
+  credentials require a private listener; request headers cannot change the policy.
+- Setup on a disabled instance fails. Only the explicit recovery or reinstall
+  command can clear its marker. `doctor` returns separate database, OAuth and
+  managed-service checks with a top-level `healthy` result.
+- `client create` needs `--url` unless a managed endpoint is recorded.
+- `audit_review.py` requires a private `target.json`. Capture stops on an
+  acknowledged-prefix rewrite instead of replaying potentially forgotten records.
+- MCP is pinned below 1.31 because the typed dispatch boundary depends on the
+  tested SDK handler contract. Unsupported hard-link filesystems are rejected.
+
 ## 0.4.0-alpha.1 — 2026-10-09
 
-- Add schema v2 with project-scoped source identities, server-authenticated revision
-  authorship and deletion barriers. Upgrade explicitly with stopped writers and a
-  verified backup; preserve unknown legacy authorship.
-- Index title and content passages separately. Return useful body context when a
-  semantic match lands on a short title, while preserving the ranked revision and
-  caller's character budget.
-- Reject known credential patterns from memory input. Add sanitized append-only
-  action audit, mutation intents and receipts, exact deletion targets, and bounded
-  resumable JSONL snapshot collection with coverage gaps.
-- Add one-to-one CORTEX project mapping, bounded context and selected publication
-  of an exact source revision. Preserve acknowledgement IDs during reconciliation;
-  report failed receipt persistence as uncertain and prevent blind replay.
-- Add validated SQLite backups, disabled staged restores, credential revocation,
-  deletion reconciliation and cutover guards against losing newer canonical state.
-- Preserve OAuth pairing provenance through code exchange without changing legacy
-  table layouts or widening existing grants. Support clients that omit registration
-  scopes and subsequently request read/write; exact owner approval is still required.
-- Deploy an isolated Linux systemd service, offline CPU model and constrained HTTPS
-  ingress. Verify actual Botter/Grok OAuth read/write, cross-bot reads, initial
-  contributions and retained access after an upgrade.
-- Require the reviewed revision when deleting. Keep deletion retries idempotent and
-  reject stale deletes atomically. Custom clients must refresh tool discovery.
-- Validate the existing store, credential and saved loopback endpoint before local
-  resume. Add a schema-discovering MCP shell client without creating another database.
-- Add the twice-daily operator review helper with complete-range analysis and durable
-  checkpoints. Manual review is verified; unattended network access remains blocked
-  in the observed restricted execution context.
+The existing tag is retained. It predates the audit fixes above.
 
-- Pin CI/release Actions to full commits and validate those pins before release.
-  Record bounded appliance storage, HTTP and real-model stress measurements.
+### Added
 
-Live CORTEX upstream access, full provider capture, off-host recovery and real
-appliance reboot acceptance remain open. See [capabilities](docs/capabilities.md)
-for implementation and runtime evidence separately.
+- Add project-scoped identities, authenticated revision authorship, passage
+  embeddings, a sanitized action audit, and an experimental JSONL snapshot importer.
+- Add optional CORTEX context and publication of a selected memory revision.
+- Add validated backups, staged restores, deletion reconciliation, and the
+  operator audit review helper.
+
+### Breaking
+
+- Schema v2 requires an explicit offline migration from v1.
+- `memory_forget` requires the caller's observed `expected_revision`.
 
 ## 0.3.0-alpha.2 — 2026-10-04
 
-- Reject IPv6 HTTP issuer origins before changing configuration: SDK 1.30 does
-  not support them. HTTPS issuers and exact localhost/127.0.0.1 development origins remain supported.
-- Reject issuer URLs with an empty user-information delimiter as well as real credentials.
-- Add regression cases and clarify the supported development origins.
-- Supersede the alpha.1 release candidate before publication; its Git tag is preserved.
+- Tighten OAuth issuer validation and supersede the alpha.1 release candidate.
 
 ## 0.3.0-alpha.1 — 2026-10-04
 
-- Add optional VM-local OAuth to the existing HTTP process and SQLite database,
-  using official MCP SDK handlers with no new runtime dependency.
-- Add discovery, dynamic registration, S256 PKCE, resource-bound code exchange,
-  scoped project grants, rotating refresh tokens, and client/owner revocation.
-- Add deterministic owner commands to inspect, approve, deny, and revoke a specific
-  connection without printing its tokens. Default approval excludes deletion and
-  can narrow the client's requested scopes; all-project access remains explicit.
-- Persist grants across restart and invalidate pending flows and refresh tokens
-  on OAuth disable, issuer changes, and whole-instance uninstall.
-- Bound registration metadata, request bodies, client count, and pending flows;
-  reject invalid callback schemes and malformed registration JSON.
-- Enforce token-request resource binding and normalize the optional public-client
-  revocation field around the SDK's current handlers. Accept case-insensitive
-  HTTP Bearer scheme names.
-- Require the tested MCP SDK 1.30 or newer within the existing major version.
-- Verify 17 OAuth tests, including the official client's full flow and automatic
-  refresh over live local HTTP, concurrent code reuse, scope/project boundaries,
-  expiry, revocation, capacity recovery, and retained-data removal.
-- Document the agent workflow, storage boundaries, and remaining ingress/provider
-  requirements. Public deployment and actual web-provider setup remain unverified.
+- Add optional OAuth discovery, dynamic registration, PKCE, scoped owner approval,
+  refresh, and revocation using the MCP SDK.
 
 ## 0.2.0-alpha.2 — 2026-10-02
 
-- Add repeatable `uninstall` with a read-only preview, host credential revocation,
-  managed-process stopping, and removal of unchanged registered client entries.
-- Preserve memories, revisions, deletion suppression, models, unrelated client
-  settings, and modified or unreadable configurations; report incomplete cleanup.
-- Block automatic restart after removal until explicit `up --resume` or reinstall.
-- Add `disconnect`, an integration inventory, and separate credentials for newly
-  configured profiles. Recognize unchanged legacy entries and explicit custom paths.
-- Preserve user-supplied remote credentials and report required issuer revocation.
-- Document software removal as a separate step; add uninstall, upgrade, everyday
-  usage, troubleshooting, and documentation-index guides in English.
-- Extend the setup skill to cover removal and upgrades, and validate links across
-  root documentation, nested guides, and skills.
-- Verify 47 tests on Python 3.11 and 3.12 with one unchanged opt-in model test
-  skipped; verify clean bootstrap, real Claude Code health, removal, reinstall,
-  data retention, and removal of a disposable test checkout and package.
+- Add previewable uninstall and disconnect while retaining memories and unrelated
+  client settings. Require explicit resume after uninstall.
 
 ## 0.2.0-alpha.1 — 2026-10-02
 
-- Add repeatable Linux background startup, crash recovery on local client reconnect,
-  generated-bridge verification, and private credential reuse.
-- Add Claude Code, Cursor, Codex, and generic MCP configuration adapters with
-  preserved settings and explicit application-activation status.
-- Extend the bootstrap to start the service and optionally connect a client.
-- Keep MCP reads responsive while SQLite writers wait, and bound read/write workers separately.
-- Avoid scanning the full-text index when inserting a new source record.
-- Drain embedding backlogs in short bounded batches instead of sleeping between every batch.
-- Recover the canonical port after a killed process finishes releasing its sockets.
-- Add bounded synthetic storage, HTTP, and multilingual embedding stress harnesses.
-- Add a manually triggered GitHub release workflow that verifies an existing
-  annotated tag, builds on both supported Python versions, and uploads checked
-  packages to a draft without overwriting published assets.
-- Document the repeatable release procedure.
+- Add managed Linux startup, local client adapters, bridge verification, and
+  bounded storage, HTTP, and semantic stress scripts.
 
 ## 0.1.0-alpha.2 — 2026-10-02
 
-- Fix intermittent first-run failures when concurrent installers enable SQLite WAL.
-  Journal-mode lock contention now retries within a bounded deadline, while other
-  errors still fail immediately. The existing schema transaction remains atomic.
-- Test temporary lock recovery and timeout recovery without losing existing data.
-- Let both supported Python versions finish CI even when one matrix job fails.
+- Bound and retry first-run WAL lock contention without losing existing data.
+- Let both Python CI jobs finish when one matrix job fails.
 
 ## 0.1.0-alpha.1 — 2026-10-01
 
-- Establish the product contract, English documentation, and MIT license.
-- Add transactional SQLite memory, provenance, explicit revisions, project-filtered
-  full-text search, export, and deletion with reimport suppression.
-- Verify concurrent retry handling, restart persistence, and project isolation.
-- Add six MCP tools, stdio and authenticated loopback HTTP, scoped client
-  credentials, revocation, a stdio-to-HTTP bridge, and machine-readable CLI setup.
-- Add pinned multilingual CPU embeddings with artifact verification, automatic
-  background indexing, and hybrid retrieval; no paid inference API is used.
-- Add a deterministic bootstrap, an onboarding skill package, English operating
-  documentation, release validation, and GitHub CI for Python 3.11 and 3.12.
-- Verify a live HTTP process through the stdio bridge and fresh source installation.
+- Introduce SQLite source records, revisions, project-filtered full-text search,
+  exports and deletion suppression.
+- Add six MCP tools, stdio and authenticated loopback HTTP, local credentials,
+  a bridge and machine-readable setup commands.
+- Add pinned multilingual CPU embeddings, background indexing and hybrid search.
+- Add the bootstrap and onboarding skill, release validation and Python 3.11/3.12 CI.
 
-### Known limits
+## Known limits
 
-- The HTTP service binds loopback and does not implement web OAuth or a tunnel.
-- Provider capture, automatic remote configuration, native ChatGPT UI, and MCP
-  Events are not implemented. Dot VM persistence, costs, and strong credential
-  isolation are not verified.
-- The embedding smoke test is not a Cortex comparison or a production benchmark.
+- Public ingress, provider account setup, continuous conversation capture, native
+  client UI activation, off-host recovery, and reboot acceptance are not verified.

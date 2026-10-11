@@ -10,7 +10,7 @@ Type=simple
 User=dots-brain
 Group=dots-brain
 WorkingDirectory=/var/lib/dots-brain
-ExecStart=/opt/dots-brain/current/.venv/bin/dots-brain --data-dir /var/lib/dots-brain serve --transport http --port 8787 --semantic
+ExecStart=/opt/dots-brain/current/.venv/bin/dots-brain --data-dir /var/lib/dots-brain serve --transport http --port 8765 --public-port 8787 --semantic
 Restart=on-failure
 RestartSec=5
 TimeoutStopSec=30
@@ -20,6 +20,15 @@ Environment=TOKENIZERS_PARALLELISM=false
 Environment=PYTHONDONTWRITEBYTECODE=1
 NoNewPrivileges=true
 PrivateTmp=true
+PrivateDevices=true
+ProtectKernelLogs=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+RestrictNamespaces=true
+RestrictRealtime=true
+LockPersonality=true
+SystemCallArchitectures=native
 ProtectSystem=strict
 ProtectHome=true
 ReadWritePaths=/var/lib/dots-brain
