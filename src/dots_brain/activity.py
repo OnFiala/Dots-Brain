@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from contextlib import nullcontext
 from datetime import UTC, datetime
 from typing import Any
 
@@ -95,6 +96,12 @@ class AuditLog:
         """Internal integration path for server-observed MCP handling only."""
         return self._append(policy, evidence="server_observed", **kwargs)
 
+    def observed_in_connection(self, db, policy, **kwargs) -> dict:
+        """Internal authorization events must commit with their state change."""
+        if not db.in_transaction:
+            raise InputError("Authorization audit requires an active write transaction.")
+        return self._append(policy, connection=db, evidence="server_observed", **kwargs)
+
     def _append(
         self,
         policy,
@@ -108,6 +115,7 @@ class AuditLog:
         occurred_at: str | None = None,
         intent_event_id: str | None = None,
         evidence: str,
+        connection=None,
     ) -> dict:
         policy.require("audit:write")
         self._policy_project(policy, project)
@@ -146,8 +154,13 @@ class AuditLog:
             "intent_event_id": intent_event_id,
         }
         payload_hash = hashlib.sha256(_canonical(payload).encode()).hexdigest()
-        with self.store.connection(write=True) as db:
-            self.store.ensure_writable()
+        with (
+            nullcontext(connection)
+            if connection is not None
+            else self.store.connection(write=True) as db
+        ):
+            if connection is None:
+                self.store.ensure_writable()
             existing = db.execute(
                 "SELECT * FROM audit_events WHERE principal=? AND project=? AND client_event_id=?",
                 (principal, project, client_event_id),

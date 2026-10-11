@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import contextlib
+import hashlib
+import json
 import uuid
 from itertools import zip_longest
 from pathlib import Path
@@ -47,7 +49,7 @@ def backup_store(store: Store, output: Path) -> dict:
 def restore_store(backup: Path, target: Store, *, latest_deletions: Store) -> dict:
     """Restore into a new directory, retaining the surviving store's deletion barriers.
 
-    Credentials are revoked and startup is disabled. This does not overwrite the
+    Startup is disabled; OAuth reset is audited at activation. This does not overwrite the
     current instance or invent a recovery point after total host/storage loss.
     """
     if target.directory.exists():
@@ -84,14 +86,14 @@ def restore_store(backup: Path, target: Store, *, latest_deletions: Store) -> di
         snapshot(source, target.path, SCHEMA_VERSION)
         with target.connection(write=True) as db:
             forgotten = _apply_deletions(db, legacy, scoped)
-            _revoke_credentials(db)
+            db.execute("UPDATE clients SET revoked=1")
             db.execute("UPDATE cortex_operations SET state='uncertain' WHERE state='sending'")
             validate_snapshot(db, SCHEMA_VERSION)
         sync_file_and_parent(target.path)
     return {
         "state": "restored_disabled",
         "target": str(target.directory),
-        "credentials": "revoked",
+        "credentials": "disabled_pending_activation",
         "deletion_barriers": "snapshot_only_until_activation",
         "removed_since_backup": len(forgotten),
     }
@@ -115,11 +117,11 @@ def _apply_deletions(db, legacy, scoped) -> list[str]:
     return forgotten
 
 
-def _revoke_credentials(db) -> None:
+def _revoke_credentials(store, db, recovery_id) -> None:
     from .oauth import revoke_all
 
     db.execute("UPDATE clients SET revoked=1")
-    revoke_all(db)
+    revoke_all(store, db, reason="restore_reset", event_id="restore_reset:" + recovery_id)
 
 
 def _validate_cutover_state(source, target) -> None:
@@ -130,7 +132,6 @@ def _validate_cutover_state(source, target) -> None:
     queries = {
         "memories": "SELECT * FROM memories ORDER BY id",
         "revisions": "SELECT * FROM revisions ORDER BY memory_id,revision",
-        "audit_events": "SELECT * FROM audit_events ORDER BY id",
         "cortex_operations": "SELECT operation_id,request_digest,principal,local_project,"
         "cortex_project,operation_kind,source_ref,"
         "CASE state WHEN 'sending' THEN 'uncertain' ELSE state END,"
@@ -138,6 +139,8 @@ def _validate_cutover_state(source, target) -> None:
         "FROM cortex_operations ORDER BY operation_id",
     }
     divergent = []
+    if _oauth_history(source) != _oauth_history(target):
+        divergent.append("oauth_history")
     for name, query in queries.items():
         count = sum(
             tuple(left or ()) != tuple(right or ())
@@ -153,8 +156,76 @@ def _validate_cutover_state(source, target) -> None:
         )
 
 
-def _merge_audit_suffix(source, target) -> None:
+def _oauth_history(db):
+    from .oauth import RETIRED
+
+    result = {}
+    for table in ("oauth_clients", "oauth_grants", "oauth_grant_provenance"):
+        if not db.execute("SELECT 1 FROM sqlite_master WHERE name=?", (table,)).fetchone():
+            continue
+        rows = [dict(row) for row in db.execute(f"SELECT * FROM {table} ORDER BY 1")]
+        for row in rows:
+            row.pop("revoked", None)
+            if "metadata" in row:
+                row["metadata"] = {
+                    key: value
+                    for key, value in json.loads(row["metadata"]).items()
+                    if key not in {"client_secret", RETIRED}
+                }
+        result[table] = rows
+    return result
+
+
+def _merge_audit_suffix(source, target, *, recovery_id, retry) -> bool:
     """Retain the verified source audit suffix, preserving IDs and the hash chain."""
+    tail = target.execute("SELECT * FROM audit_events ORDER BY id DESC LIMIT 1").fetchone()
+    if tail and tail["client_event_id"] == "restore_reset:" + recovery_id:
+        # Only the one committed reset for this recovery may extend the source chain.
+        prefix = target.execute("SELECT * FROM audit_events WHERE id<? ORDER BY id", (tail["id"],))
+        if not retry or any(
+            tuple(a or ()) != tuple(b or ())
+            for a, b in zip_longest(
+                source.execute("SELECT * FROM audit_events ORDER BY id"), prefix
+            )
+        ):
+            raise InputError(
+                "Recovery audit differs from the surviving source; stage a current backup."
+            )
+        from .activity import _canonical
+
+        payload = {
+            key: tail[key]
+            for key in (
+                "project",
+                "principal",
+                "client_event_id",
+                "kind",
+                "evidence",
+                "occurred_at",
+                "intent_event_id",
+            )
+        }
+        payload.update({key: json.loads(tail[key]) for key in ("action", "target", "details")})
+        previous = source.execute(
+            "SELECT event_hash FROM audit_events ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        valid = (
+            tail["payload_hash"] == hashlib.sha256(_canonical(payload).encode()).hexdigest()
+            and payload["principal"] == "server:oauth"
+            and payload["project"] == "system:auth"
+            and payload["kind"] == "action"
+            and payload["evidence"] == "server_observed"
+            and payload["action"] == "oauth_access_invalidated"
+            and payload["details"]["value"].get("reason") == "restore_reset"
+            and tail["prev_hash"] == (previous[0] if previous else "")
+            and tail["event_hash"]
+            == hashlib.sha256((tail["prev_hash"] + tail["payload_hash"]).encode()).hexdigest()
+        )
+        if not valid:
+            raise InputError(
+                "Recovery audit receipt is invalid; preserve both stores for inspection."
+            )
+        return True
     last = target.execute("SELECT COALESCE(MAX(id),0) FROM audit_events").fetchone()[0]
     prefix = source.execute("SELECT * FROM audit_events WHERE id<=? ORDER BY id", (last,))
     restored = target.execute("SELECT * FROM audit_events ORDER BY id")
@@ -166,6 +237,7 @@ def _merge_audit_suffix(source, target) -> None:
     for row in suffix:
         placeholders = ",".join("?" for _ in row)
         target.execute(f"INSERT INTO audit_events VALUES ({placeholders})", tuple(row))
+    return False
 
 
 def activate_restore(source: Store, target: Store, *, writers_stopped: bool) -> dict:
@@ -175,6 +247,7 @@ def activate_restore(source: Store, target: Store, *, writers_stopped: bool) -> 
     writes. Its durable disabled marker prevents queued/new memory writes. Only
     then can the target become available, with all old credentials revoked.
     """
+    from .oauth import RETIRED
     from .runtime import active, state_path
 
     if not writers_stopped:
@@ -229,10 +302,28 @@ def activate_restore(source: Store, target: Store, *, writers_stopped: bool) -> 
             scoped = [tuple(row) for row in current.execute("SELECT * FROM scoped_suppressions")]
             with target.connection(write=True) as restored:
                 forgotten = _apply_deletions(restored, legacy, scoped)
-                _revoke_credentials(restored)
-                _merge_audit_suffix(current, restored)
+                reset_done = _merge_audit_suffix(
+                    current, restored, recovery_id=recovery_id, retry=bool(previous)
+                )
                 validate_snapshot(restored, SCHEMA_VERSION)
                 _validate_cutover_state(current, restored)
+                if not reset_done:
+                    _revoke_credentials(target, restored, recovery_id)
+                elif any(
+                    restored.execute(query).fetchone()
+                    for query in (
+                        "SELECT 1 FROM clients WHERE revoked=0 LIMIT 1",
+                        "SELECT 1 FROM oauth_grants WHERE revoked=0 LIMIT 1",
+                        "SELECT 1 FROM oauth_clients "
+                        f"WHERE json_type(metadata,'$.{RETIRED}') IS NULL LIMIT 1",
+                        "SELECT 1 FROM oauth_tokens UNION ALL SELECT 1 FROM oauth_codes "
+                        "UNION ALL SELECT 1 FROM oauth_requests LIMIT 1",
+                    )
+                ):
+                    raise InputError(
+                        "Recovery credentials changed after reset; "
+                        "preserve both stores for inspection."
+                    )
                 if previous.get("cutover") != "committed":
                     write_json(
                         source_marker,

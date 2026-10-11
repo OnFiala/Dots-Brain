@@ -7,6 +7,7 @@ import json
 import re
 import secrets
 import time
+import uuid
 from urllib.parse import urlsplit
 
 import anyio
@@ -25,12 +26,13 @@ from pydantic import AnyHttpUrl
 
 from .auth import MEMORY_SCOPES, SCOPES, Policy
 from .errors import InputError
-from .local import read_json, write_json
+from .local import read_json, sync_file_and_parent, write_json, writer_lock
 from .store import Store, validate_text
 
 MAX_CLIENTS = 256
 MAX_PENDING = 128
 MAX_REFRESH_ROTATIONS = 4096
+RETIRED = "_dots_brain_retired"
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS oauth_clients (
@@ -75,7 +77,18 @@ def digest(value: str) -> str:
 
 
 def issuer_url(value: str) -> str:
+    try:
+        return _issuer_url(value)
+    except (TypeError, AttributeError, ValueError):
+        raise InputError("OAuth issuer has an invalid host or port.") from None
+
+
+def _issuer_url(value: str) -> str:
     parts = urlsplit(value)
+    if not isinstance(value, str) or any(character.isspace() for character in value):
+        raise InputError("OAuth issuer must be an HTTPS origin.")
+    if parts.port is not None and not 1 <= parts.port <= 65535:
+        raise InputError("OAuth issuer has an invalid port.")
     if (
         parts.path not in ("", "/")
         or parts.query
@@ -94,33 +107,129 @@ def issuer_url(value: str) -> str:
 
 def configuration(store: Store) -> dict | None:
     path = store.directory / "oauth.json"
-    if not path.exists():
+    if not path.exists() and not path.is_symlink():
         return None
-    config = read_json(path)
-    if config.get("version") != 1 or not isinstance(config.get("issuer"), str):
+    try:
+        config = read_json(path)
+    except (OSError, ValueError):
+        raise InputError("Cannot read valid OAuth configuration; inspect oauth status.") from None
+    if type(config.get("version")) is not int or config["version"] != 1:
         raise InputError("Unsupported OAuth configuration.")
-    return {"version": 1, "issuer": issuer_url(config["issuer"])}
+    return {"version": 1, "issuer": issuer_url(config.get("issuer"))}
 
 
-def revoke_all(db) -> None:
+def record_auth_change(store, db, action, *, target=None, details=None, event_id=None):
+    from .activity import AuditLog
+
+    return AuditLog(store).observed_in_connection(
+        db,
+        Policy(frozenset({"audit:write"}), ("system:auth",), "server:oauth"),
+        project="system:auth",
+        kind="action",
+        client_event_id=event_id or uuid.uuid4().hex,
+        action=action,
+        target=target,
+        details=details,
+    )
+
+
+def revoke_all(store, db, *, reason, event_id=None) -> dict:
+    counts = {"clients_invalidated": 0, "grants_revoked": 0}
     if db.execute("SELECT 1 FROM sqlite_master WHERE name='oauth_clients'").fetchone():
-        db.execute("DELETE FROM oauth_clients")  # Foreign keys remove grants and pending flows.
+        counts["clients_invalidated"] = retire_clients(
+            db, db.execute("SELECT id,metadata FROM oauth_clients").fetchall()
+        )
+        counts["grants_revoked"] = db.execute(
+            "UPDATE oauth_grants SET revoked=1 WHERE revoked=0"
+        ).rowcount
+        for table in ("oauth_tokens", "oauth_codes", "oauth_requests"):
+            db.execute(f"DELETE FROM {table}")
+        record_auth_change(
+            store,
+            db,
+            "oauth_access_invalidated",
+            details={"reason": reason, **counts},
+            event_id=event_id,
+        )
+    return counts
 
 
-def configure(store: Store, issuer: str) -> dict:
+def retire_clients(db, rows) -> int:
+    count = 0
+    for row in rows:
+        metadata = json.loads(row["metadata"])
+        count += RETIRED not in metadata
+        metadata[RETIRED] = True
+        metadata.pop("client_secret", None)
+        db.execute(
+            "UPDATE oauth_clients SET metadata=? WHERE id=?", (json.dumps(metadata), row["id"])
+        )
+    return count
+
+
+def configure(store: Store, issuer: str, *, replace_issuer=False) -> dict:
+    issuer = issuer_url(issuer)
+    with writer_lock(store.directory, exclusive=True):
+        return _configure_offline(store, issuer, replace_issuer=replace_issuer)
+
+
+def _configure_offline(store: Store, issuer: str, *, replace_issuer) -> dict:
     config = {"version": 1, "issuer": issuer_url(issuer)}
+    try:
+        previous = configuration(store)
+    except InputError:
+        if not replace_issuer:
+            raise InputError(
+                "Invalid OAuth configuration; inspect it and use --replace-issuer explicitly."
+            ) from None
+        previous = {"invalid": True}
+    if previous and previous != config and not replace_issuer:
+        raise InputError(
+            "Replacing the issuer revokes all OAuth access; use --replace-issuer explicitly."
+        )
+    invalidated = {"clients_invalidated": 0, "grants_revoked": 0}
     with store.connection(write=True) as db:
         for statement in SCHEMA.split(";"):
             if statement.strip():
                 db.execute(statement)
-        if configuration(store) != config:
-            revoke_all(db)
-    write_json(store.directory / "oauth.json", config)
+        if previous != config:
+            invalidated = revoke_all(store, db, reason="issuer_changed")
+    try:
+        write_json(store.directory / "oauth.json", config)
+    except (OSError, InputError):
+        raise InputError(
+            "OAuth database update committed; old access stays invalidated if the issuer changed. "
+            "Configuration publication is uncertain; inspect oauth status, "
+            "retry configuration and pair again."
+        ) from None
     return {
         "state": "configured",
         "issuer": config["issuer"],
         "mcp_url": config["issuer"] + "/mcp",
         "public_ingress": "not_verified",
+        "restart_required": True,
+        **invalidated,
+    }
+
+
+def disable(store: Store) -> dict:
+    with writer_lock(store.directory, exclusive=True):
+        with store.connection(write=True) as db:
+            counts = revoke_all(store, db, reason="oauth_disabled")
+        try:
+            (store.directory / "oauth.json").unlink(missing_ok=True)
+            sync_file_and_parent(store.path)
+        except OSError:
+            raise InputError(
+                "OAuth access was invalidated; configuration removal is uncertain. "
+                "Inspect oauth status and retry disable."
+            ) from None
+    return {
+        "state": "oauth_disabled",
+        "grants_revoked": True,
+        "invalidated": counts,
+        "restart_required": True,
+        "service": None,
     }
 
 
@@ -148,9 +257,17 @@ class OAuthStore:
             )
 
     def enabled(self) -> bool:
-        return not (self.store.directory / "disabled.json").exists() and configuration(
-            self.store
-        ) == {"version": 1, "issuer": self.issuer}
+        try:
+            return self._enabled()
+        except InputError:
+            return False
+
+    def _enabled(self) -> bool:
+        marker = self.store.directory / "disabled.json"
+        return not (marker.exists() or marker.is_symlink()) and configuration(self.store) == {
+            "version": 1,
+            "issuer": self.issuer,
+        }
 
     def require_enabled(self):
         if not self.enabled():
@@ -163,10 +280,14 @@ class OAuthStore:
             row = db.execute(
                 "SELECT metadata FROM oauth_clients WHERE id=?", (client_id,)
             ).fetchone()
-        return None if row is None else OAuthClientInformationFull.model_validate_json(row[0])
+        if row is None or RETIRED in json.loads(row[0]):
+            return None
+        return OAuthClientInformationFull.model_validate_json(row[0])
 
     def register_client(self, client):
         self.require_enabled()
+        if RETIRED in client.model_dump():
+            raise RegistrationError("invalid_client_metadata", "Reserved client metadata.")
         if len(client.model_dump_json()) > 8192 or len(client.redirect_uris) > 8:
             raise RegistrationError("invalid_client_metadata", "Client metadata exceeds limits.")
         if len(client.client_name or "") > 200:
@@ -190,13 +311,28 @@ class OAuthStore:
         with self.store.connection(write=True) as db:
             db.execute("DELETE FROM oauth_requests WHERE expires<=?", (time.time(),))
             db.execute("DELETE FROM oauth_codes WHERE expires<=?", (time.time(),))
-            db.execute("DELETE FROM oauth_grants WHERE expires<=?", (time.time(),))
             db.execute(
-                "DELETE FROM oauth_clients WHERE created<? AND id NOT IN "
-                "(SELECT client_id FROM oauth_grants UNION SELECT client_id FROM oauth_requests)",
-                (time.time() - 86400,),
+                "DELETE FROM oauth_tokens WHERE grant_id IN "
+                "(SELECT id FROM oauth_grants WHERE revoked=1 OR expires<=?)",
+                (time.time(),),
             )
-            full = db.execute("SELECT COUNT(*) FROM oauth_clients").fetchone()[0] >= MAX_CLIENTS
+            retire_clients(
+                db,
+                db.execute(
+                    "SELECT id,metadata FROM oauth_clients WHERE created<? AND id NOT IN "
+                    "(SELECT client_id FROM oauth_grants WHERE revoked=0 AND expires>? "
+                    "UNION SELECT client_id FROM oauth_requests "
+                    "UNION SELECT client_id FROM oauth_codes)",
+                    (time.time() - 86400, time.time()),
+                ).fetchall(),
+            )
+            full = (
+                db.execute(
+                    "SELECT COUNT(*) FROM oauth_clients WHERE json_type(metadata,?) IS NULL",
+                    ("$." + RETIRED,),
+                ).fetchone()[0]
+                >= MAX_CLIENTS
+            )
             if not full:
                 db.execute(
                     "INSERT INTO oauth_clients VALUES (?,?,?)",
@@ -208,6 +344,8 @@ class OAuthStore:
 
     def authorize(self, client, params):
         self.require_enabled()
+        if self.get_client(client.client_id) is None:
+            raise AuthorizeError("unauthorized_client", "Client registration is unavailable.")
         if len(params.model_dump_json()) > 8192:
             raise AuthorizeError("invalid_request", "Authorization parameters exceed limits.")
         if params.resource != self.resource:
@@ -272,7 +410,7 @@ class OAuthStore:
             row = db.execute(
                 "SELECT * FROM oauth_requests WHERE id=? AND expires>?", (request_id, time.time())
             ).fetchone()
-            if row is None or row["status"] not in {"pending", "approved"}:
+            if row is None:
                 raise InputError("This authorization request is unavailable or expired.")
             params = json.loads(row["params"])
             requested = params["scopes"]
@@ -294,12 +432,12 @@ class OAuthStore:
                     "Deletion access requires the owner's explicit --allow-forget choice."
                 )
             encoded = None if projects is None else json.dumps(projects)
-            if (
-                not deny
-                and row["status"] == "approved"
-                and (row["projects"] != encoded or scopes != requested)
+            status = "denied" if deny else "approved"
+            if row["status"] != "pending" and (
+                row["status"] != status
+                or (not deny and (row["projects"] != encoded or scopes != requested))
             ):
-                raise InputError("This request already has a different approval.")
+                raise InputError("This request already has a different final decision.")
             params["scopes"] = scopes
             db.execute(
                 "UPDATE oauth_requests SET status=?,projects=?,params=? WHERE id=?",
@@ -325,7 +463,17 @@ class OAuthStore:
                 return {"state": "expired"}
             params = AuthorizationParams.model_validate_json(row["params"])
             if row["status"] == "pending":
-                return {"state": "pending", "request_id": request_id}
+                client = self.get_client(row["client_id"])
+                if client is None:
+                    return {"state": "expired"}
+                return {
+                    "state": "pending",
+                    "request_id": request_id,
+                    "client_name": client.client_name or "Unnamed client",
+                    "redirect_uri": str(params.redirect_uri),
+                    "scopes": params.scopes,
+                    "expires_at": row["expires"],
+                }
             db.execute("DELETE FROM oauth_requests WHERE id=?", (request_id,))
             if row["status"] == "denied":
                 return {
@@ -349,7 +497,7 @@ class OAuthStore:
         }
 
     def load_code(self, client, code):
-        if not self.enabled() or len(code) > 1024:
+        if not self.enabled() or len(code) > 1024 or self.get_client(client.client_id) is None:
             return None
         with self.store.connection() as db:
             row = db.execute(
@@ -387,6 +535,8 @@ class OAuthStore:
 
     def exchange_code(self, client, code):
         self.require_enabled()
+        if self.get_client(client.client_id) is None:
+            raise TokenError("invalid_client", "Client registration is unavailable.")
         with self.store.connection(write=True) as db:
             row = db.execute(
                 "SELECT c.*,p.request_id,p.request_created_at FROM oauth_codes c "
@@ -422,8 +572,9 @@ class OAuthStore:
         return db.execute(
             "SELECT t.*,g.client_id,g.projects,g.resource FROM oauth_tokens t JOIN oauth_grants g "
             "ON g.id=t.grant_id WHERE t.hash=? AND t.kind=? AND t.expires>? AND g.expires>? "
-            "AND g.revoked=0 AND g.resource=?",
-            (digest(token), kind, time.time(), time.time(), self.resource),
+            "AND g.revoked=0 AND g.resource=? AND g.client_id IN "
+            "(SELECT id FROM oauth_clients WHERE json_type(metadata,?) IS NULL)",
+            (digest(token), kind, time.time(), time.time(), self.resource, "$." + RETIRED),
         ).fetchone()
 
     def load_token(self, token, kind, client_id=None):
@@ -449,7 +600,7 @@ class OAuthStore:
         row = self.token_row(db, token, "spent_refresh")
         if row is None or row["client_id"] != client_id:
             return False
-        db.execute("UPDATE oauth_grants SET revoked=1 WHERE id=?", (row["grant_id"],))
+        self._revoke_grant(db, row["grant_id"], "refresh_replay")
         return True
 
     def exchange_refresh(self, client, token, scopes):
@@ -469,7 +620,7 @@ class OAuthStore:
                     (row["grant_id"],),
                 ).fetchone()[0]
                 if rotations >= MAX_REFRESH_ROTATIONS:
-                    db.execute("UPDATE oauth_grants SET revoked=1 WHERE id=?", (row["grant_id"],))
+                    self._revoke_grant(db, row["grant_id"], "refresh_rotation_limit")
                 else:
                     db.execute(
                         "UPDATE oauth_tokens SET kind='spent_refresh' WHERE hash=?",
@@ -484,11 +635,11 @@ class OAuthStore:
 
     def revoke_token(self, token):
         with self.store.connection(write=True) as db:
-            db.execute(
-                "UPDATE oauth_grants SET revoked=1 WHERE id IN "
-                "(SELECT grant_id FROM oauth_tokens WHERE hash=?)",
-                (digest(token.token),),
-            )
+            row = db.execute(
+                "SELECT grant_id FROM oauth_tokens WHERE hash=?", (digest(token.token),)
+            ).fetchone()
+            if row is not None:
+                self._revoke_grant(db, row["grant_id"], "token_revoked")
 
     def policy(self, token):
         if not self.enabled() or len(token) > 1024:
@@ -523,12 +674,20 @@ class OAuthStore:
 
     def revoke_grant(self, grant_id):
         with self.store.connection(write=True) as db:
-            changed = db.execute(
-                "UPDATE oauth_grants SET revoked=1 WHERE id=?", (grant_id,)
-            ).rowcount
-            if not changed:
+            if not db.execute("SELECT 1 FROM oauth_grants WHERE id=?", (grant_id,)).fetchone():
                 raise InputError("This OAuth grant does not exist.")
+            self._revoke_grant(db, grant_id, "owner_revoked")
         return {"grant_id": grant_id, "revoked": True}
+
+    def _revoke_grant(self, db, grant_id, reason):
+        changed = db.execute(
+            "UPDATE oauth_grants SET revoked=1 WHERE id=? AND revoked=0", (grant_id,)
+        ).rowcount
+        db.execute("DELETE FROM oauth_tokens WHERE grant_id=?", (grant_id,))
+        if changed:
+            record_auth_change(
+                self.store, db, "oauth_grant_revoked", target=grant_id, details={"reason": reason}
+            )
 
 
 class OAuthProvider:

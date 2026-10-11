@@ -26,7 +26,7 @@ from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse
 from starlette.routing import Route, Router
 
 from .auth import SCOPES
-from .oauth import OAuthProvider, OAuthStore
+from .oauth import RETIRED, OAuthProvider, OAuthStore
 
 NO_STORE = {"Cache-Control": "no-store", "Pragma": "no-cache", "Referrer-Policy": "no-referrer"}
 
@@ -44,7 +44,9 @@ def routes_app(state: OAuthStore):
 
     async def register(request):
         try:
-            await request.json()
+            metadata = await request.json()
+            if isinstance(metadata, dict) and RETIRED in metadata:
+                raise ValueError("Reserved metadata")
         except (ValueError, UnicodeError):
             return JSONResponse(
                 {"error": "invalid_client_metadata"}, status_code=400, headers=NO_STORE
@@ -95,11 +97,16 @@ def routes_app(state: OAuthStore):
                 "<h1>This connection request has expired.</h1>", status_code=410, headers=NO_STORE
             )
         request_id = html.escape(result["request_id"])
+        client_name = html.escape(result["client_name"])
+        callback = html.escape(result["redirect_uri"])
+        scopes = html.escape(", ".join(result["scopes"]))
         page = f"""<!doctype html><html lang="en"><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="refresh" content="3"><title>Connect Dots Brain</title>
 <body><main><h1>Connect to your Dots Brain</h1>
 <p>Waiting for authorization from your memory host.</p>
+<p>Client: <strong>{client_name}</strong> (unverified client-supplied name).</p>
+<p>Return address: <code>{callback}</code></p><p>Requested access: {scopes}.</p>
 <p>Your setup agent can authorize this exact request. If it cannot see this page,
 give it the request ID below. Never share your memory credentials.</p>
 <p><code>{request_id}</code></p><p>This request expires after five minutes.

@@ -33,8 +33,18 @@ class Policy:
 
 
 def validate_endpoint(url: str) -> str:
-    parts = urlsplit(url)
-    if parts.username or parts.password or parts.query or parts.fragment:
+    if not isinstance(url, str):
+        raise InputError("Expected an absolute MCP endpoint ending in /mcp.")
+    try:
+        parts = urlsplit(url)
+        port = parts.port
+    except ValueError:
+        raise InputError("The MCP endpoint has an invalid host or port.") from None
+    if port is not None and not 1 <= port <= 65535:
+        raise InputError("The MCP endpoint has an invalid port.")
+    if any(character.isspace() or ord(character) < 32 for character in url):
+        raise InputError("The MCP endpoint must not contain whitespace or control characters.")
+    if parts.username is not None or parts.password is not None or parts.query or parts.fragment:
         raise InputError("The MCP endpoint must not contain credentials, a query, or a fragment.")
     if parts.path != "/mcp" or not parts.hostname:
         raise InputError("Expected an absolute MCP endpoint ending in /mcp.")
@@ -54,6 +64,7 @@ def issue_client(
     output: Path,
     url: str,
 ) -> dict:
+    store.ensure_writable()
     validate_text(name, "name", 200)
     if not scopes or not set(scopes) <= SCOPES:
         raise InputError("Choose explicitly supported memory, audit, or CORTEX scopes.")
@@ -77,6 +88,7 @@ def issue_client(
             stream.flush()
             os.fsync(stream.fileno())
         with store.connection(write=True) as db:
+            store.ensure_writable()
             db.execute(
                 "INSERT INTO clients VALUES (?,?,?,?,?,?,0)",
                 (
@@ -150,18 +162,23 @@ def read_connection(path: Path) -> dict:
 class BearerAuth:
     """Authenticate every HTTP request without exposing token values to tools."""
 
-    def __init__(self, app, store: Store, *, oauth=None):
+    def __init__(self, app, store: Store, *, oauth=None, public_gateway=False):
         self.app, self.store = app, store
         self.oauth = oauth
+        self.public_gateway = public_gateway
 
     async def __call__(self, scope, receive, send):
+        if scope["type"] == "websocket":
+            return await send({"type": "websocket.close", "code": 1008})
         if scope["type"] != "http":
             return await self.app(scope, receive, send)
         headers = dict(scope["headers"])
         value = headers.get(b"authorization", b"").decode("latin-1")
         bearer = value[:7].lower() == "bearer "
         policy = (
-            await anyio.to_thread.run_sync(authenticate, self.store, value[7:]) if bearer else None
+            await anyio.to_thread.run_sync(authenticate, self.store, value[7:])
+            if bearer and not self.public_gateway
+            else None
         )
         if policy is None and self.oauth is not None and bearer:
             policy = await anyio.to_thread.run_sync(self.oauth.policy, value[7:])

@@ -20,7 +20,6 @@ from dots_brain.cli import parser, run
 from dots_brain.errors import InputError
 from dots_brain.oauth import OAuthStore, configure
 from dots_brain.removal import uninstall
-from dots_brain.runtime import down, up
 from dots_brain.server import create_http_app, create_server
 from dots_brain.service import MemoryService
 from dots_brain.store import Store
@@ -376,7 +375,7 @@ def test_refresh_rotation_budget_bounds_storage_and_requires_new_consent(install
             )
         assert state.policy(tokens["access_token"]) is None
         with store.connection() as db:
-            assert db.execute("SELECT COUNT(*) FROM oauth_tokens").fetchone()[0] == 4
+            assert db.execute("SELECT COUNT(*) FROM oauth_tokens").fetchone()[0] == 0
         new_tokens = http.post("/token", data=request_code(http, client, state)).json()
         assert state.policy(new_tokens["access_token"]) is not None
 
@@ -395,6 +394,11 @@ def test_pending_consent_is_local_exact_and_requires_explicit_deletion_permissio
             state.decide(request_id, projects=["work"], scopes=["memory:read", "memory:forget"])
         narrowed = state.decide(request_id, projects=["work"])
         assert narrowed["scopes"] == ["memory:read"]
+        with pytest.raises(InputError, match="final decision"):
+            state.decide(request_id, deny=True)
+        request_id, pairing = request_code(
+            http, client, state, approve=False, scopes="memory:read memory:forget"
+        )
         state.decide(request_id, deny=True)
         denied = http.get(pairing, follow_redirects=False)
         assert parse_qs(urlsplit(denied.headers["location"]).query)["error"] == ["access_denied"]
@@ -557,9 +561,9 @@ def test_provenance_upgrade_preserves_legacy_auth_without_fabricating_history(
             for table in (
                 "oauth_request_provenance",
                 "oauth_code_provenance",
-                "oauth_grant_provenance",
             ):
                 assert db.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] == 0
+            assert db.execute("SELECT COUNT(*) FROM oauth_grant_provenance").fetchone()[0] == 1
 
 
 @pytest.mark.parametrize("stage", ["claim", "exchange"])
@@ -687,8 +691,19 @@ def test_restart_persists_grants_and_uninstall_prevents_refresh_after_reinstall(
         assert store.get(memory["id"])["content"] == "Retain me"
 
 
-def test_official_oauth_client_completes_discovery_registration_and_pkce_over_live_http(tmp_path):
+def test_official_oauth_client_completes_discovery_registration_and_pkce_over_live_http(
+    tmp_path, free_ports, http_process
+):
     store = Store(tmp_path / "host")
+    store.initialize()
+    private_port, public_port = free_ports
+    issuer = f"http://127.0.0.1:{public_port}"
+    result = run(
+        parser().parse_args(
+            ["--data-dir", str(store.directory), "oauth", "configure", "--issuer", issuer]
+        )
+    )
+    assert result["service"] is None and result["restart_required"]
 
     class ClientStorage:
         tokens = None
@@ -706,22 +721,14 @@ def test_official_oauth_client_completes_discovery_registration_and_pkce_over_li
         async def set_client_info(self, info):
             self.client_info = info
 
-    try:
-        first = up(store, port=0)
-        issuer = first["url"].removesuffix("/mcp")
-        result = run(
-            parser().parse_args(
-                ["--data-dir", str(store.directory), "oauth", "configure", "--issuer", issuer]
-            )
-        )
-        assert result["service"]["pid"] != first["pid"]
+    with http_process(store, private_port, public_port):
         assert result["public_ingress"] == "not_verified"
         state = OAuthStore(store)
         storage = ClientStorage()
         callback = {}
 
         async def exercise():
-            async with httpx.AsyncClient() as browser:
+            async with httpx.AsyncClient(trust_env=False) as browser:
 
                 async def redirect(url):
                     response = await browser.get(url, follow_redirects=False)
@@ -761,7 +768,7 @@ def test_official_oauth_client_completes_discovery_registration_and_pkce_over_li
                     redirect_handler=redirect,
                     callback_handler=receive_callback,
                 )
-                async with httpx.AsyncClient(auth=auth) as http:
+                async with httpx.AsyncClient(auth=auth, trust_env=False) as http:
                     async with streamable_http_client(state.resource, http_client=http) as (
                         read,
                         write,
@@ -799,14 +806,13 @@ def test_official_oauth_client_completes_discovery_registration_and_pkce_over_li
 
         asyncio.run(asyncio.wait_for(exercise(), timeout=30))
         before = state.grants()["grants"]
-        disabled = run(
-            parser().parse_args(["--data-dir", str(store.directory), "oauth", "disable"])
-        )
-        assert disabled["state"] == "oauth_disabled" and disabled["grants_revoked"]
-        assert len(before) == 1 and store.status()["memories"] == 1
-        assert httpx.get(issuer + "/.well-known/oauth-authorization-server").status_code == 401
-    finally:
-        down(store)
+        with pytest.raises(InputError, match="lock is busy"):
+            run(parser().parse_args(["--data-dir", str(store.directory), "oauth", "disable"]))
+        assert state.policy(storage.tokens.access_token) is not None
+    disabled = run(parser().parse_args(["--data-dir", str(store.directory), "oauth", "disable"]))
+    assert disabled["state"] == "oauth_disabled" and disabled["grants_revoked"]
+    assert len(before) == 1 and store.status()["memories"] == 1
+    assert state.policy(storage.tokens.access_token) is None
 
 
 @pytest.mark.parametrize(
@@ -919,7 +925,7 @@ def test_client_and_issuer_binding_and_public_request_limits(installation):
             ).status_code
             == 400
         )
-        configure(store, "https://new.example")
+        configure(store, "https://new.example", replace_issuer=True)
         assert state.policy(tokens["access_token"]) is None
         assert OAuthStore(store).policy(tokens["access_token"]) is None
 

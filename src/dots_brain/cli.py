@@ -13,7 +13,7 @@ from pathlib import Path
 
 from . import __version__
 from .auth import SCOPES
-from .errors import BrainError
+from .errors import BrainError, InputError
 from .local import locked, writer_lock
 from .store import Store
 
@@ -104,11 +104,20 @@ def parser() -> argparse.ArgumentParser:
         "--issuer", required=True, help="Existing HTTPS origin; does not create ingress."
     )
     oauth_setup.add_argument(
-        "--no-start", action="store_true", help="Leave startup to an external supervisor."
+        "--no-start",
+        action="store_true",
+        help="Compatibility flag; configuration never starts a service.",
+    )
+    oauth_setup.add_argument(
+        "--replace-issuer",
+        action="store_true",
+        help="Invalidate old OAuth access when replacing the issuer.",
     )
     oauth_disable = oauth_actions.add_parser("disable")
     oauth_disable.add_argument(
-        "--no-start", action="store_true", help="Leave startup to an external supervisor."
+        "--no-start",
+        action="store_true",
+        help="Compatibility flag; disable never starts a service.",
     )
     for name in ("status", "pending", "grants"):
         oauth_actions.add_parser(name)
@@ -126,6 +135,12 @@ def parser() -> argparse.ArgumentParser:
     serve = commands.add_parser("serve", help="Run on the memory host; HTTP binds loopback only.")
     serve.add_argument("--transport", choices=["stdio", "http"], default="stdio")
     serve.add_argument("--port", type=int, default=8765)
+    serve.add_argument(
+        "--public-port", type=int, help="Additional loopback OAuth-only port; --port stays private."
+    )
+    serve.add_argument(
+        "--public-gateway", action="store_true", help="Make the single HTTP listener OAuth-only."
+    )
     serve.add_argument("--semantic", action="store_true")
     model = commands.add_parser("model", help="Manage the pinned local embedding model.")
     model.add_argument("action", choices=["prepare"])
@@ -224,8 +239,7 @@ def _run(args) -> dict | None:
         }
     if args.command == "oauth":
         from .local import locked
-        from .oauth import OAuthStore, configuration, configure, revoke_all
-        from .runtime import up
+        from .oauth import OAuthStore, configuration, configure, disable
 
         if args.oauth_action == "status":
             config = configuration(store)
@@ -239,24 +253,13 @@ def _run(args) -> dict | None:
         store.status()  # Never initialize another memory on a client device.
         with locked(store.directory / "installation.lock"):
             if args.oauth_action == "configure":
-                result = configure(store, args.issuer)
+                result = configure(store, args.issuer, replace_issuer=args.replace_issuer)
                 return {
                     **result,
-                    "service": None if args.no_start else up(store),
-                    "restart_required": args.no_start,
+                    "service": None,
                 }
             if args.oauth_action == "disable":
-                with store.connection(write=True) as db:
-                    revoke_all(db)
-                (store.directory / "oauth.json").unlink(missing_ok=True)
-                return {
-                    "state": "oauth_disabled",
-                    "grants_revoked": True,
-                    "service": up(store)
-                    if not args.no_start and not (store.directory / "disabled.json").exists()
-                    else None,
-                    "restart_required": args.no_start,
-                }
+                return disable(store)
             state = OAuthStore(store)
             if args.oauth_action == "pending":
                 return state.pending()
@@ -352,7 +355,7 @@ def _run(args) -> dict | None:
     if args.command == "serve":
         from .integration_tools import load_cortex
         from .runtime import ensure_enabled
-        from .server import create_http_app, create_server
+        from .server import create_server, run_http
         from .service import MemoryService
 
         ensure_enabled(store)
@@ -369,16 +372,16 @@ def _run(args) -> dict | None:
             service.cortex_error = "invalid_configuration"
         server = create_server(service, http=args.transport == "http", port=args.port)
         if args.transport == "http":
-            import uvicorn
-
-            uvicorn.run(
-                create_http_app(server, service),
-                host="127.0.0.1",
+            run_http(
+                server,
+                service,
                 port=args.port,
-                access_log=False,
-                log_level="warning",
+                public_port=args.public_port,
+                public_gateway=args.public_gateway,
             )
         else:
+            if args.public_port is not None or args.public_gateway:
+                raise InputError("Public listener options require --transport http.")
             server.run(transport="stdio")
         return None
     if args.command == "model":

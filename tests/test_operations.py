@@ -139,16 +139,20 @@ def test_restore_revokes_pending_oauth_and_marks_inflight_connector_uncertain(tm
     backup = tmp_path / "backup.sqlite3"
     backup_store(source, backup)
     target = Store(tmp_path / "restored")
-    restore_store(backup, target, latest_deletions=source)
+    staged = restore_store(backup, target, latest_deletions=source)
+    assert staged["credentials"] == "disabled_pending_activation"
+    with pytest.raises(InputError, match="activate-restore"):
+        resume_installation(target)
+    activate_restore(source, target, writers_stopped=True)
     with target.connection() as db:
         for table in (
-            "oauth_clients",
             "oauth_requests",
             "oauth_codes",
-            "oauth_grants",
             "oauth_tokens",
         ):
             assert db.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] == 0
+        assert db.execute("SELECT COUNT(*) FROM oauth_clients").fetchone()[0] == 1
+        assert db.execute("SELECT revoked FROM oauth_grants").fetchone()[0] == 1
         rows = db.execute(
             "SELECT operation_id,state,receipt_json FROM cortex_operations ORDER BY operation_id"
         ).fetchall()

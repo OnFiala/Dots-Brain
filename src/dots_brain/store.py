@@ -186,6 +186,8 @@ class Store:
 
     @contextmanager
     def connection(self, *, write: bool = False) -> Iterator[sqlite3.Connection]:
+        if not self.path.exists():
+            raise InputError("Memory is not initialized. Run dots-brain setup first.")
         with writer_lock(self.directory), self._connection(write=write) as db:
             yield db
 

@@ -64,8 +64,11 @@ dots-brain --data-dir /absolute/private/memory restore --backup /absolute/privat
 ```
 
 Restore requires a new target directory and a surviving current store. It keeps
-the input snapshot unchanged, merges deletion barriers, revokes copied access,
-and leaves the target disabled. A snapshot with a nonempty WAL sidecar is refused;
+the input snapshot unchanged, merges deletion barriers and leaves the target
+disabled. Static credentials are revoked during staging; OAuth credentials stay
+quarantined behind the mandatory disabled barrier until activation can reset them
+and append its audit event together. The result says `disabled_pending_activation`,
+not that all credentials have already been revoked. A nonempty WAL sidecar is refused;
 create a standalone backup with its compatible producer. For a v1 snapshot, copy
 it to a new private working directory as `brain.sqlite3`, migrate that copy, then
 create a v2 backup from the copy. Never migrate the original backup in place.
@@ -84,6 +87,15 @@ writable; the target remains disabled. After the pending marker is written,
 failures preserve the recovery barriers. Retry only the same still-disabled
 source/target pair. A changed UUID, replacement path or unrelated barrier refuses
 activation. No command automatically removes a recovery barrier.
+
+Retained OAuth clients, grants and grant provenance must match the surviving
+source. New grant history after the snapshot requires a current backup; activation
+does not invent a history merge. Credential secrets, retirement flags and revoked
+flags are excluded from this comparison because the target reset changes them.
+The reset and its recovery-bound audit event commit in one target transaction.
+An interrupted activation can retain exactly that one final event after the exact
+source audit prefix. Retry verifies its hash, identity and reset state and does not
+append it again. Unrelated audit suffixes or changed credentials refuse activation.
 
 After target commit and the source committed marker, the source stays disabled.
 If enabling the target or its final fsync fails, inspect both markers: target

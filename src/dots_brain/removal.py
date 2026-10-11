@@ -229,7 +229,7 @@ def uninstall(
                     db.execute("UPDATE clients SET revoked=1")
                     from .oauth import revoke_all
 
-                    revoke_all(db)
+                    revoke_all(store, db, reason="uninstalled")
             try:
                 if state_path(store).exists():
                     stop_process(read_json(state_path(store)))
@@ -274,5 +274,10 @@ def uninstall(
 
     if dry_run or not store.directory.exists():
         return remove()
-    with locked(store.directory / "installation.lock"):
+    from .local import writer_lock
+
+    with (
+        locked(store.directory / "installation.lock"),
+        writer_lock(store.directory, exclusive=True),
+    ):
         return remove()

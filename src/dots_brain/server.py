@@ -43,33 +43,85 @@ async def indexing_lifespan(service: MemoryService):
                 await worker
 
 
-def create_http_app(server: FastMCP, service: MemoryService):
+def http_configuration(store):
+    from .oauth import configuration
+
+    try:
+        return configuration(store)
+    except InputError:
+        logging.getLogger("dots_brain").warning(
+            "OAuth configuration is invalid; inspect oauth status. OAuth access is closed."
+        )
+        return None
+
+
+def create_http_app(
+    server: FastMCP, service: MemoryService, *, public_gateway=False, listener_policies=None
+):
     from .auth import BearerAuth
-    from .oauth import OAuthStore, configuration
+    from .oauth import OAuthStore
     from .oauth_http import routes_app
 
-    oauth = OAuthStore(service.store) if configuration(service.store) else None
-    protected = BearerAuth(server.streamable_http_app(), service.store, oauth=oauth)
+    oauth = OAuthStore(service.store) if http_configuration(service.store) else None
+    transport = server.streamable_http_app()
+    protected = BearerAuth(transport, service.store, oauth=oauth, public_gateway=public_gateway)
+    public = BearerAuth(transport, service.store, oauth=oauth, public_gateway=True)
     authorization = routes_app(oauth) if oauth else None
 
     async def app(scope, receive, send):
+        if scope["type"] == "websocket":
+            return await send({"type": "websocket.close", "code": 1008})
         if scope["type"] == "lifespan":
             async with indexing_lifespan(service):
                 await protected(scope, receive, send)
         elif authorization is not None and scope.get("path") != "/mcp":
             await authorization(scope, receive, send)
         else:
-            await protected(scope, receive, send)
+            mode = public_gateway
+            if listener_policies is not None:
+                address = scope.get("server")
+                mode = listener_policies.get(address[1]) if address else None
+                if mode is None:
+                    from starlette.responses import JSONResponse
+
+                    return await JSONResponse({"error": "unknown_listener"}, status_code=503)(
+                        scope, receive, send
+                    )
+            await (public if mode else protected)(scope, receive, send)
 
     return app
+
+
+def run_http(server, service, *, port, public_port=None, public_gateway=False):
+    """One ASGI lifecycle and indexer; policies come from bound sockets, never Host."""
+    import socket
+
+    import uvicorn
+
+    ports = [port] + ([public_port] if public_port is not None else [])
+    if any(type(value) is not int or not 1 <= value <= 65535 for value in ports):
+        raise InputError("HTTP ports must be between 1 and 65535.")
+    if public_port is not None and (public_gateway or public_port == port):
+        raise InputError(
+            "Use distinct private/public ports; --public-gateway is single-listener only."
+        )
+    policies = {port: public_gateway}
+    if public_port is not None:
+        policies[public_port] = True
+    with contextlib.ExitStack() as stack:
+        sockets = [
+            stack.enter_context(socket.create_server(("127.0.0.1", value))) for value in ports
+        ]
+        app = create_http_app(server, service, listener_policies=policies)
+        uvicorn.Server(uvicorn.Config(app, access_log=False, log_level="warning")).run(
+            sockets=sockets
+        )
 
 
 def create_server(service: MemoryService, *, http: bool = False, port: int = 8765) -> FastMCP:
     from urllib.parse import urlsplit
 
     from mcp.server.transport_security import TransportSecuritySettings
-
-    from .oauth import configuration
 
     read_limiter = anyio.CapacityLimiter(8)
     write_limiter = anyio.CapacityLimiter(1)
@@ -95,7 +147,7 @@ def create_server(service: MemoryService, *, http: bool = False, port: int = 876
             async with indexing_lifespan(service):
                 yield {}
 
-    config = configuration(service.store) if http else None
+    config = http_configuration(service.store) if http else None
     transport_security = None
     if config:
         transport_security = TransportSecuritySettings(
