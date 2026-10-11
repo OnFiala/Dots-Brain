@@ -174,6 +174,11 @@ def _add_audit_commands(commands):
     audit.add_argument(
         "--limit", type=int, default=100, help="Maximum events in this page (default: 100)."
     )
+    audit.add_argument(
+        "--review-projection",
+        action="store_true",
+        help="Verify full audit rows on this host and omit large payloads for private review.",
+    )
     capture = commands.add_parser(
         "capture", help="Collect one bounded pass from provider JSONL snapshots."
     )
@@ -505,6 +510,13 @@ def run(args) -> dict:
         from .auth import Policy
 
         audit = AuditLog(store)
+        if args.review_projection:
+            if args.action != "events" or any((args.project, args.since, args.until)):
+                raise InputError(
+                    "Review projection requires unfiltered events; run "
+                    "dots-brain audit events --review-projection."
+                )
+            return audit.review_page(Policy(), after_id=args.after_id, limit=args.limit)
         arguments = dict(
             project=args.project,
             since=args.since,

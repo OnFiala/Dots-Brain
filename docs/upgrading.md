@@ -145,6 +145,17 @@ separately reviewed migration; this candidate does not guess at foreign formats.
 
 ## Rollback before accepting new writes
 
+Capture cursors and private review checkpoints now declare `format_version: 1`.
+Keep their pre-upgrade copies with the private rollback material. Capture validates
+and atomically upgrades unversioned/v0 cursors without replaying acknowledged
+bytes. Review checkpoints upgrade only at explicit reviewed completion; legacy
+pending evidence remains compatible. Future or malformed state is preserved with
+a diagnostic/recovery command. See [state upgrades](activity.md#cursor-and-review-state).
+The new review helper requires the compatible memory-host CLI option
+`audit events --review-projection`; install that version through the separately
+approved host upgrade path before running it. Source checkout changes alone are
+not proof of that host's version.
+
 Stop the candidate and every client. Copy the standalone snapshot produced by
 `migrate --apply` to `brain.sqlite3` in a **new** private directory. If instead
 using the manual pre-upgrade copy, restore the database together with its saved

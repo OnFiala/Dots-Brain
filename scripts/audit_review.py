@@ -25,13 +25,14 @@ from zoneinfo import ZoneInfo
 # The documented operator entry point runs from a source checkout, without installation.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from dots_brain.activity import AuditLog  # noqa: E402
+from dots_brain.activity import REVIEW_FORMAT_VERSION, AuditLog  # noqa: E402
 from dots_brain.errors import ConflictError  # noqa: E402
 
 DEFAULT_STATE = Path.home() / ".local/state/dots-brain-audit"
 PAGE_SIZE = 100
 MAX_PAGES = 20
 MAX_PAGE_BYTES = 1024 * 1024
+STATE_FORMAT_VERSION = 1
 MAX_UNRESOLVED = 1000
 MAX_ANOMALY_EVENT_IDS = 16
 FINDING_CATEGORIES = {
@@ -49,6 +50,7 @@ FINDING_CATEGORIES = {
     "missed_review",
     "sanitization",
     "expected_probe",
+    "oversized_event",
 }
 
 
@@ -66,6 +68,28 @@ class AuditPageTooLarge(AuditPageError):
 
 class AuditContinuityError(ReviewError):
     code = "audit_continuity_failure"
+
+
+class ReviewStateError(ReviewError):
+    code = "unsupported_review_state"
+
+    def __init__(self, path, *, target_config=None):
+        self.path = path
+        self.next_command = shlex.join(
+            [
+                "python",
+                "scripts/audit_review.py",
+                "--state-dir",
+                str(path.parent.with_name(path.parent.name + "-recovery-" + uuid4().hex[:8])),
+                "scan",
+                "--target-config",
+                str(target_config or path.parent / "target.json"),
+            ]
+        )
+        super().__init__(
+            f"Unsupported or malformed {path.name}; preserve the original state. "
+            f"Use a compatible helper or review all events in fresh state: {self.next_command}"
+        )
 
 
 def canonical(value):
@@ -139,6 +163,7 @@ def fetch_page(after_id, limit, target):
         target.data_dir,
         "audit",
         "events",
+        "--review-projection",
         "--after-id",
         str(after_id),
         "--limit",
@@ -161,14 +186,27 @@ def fetch_page(after_id, limit, target):
     if len(result.stdout) > MAX_PAGE_BYTES:
         raise AuditPageTooLarge("Audit page exceeds review budget")
     try:
-        return json.loads(result.stdout)
+        page = json.loads(result.stdout)
     except json.JSONDecodeError as exc:
         raise AuditPageError("Audit page is not valid JSON") from exc
+    if not isinstance(page, dict) or page.get("review_format") != REVIEW_FORMAT_VERSION:
+        raise AuditPageError(
+            "Audit source requires a compatible owner CLI; run dots-brain audit events --help "
+            "on the memory host and confirm --review-projection is available."
+        )
+    return page
 
 
 def validate_page(page, after_id, limit):
-    if not isinstance(page, dict) or set(page) != {"events", "next_after_id", "has_more"}:
+    if not isinstance(page, dict) or set(page) not in (
+        {"events", "next_after_id", "has_more"},
+        {"events", "next_after_id", "has_more", "review_format"},
+    ):
         raise AuditPageError("Invalid audit page")
+    if "review_format" in page and (
+        type(page["review_format"]) is not int or page["review_format"] != REVIEW_FORMAT_VERSION
+    ):
+        raise AuditPageError("Unsupported audit review projection; use a compatible owner CLI")
     if len(canonical(page).encode("utf-8")) > MAX_PAGE_BYTES:
         raise AuditPageTooLarge("Audit page exceeds review budget")
     rows = page["events"]
@@ -184,11 +222,11 @@ def validate_page(page, after_id, limit):
     return rows
 
 
-def validate_row(row, previous_hash):
+def validate_row(row, previous_hash, *, projected=False):
     if not isinstance(row, dict):
         raise AuditPageError("Invalid audit event")
     try:
-        return AuditLog.verify_row(row, previous_hash)
+        return AuditLog.verify_review_row(row, previous_hash, projected=projected)
     except (ConflictError, KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
         raise AuditContinuityError("Audit continuity broken") from exc
 
@@ -268,15 +306,16 @@ def collect(checkpoint, fetch, max_pages=None, origin="synthetic"):
     """Bounded scan; failures return no candidate and never change a checkpoint."""
     if max_pages is None:
         max_pages = MAX_PAGES
+    validate_checkpoint(checkpoint)
     if checkpoint and checkpoint["origin"] != origin:
         raise ReviewError("Audit origin changed")
     after = checkpoint.get("last_id", 0)
     previous_hash = checkpoint.get("event_hash", "")
     if after:
-        anchor = validate_page(fetch(after - 1, 1), after - 1, 1)
+        anchor_page, anchor, _ = fetch_valid_page(fetch, after - 1, 1)
         if not anchor or anchor[0]["id"] != after or anchor[0]["event_hash"] != previous_hash:
             raise AuditContinuityError("Audit anchor changed or disappeared; do not reset cursor")
-        validate_row(anchor[0], anchor[0]["prev_hash"])
+        validate_row(anchor[0], anchor[0]["prev_hash"], projected="review_format" in anchor_page)
 
     unresolved = checkpoint_unresolved(checkpoint.get("unresolved", []))
     events = []
@@ -286,7 +325,9 @@ def collect(checkpoint, fetch, max_pages=None, origin="synthetic"):
     for _ in range(max_pages):
         page, rows, page_limit = fetch_valid_page(fetch, after, page_limit)
         for row in rows:
-            payload = validate_row(row, previous_hash)
+            payload = validate_row(row, previous_hash, projected="review_format" in page)
+            if "review_omission" in payload:
+                add_anomaly(anomalies, "oversized_event", [row["id"]])
             previous_hash = row["event_hash"]
             key = unresolved_key(row["project"], row["principal"], row["client_event_id"])
             if row["kind"] == "intent":
@@ -318,6 +359,7 @@ def collect(checkpoint, fetch, max_pages=None, origin="synthetic"):
         if not has_more:
             break
     return events, {
+        "format_version": STATE_FORMAT_VERSION,
         "origin": origin,
         "last_id": after,
         "event_hash": previous_hash,
@@ -341,6 +383,96 @@ def read_json(path):
     return json.loads(path.read_text())
 
 
+def validate_state_version(data):
+    """An absent or zero version identifies supported legacy state."""
+    if not isinstance(data, dict) or (
+        "format_version" in data
+        and (
+            type(data["format_version"]) is not int
+            or data["format_version"] not in {0, STATE_FORMAT_VERSION}
+        )
+    ):
+        raise ReviewError("Invalid review state version")
+
+
+def validate_checkpoint(data):
+    validate_state_version(data)
+    if not data:
+        return
+    if (
+        not isinstance(data.get("origin"), str)
+        or not data["origin"]
+        or type(data.get("last_id")) is not int
+        or data["last_id"] < 0
+        or not isinstance(data.get("event_hash"), str)
+        or (data["last_id"] == 0) != (data["event_hash"] == "")
+        or not isinstance(data.get("unresolved"), list)
+        or type(data.get("has_more", False)) is not bool
+    ):
+        raise ReviewError("Invalid review checkpoint")
+    checkpoint_unresolved(data["unresolved"])
+    checkpoint_anomaly_counts(data)
+    validate_findings(data.get("findings", []))
+    validate_anomalies(data.get("anomalies", []), last_id=data["last_id"])
+
+
+def validate_anomalies(items, *, last_id):
+    if not isinstance(items, list) or len(items) > len(FINDING_CATEGORIES):
+        raise ReviewError("Invalid review anomalies")
+    seen = set()
+    for item in items:
+        if (
+            not isinstance(item, dict)
+            or set(item) not in ({"code", "event_ids"}, {"code", "event_ids", "count"})
+            or item["code"] not in FINDING_CATEGORIES
+            or item["code"] in seen
+            or type(item.get("count", 1)) is not int
+            or item.get("count", 1) < 1
+            or not isinstance(item["event_ids"], list)
+            or not 1 <= len(item["event_ids"]) <= MAX_ANOMALY_EVENT_IDS
+            or any(
+                type(value) is not int or not 1 <= value <= last_id for value in item["event_ids"]
+            )
+            or item["event_ids"] != sorted(set(item["event_ids"]))
+        ):
+            raise ReviewError("Invalid review anomaly")
+        seen.add(item["code"])
+
+
+def read_state(path, *, pending=False):
+    """Validate in memory; retain legacy bytes for base digests and atomic upgrade."""
+    try:
+        data = read_json(path)
+        validate_state_version(data)
+        if pending and data:
+            validate_checkpoint(data["candidate"])
+            if (
+                not all(
+                    isinstance(data[key], str)
+                    for key in (
+                        "review_id",
+                        "run_key",
+                        "scanned_at",
+                        "base_digest",
+                        "events_digest",
+                    )
+                )
+                or type(data["count"]) is not int
+                or data["count"] < 0
+                or not isinstance(data["event_ids"], list)
+                or len(data["event_ids"]) != data["count"]
+                or any(type(value) is not int or value < 1 for value in data["event_ids"])
+            ):
+                raise ReviewError("Invalid pending review")
+            validate_findings(data.get("scan_findings", []))
+            validate_findings(data.get("prior_findings", []))
+        elif not pending:
+            validate_checkpoint(data)
+        return data
+    except (ValueError, KeyError, TypeError) as exc:
+        raise ReviewStateError(path) from exc
+
+
 def atomic_json(path, value):
     fd, name = tempfile.mkstemp(prefix=".review-", dir=path.parent)
     try:
@@ -360,13 +492,16 @@ def atomic_json(path, value):
 
 
 def stage(root, run_key, fetch, origin="synthetic"):
-    checkpoint = read_json(root / "checkpoint.json")
+    checkpoint = read_state(root / "checkpoint.json")
+    previous = read_state(root / "pending.json", pending=True)
+    if checkpoint and checkpoint["origin"] != origin:
+        raise ReviewError("Audit origin changed; scan with the original target configuration")
     if checkpoint.get("run_key") == run_key and not checkpoint.get("has_more"):
         return {"state": "already_completed", "run_key": run_key}
     events, candidate = collect(checkpoint, fetch, origin=origin)
-    previous = read_json(root / "pending.json")
     token = str(uuid4())
     pending = {
+        "format_version": STATE_FORMAT_VERSION,
         "review_id": token,
         "run_key": run_key,
         "scanned_at": utc_now(),
@@ -455,7 +590,7 @@ def complete(root, review):
     validate_findings(findings)
     if not isinstance(model, str) or not re.fullmatch(r"[A-Za-z0-9._:/-]{1,100}", model):
         raise ValueError("Model must be an identifier, not free text")
-    checkpoint = read_json(root / "checkpoint.json")
+    checkpoint = read_state(root / "checkpoint.json")
     # A lost local acknowledgement may retry without advancing twice.
     if checkpoint.get("review_id") == review_id:
         if checkpoint.get("review_digest") != digest(review):
@@ -465,7 +600,7 @@ def complete(root, review):
             "last_id": checkpoint["last_id"],
             "has_more": checkpoint.get("has_more", False),
         }
-    pending = read_json(root / "pending.json")
+    pending = read_state(root / "pending.json", pending=True)
     if pending.get("review_id") != review_id or pending["base_digest"] != digest(checkpoint):
         raise ValueError("Stale or missing review; scan and analyze again")
     if pending["events_digest"] != review["events_digest"]:
@@ -507,6 +642,7 @@ def complete(root, review):
         anomaly_counts[category] = anomaly_counts.get(category, 0) + count
     record = {
         **pending["candidate"],
+        "format_version": STATE_FORMAT_VERSION,
         "review_id": review_id,
         "run_key": pending["run_key"],
         "scanned_at": pending["scanned_at"],
@@ -551,12 +687,15 @@ def main():
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         if args.command == "scan":
             target = AuditTarget.load(args.target_config or root / "target.json")
-            result = stage(
-                root,
-                args.run_key or scheduled_slot(target.timezone),
-                lambda after, limit: fetch_page(after, limit, target),
-                origin=target.origin,
-            )
+            try:
+                result = stage(
+                    root,
+                    args.run_key or scheduled_slot(target.timezone),
+                    lambda after, limit: fetch_page(after, limit, target),
+                    origin=target.origin,
+                )
+            except ReviewStateError as error:
+                raise ReviewStateError(error.path, target_config=args.target_config) from error
         else:
             result = complete(root, read_json(args.review_file))
         print(canonical(result))
@@ -570,7 +709,10 @@ if __name__ == "__main__":
         raise SystemExit(1) from None
     except ReviewError as error:
         # Codes are fixed; remote stderr and sanitized audit payloads stay out of output.
-        print(canonical({"state": "incomplete", "error_code": error.code}))
+        result = {"state": "incomplete", "error_code": error.code}
+        if isinstance(error, ReviewStateError):
+            result["next_command"] = error.next_command
+        print(canonical(result))
         raise SystemExit(1) from None
     except (ValueError, KeyError, TypeError):
         # Remote stderr and audit payloads are deliberately not reproduced.

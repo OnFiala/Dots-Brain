@@ -9,6 +9,7 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import stat as stat_module
 from base64 import b64decode, b64encode
 from collections.abc import Callable
@@ -25,8 +26,82 @@ _AUDIT_TYPES = frozenset(
 MAX_LINE_BYTES = 256 * 1024
 MAX_BATCH_BYTES = 16 * 1024 * 1024
 MAX_BATCH_RECORDS = 1000
+CURSOR_FORMAT_VERSION = 1
 PREFIX_CHAIN_BLOCK_BYTES = 4096
 _PREFIX_CHAIN_SEED = hashlib.sha256(b"dots-brain.capture.prefix.v1").hexdigest()
+_CURSOR_RECOVERY = (
+    " Preserve the cursor and source files; restore a known-good cursor backup or use a "
+    "compatible Dots Brain version. Do not delete the cursor or restart from zero."
+)
+
+
+def _validate_cursor(data: Any) -> None:
+    """Validate all checkpoints before delivery or an in-place legacy upgrade."""
+    if not isinstance(data, dict):
+        raise InputError("Capture cursor is invalid." + _CURSOR_RECOVERY)
+    version = data.get("format_version", 0)
+    if type(version) is not int or version not in {0, CURSOR_FORMAT_VERSION}:
+        raise InputError("Capture cursor format version is unsupported." + _CURSOR_RECOVERY)
+    if not isinstance(data.get("files"), dict):
+        raise InputError("Capture cursor is invalid." + _CURSOR_RECOVERY)
+    for key, value in data["files"].items():
+        valid = isinstance(key, str) and bool(key) and isinstance(value, dict)
+        if valid:
+            valid = all(
+                type(value.get(field)) is int and value[field] >= 0
+                for field in ("device", "inode", "offset")
+            )
+        if not valid:
+            raise InputError("Capture cursor checkpoint is invalid." + _CURSOR_RECOVERY)
+        for field in ("generation", "prefix_length", "boundary_start", "boundary_length"):
+            if field in value and (type(value[field]) is not int or value[field] < 0):
+                raise InputError("Capture cursor checkpoint is invalid." + _CURSOR_RECOVERY)
+        for field in ("unavailable", "source_reset_required", "discard_until_newline"):
+            if field in value and type(value[field]) is not bool:
+                raise InputError("Capture cursor checkpoint is invalid." + _CURSOR_RECOVERY)
+        for field in ("fingerprint", "prefix_fingerprint", "boundary_fingerprint"):
+            if field in value and (
+                not isinstance(value[field], str)
+                or re.fullmatch(r"[0-9a-f]{64}", value[field]) is None
+            ):
+                raise InputError("Capture cursor fingerprint is invalid." + _CURSOR_RECOVERY)
+        if "prefix_length" in value and not (
+            value["prefix_length"] <= 256
+            and ("prefix_fingerprint" in value or "fingerprint" in value)
+        ):
+            raise InputError("Capture cursor prefix length is invalid." + _CURSOR_RECOVERY)
+        boundary = {"boundary_fingerprint", "boundary_start", "boundary_length"}
+        if boundary.intersection(value) and not (
+            boundary.issubset(value)
+            and value["boundary_start"] == max(0, value["offset"] - 256)
+            and value["boundary_length"] == min(256, value["offset"])
+        ):
+            raise InputError("Capture cursor boundary is invalid." + _CURSOR_RECOVERY)
+        chain = {
+            "acknowledged_prefix_digest",
+            "acknowledged_prefix_length",
+            "acknowledged_prefix_tail",
+        }
+        if not chain.intersection(value):
+            continue  # Older checkpoints cannot prove full-prefix replacement continuity.
+        try:
+            digest = value["acknowledged_prefix_digest"]
+            length = value["acknowledged_prefix_length"]
+            tail = value["acknowledged_prefix_tail"]
+            valid = (
+                chain.issubset(value)
+                and isinstance(digest, str)
+                and re.fullmatch(r"[0-9a-f]{64}", digest) is not None
+                and type(length) is int
+                and length == value["offset"]
+                and isinstance(tail, str)
+                and len(b64decode(tail, validate=True)) == length % PREFIX_CHAIN_BLOCK_BYTES
+                and (length >= PREFIX_CHAIN_BLOCK_BYTES or digest == _PREFIX_CHAIN_SEED)
+            )
+        except (KeyError, ValueError):
+            valid = False
+        if not valid:
+            raise InputError("Capture cursor prefix chain is invalid." + _CURSOR_RECOVERY)
 
 
 def _identity(source: str, offset: int, raw: bytes) -> str:
@@ -234,21 +309,25 @@ class JSONLCollector:
         return self.cursor_path.with_name(self.cursor_path.name + suffix)
 
     def _load_cursor(self) -> dict[str, Any]:
+        diagnostic = (
+            f" Next command (read-only):\npython3 -m json.tool {shlex.quote(str(self.cursor_path))}"
+        )
         try:
             data = json.loads(self.cursor_path.read_text())
-            if not isinstance(data, dict) or not isinstance(data.get("files"), dict):
-                raise InputError("Capture cursor is invalid; refusing to restart from zero.")
-            for value in data["files"].values():
-                if not isinstance(value, dict) or any(
-                    type(value.get(key)) is not int or value[key] < 0
-                    for key in ("device", "inode", "offset")
-                ):
-                    raise InputError("Capture cursor is invalid; refusing to restart from zero.")
-            return data
         except FileNotFoundError:
-            return {"files": {}}
-        except (OSError, ValueError) as exc:
-            raise InputError("Capture cursor is invalid.") from exc
+            return {"format_version": CURSOR_FORMAT_VERSION, "files": {}}
+        except (OSError, ValueError, RecursionError) as exc:
+            raise InputError("Capture cursor is invalid." + _CURSOR_RECOVERY + diagnostic) from exc
+        try:
+            _validate_cursor(data)
+        except InputError as exc:
+            raise InputError(str(exc) + diagnostic) from exc
+        if data.get("format_version", 0) == 0:
+            # Preserve acknowledged offsets, generation, barriers and hashes
+            # exactly. Never reconstruct missing evidence from a mutable source.
+            data["format_version"] = CURSOR_FORMAT_VERSION
+            self._save_cursor(data)
+        return data
 
     def _save_cursor(self, data: dict[str, Any]) -> None:
         write_json(self.cursor_path, data)

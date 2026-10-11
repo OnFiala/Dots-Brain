@@ -81,7 +81,9 @@ def test_audit_target_remote_arguments_are_shell_quoted(tmp_path, monkeypatch):
 
     def run(command, **kwargs):
         commands.append(command)
-        return SimpleNamespace(stdout=b'{"events":[],"next_after_id":0,"has_more":false}')
+        return SimpleNamespace(
+            stdout=b'{"review_format":1,"events":[],"next_after_id":0,"has_more":false}'
+        )
 
     monkeypatch.setattr(audit.subprocess, "run", run)
     assert audit.fetch_page(0, 100, configured)["events"] == []

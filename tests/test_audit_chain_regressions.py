@@ -56,6 +56,9 @@ def v2_rows(count, *, kinds=None, evidence=None):
 def fetcher(rows):
     def fetch(after_id, limit):
         page = [dict(row) for row in rows if row["id"] > after_id][:limit]
+        for row in page:
+            for field in ("action", "target", "details"):
+                row[field] = json.loads(row[field])
         return {
             "events": page,
             "next_after_id": page[-1]["id"] if page else after_id,

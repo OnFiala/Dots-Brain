@@ -32,6 +32,12 @@ state.
 
 ### Fixed
 
+- Progress past large accepted audit events through an explicit host-verified
+  review projection, retain original hashes and record omitted content as a finding.
+  Verify the same projection when it becomes the next scan's anchor.
+- Version capture cursors and review state, validate legacy upgrades before writes,
+  and preserve unsupported state with concrete diagnostic/recovery commands.
+  Document capture's path/account/project suppression boundary.
 - Aggregate semantic status without loading vectors, drain late vector repairs
   through CLI, and back off failed embeddings with a global retry rate limit.
 - Preserve Unicode word boundaries and short boundary terms in long queries;
@@ -90,6 +96,10 @@ state.
 
 ### Breaking
 
+- Capture cursors and private review state now use explicit format version 1.
+  The review helper requires `audit events --review-projection` on the memory host;
+  it never silently falls back to an incompatible helper. Preserve older state
+  copies and follow the documented upgrade/rollback path.
 - Advance the package to `0.4.0a4` for schema v4; `0.4.0a3` used v3 and earlier
   `0.4.0a2` builds reused a version across formats. All v1/v2/v3 stores require
   an explicit offline upgrade. Older binaries reject v4. Indexed IDs enlarge

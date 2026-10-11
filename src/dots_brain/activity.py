@@ -15,6 +15,19 @@ from .store import validate_text
 _KINDS = frozenset({"intent", "receipt", "error", "gap", "correction", "coverage", "action"})
 _CHAIN_V3 = "v3:"
 _CHAIN_DOMAIN = "dots-brain.audit-chain.v3"
+REVIEW_FORMAT_VERSION = 1
+REVIEW_PAGE_BYTES = 1024 * 1024
+REVIEW_EVENT_BYTES = 256 * 1024
+_REVIEW_IDENTITY = (
+    "project",
+    "principal",
+    "client_event_id",
+    "kind",
+    "evidence",
+    "occurred_at",
+    "intent_event_id",
+)
+_REVIEW_FIELDS = (*_REVIEW_IDENTITY, "id", "recorded_at", "prev_hash", "payload_hash", "event_hash")
 
 
 def _canonical(value: Any) -> str:
@@ -54,12 +67,12 @@ class AuditLog:
         return _canonical(result.value), result.summary()
 
     @staticmethod
-    def _payload(row: dict[str, Any]) -> dict[str, Any]:
-        """Return the canonical payload from a database row or normalized API event."""
+    def _payload(row: dict[str, Any], *, normalized: bool = False) -> dict[str, Any]:
+        """Decode database JSON once; API strings remain literal string values."""
 
         def decoded(name: str) -> Any:
             value = row[name]
-            return json.loads(value) if isinstance(value, str) else value
+            return json.loads(value) if not normalized and isinstance(value, str) else value
 
         return {
             "project": row["project"],
@@ -75,9 +88,11 @@ class AuditLog:
         }
 
     @classmethod
-    def _hashes(cls, row: dict[str, Any], previous_hash: str) -> tuple[dict[str, Any], str, str]:
+    def _hashes(
+        cls, row: dict[str, Any], previous_hash: str, *, normalized: bool = False
+    ) -> tuple[dict[str, Any], str, str]:
         """Verify-compatible v2/v3 hashes; v3 binds durable event identity and stamp."""
-        payload = cls._payload(row)
+        payload = cls._payload(row, normalized=normalized)
         stored_payload_hash = row.get("payload_hash", "")
         if stored_payload_hash.startswith(_CHAIN_V3):
             envelope = {
@@ -94,13 +109,15 @@ class AuditLog:
         return payload, payload_hash, event_hash
 
     @classmethod
-    def verify_row(cls, row: dict[str, Any], previous_hash: str) -> dict[str, Any]:
-        """Verify one public audit row and return its normalized payload.
+    def verify_row(
+        cls, row: dict[str, Any], previous_hash: str, *, normalized: bool = False
+    ) -> dict[str, Any]:
+        """Verify a database row, or an API row with explicit normalized=True.
 
         This is shared by the local review tool so its anchor verification uses
         exactly the same legacy and v3 encoding as database recovery.
         """
-        payload, payload_hash, event_hash = cls._hashes(row, previous_hash)
+        payload, payload_hash, event_hash = cls._hashes(row, previous_hash, normalized=normalized)
         if (
             row["prev_hash"] != previous_hash
             or row["payload_hash"] != payload_hash
@@ -108,6 +125,64 @@ class AuditLog:
         ):
             raise ConflictError("Audit hash chain verification failed.")
         return payload
+
+    @classmethod
+    def project_review_row(cls, row: dict[str, Any], previous_hash: str) -> dict[str, Any]:
+        """Verify full content on the owner host before omitting a large payload."""
+        cls.verify_row(row, previous_hash, normalized=True)
+        wire_bytes = len(json.dumps(row, ensure_ascii=False).encode())
+        if wire_bytes <= REVIEW_EVENT_BYTES:
+            return row
+        projected = {field: row[field] for field in _REVIEW_FIELDS}
+        projected["review_omission"] = {
+            "reason": "event_exceeds_review_budget",
+            "canonical_bytes": len(_canonical(row).encode()),
+            "integrity": "verified_by_owner_cli",
+            "content_reviewed": False,
+        }
+        projected["projection_hash"] = hashlib.sha256(_canonical(projected).encode()).hexdigest()
+        return projected
+
+    @classmethod
+    def verify_review_row(
+        cls, row: dict[str, Any], previous_hash: str, *, projected: bool = False
+    ) -> dict[str, Any]:
+        """Verify raw content locally, or verify a trusted owner's bounded projection.
+
+        Projection integrity depends on the fixed owner CLI over authenticated SSH.
+        Its payload hash is verified there, not reconstructed from omitted content.
+        The unkeyed projection checksum catches accidental envelope changes only.
+        """
+        if "review_omission" not in row:
+            return cls.verify_row(row, previous_hash, normalized=True)
+        if not projected or set(row) != {*_REVIEW_FIELDS, "review_omission", "projection_hash"}:
+            raise ConflictError("Unsupported audit review projection.")
+        omission = row["review_omission"]
+        expected = {key: value for key, value in row.items() if key != "projection_hash"}
+        payload_hash = row["payload_hash"]
+        if not isinstance(payload_hash, str):
+            raise ConflictError("Invalid audit review projection.")
+        event_hash = (
+            _CHAIN_V3 + _digest(_CHAIN_DOMAIN, "event", previous_hash, payload_hash)
+            if payload_hash.startswith(_CHAIN_V3)
+            else hashlib.sha256((previous_hash + payload_hash).encode()).hexdigest()
+        )
+        if (
+            not isinstance(omission, dict)
+            or set(omission) != {"reason", "canonical_bytes", "integrity", "content_reviewed"}
+            or omission["reason"] != "event_exceeds_review_budget"
+            or omission["integrity"] != "verified_by_owner_cli"
+            or omission["content_reviewed"] is not False
+            or type(omission["canonical_bytes"]) is not int
+            or omission["canonical_bytes"] < 1
+            or row["prev_hash"] != previous_hash
+            or row["event_hash"] != event_hash
+            or row["projection_hash"] != hashlib.sha256(_canonical(expected).encode()).hexdigest()
+        ):
+            raise ConflictError("Audit review projection verification failed.")
+        return {field: row[field] for field in _REVIEW_IDENTITY} | {
+            "review_omission": omission,
+        }
 
     def record(
         self,
@@ -369,6 +444,53 @@ class AuditLog:
         return {
             "events": rows,
             "next_after_id": rows[-1]["id"] if rows else after_id,
+            "has_more": more,
+        }
+
+    def review_page(self, policy, *, after_id: int | None = None, limit: int = 100) -> dict:
+        """Owner-only, unfiltered review wire format; original audit rows are unchanged.
+
+        Read one original row at a time so a page cannot multiply a large historical
+        payload's working memory. Verification of that original row still requires
+        memory and time proportional to its size on the owner host.
+        """
+        policy.require("audit:read")
+        if getattr(policy, "projects", None) is not None:
+            raise InputError("Audit review projection requires an unfiltered owner policy.")
+        if type(limit) is not int or not 1 <= limit <= 500:
+            raise InputError("limit must be between 1 and 500.")
+        if after_id is not None and (type(after_id) is not int or after_id < 0):
+            raise InputError("after_id must be a non-negative integer.")
+        after = after_id or 0
+        rows, size, previous_hash, more = [], 256, None, False
+        with self.store.connection() as db:
+            cursor = db.execute(
+                "SELECT * FROM audit_events WHERE id>? ORDER BY id LIMIT ?", (after, limit + 1)
+            )
+            for stored in cursor:
+                if len(rows) == limit:
+                    more = True
+                    break
+                row = {
+                    **dict(stored),
+                    **{key: json.loads(stored[key]) for key in ("action", "target", "details")},
+                }
+                item = self.project_review_row(
+                    row, row["prev_hash"] if previous_hash is None else previous_hash
+                )
+                wire_size = len(json.dumps(item, ensure_ascii=False).encode()) + 2
+                if size + wire_size > REVIEW_PAGE_BYTES:
+                    if not rows:
+                        raise ConflictError("Audit review identity exceeds supported bounds.")
+                    more = True
+                    break
+                rows.append(item)
+                after, previous_hash = row["id"], row["event_hash"]
+                size += wire_size
+        return {
+            "review_format": REVIEW_FORMAT_VERSION,
+            "events": rows,
+            "next_after_id": after,
             "has_more": more,
         }
 

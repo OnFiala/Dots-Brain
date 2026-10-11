@@ -193,9 +193,14 @@ the current cursor; it never falls back to reimporting acknowledged rows. See
 ### Private audit review helper
 
 `scripts/audit_review.py` is a separate operator helper, not an MCP tool and not a
-deployment service. It fetches only the fixed `dots-brain audit events` command
-over SSH, adaptively reduces a page that exceeds its 1 MiB response budget, and
-keeps bounded checkpoints and findings in its private state directory.
+deployment service. It fetches only the fixed
+`dots-brain audit events --review-projection` command over SSH and keeps bounded
+versioned checkpoints and findings in its private state directory. The host CLI
+verifies each original row before projecting oversized content; ordinary rows
+retain local full verification. The output marks omitted content as unreviewed
+and records an `oversized_event` finding. Pages stay within 1 MiB; verification of
+one large original row remains dependent on the host's memory and execution time.
+See the [review trust and upgrade contract](../activity.md#cursor-and-review-state).
 
 Create `target.json` in that state directory, or pass it with `--target-config`:
 
