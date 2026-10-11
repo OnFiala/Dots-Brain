@@ -20,6 +20,7 @@ def index(tmp_path):
     result = SemanticIndex.__new__(SemanticIndex)
     result.store, result.np = store, np
     result.vector_dimension = 2
+    result._initialize_runtime_state()
     result._chunks = lambda text: [(0, len(text))]
     result._embed = lambda text: np.array([1.0, 0.0], dtype="<f4")
     return result
@@ -251,9 +252,13 @@ def test_missing_or_corrupt_vectors_are_pending_until_reindexed(index, repair):
             )
 
     degraded = index.status()
-    assert degraded["state"] == "pending_index"
-    assert degraded["indexed"] == 0
-    assert degraded["repair_pending"] == degraded["pending"] == 1
+    if repair == "nan":
+        # Status deliberately checks structure only; the bounded sweep checks values.
+        assert degraded["state"] == "ready"
+    else:
+        assert degraded["state"] == "pending_index"
+        assert degraded["indexed"] == 0
+        assert degraded["repair_pending"] == degraded["pending"] == 1
     assert index.index()["indexed_now"] == 1
     repaired = index.status()
     assert repaired["state"] == "ready"
@@ -399,16 +404,28 @@ def test_duplicate_fulltext_rows_without_semantic_hit_do_not_require_semantic_me
 
 def test_background_index_summary_avoids_explicit_status_scan(index, monkeypatch):
     monkeypatch.setattr(index, "status", lambda: pytest.fail("background index called status"))
-    assert index.index(summary=False) == {"indexed_now": 0, "examined": 0}
+    assert index.index(summary=False) == {
+        "indexed_now": 0,
+        "examined": 0,
+        "repair_pass_complete": True,
+    }
 
 
 def test_background_index_detects_same_cardinality_revision_one_replacement(index, monkeypatch):
     first = save(index, "first source record", "same-cardinality-first")
-    assert index.index(summary=False) == {"indexed_now": 1, "examined": 1}
+    assert index.index(summary=False) == {
+        "indexed_now": 1,
+        "examined": 1,
+        "repair_pass_complete": True,
+    }
     index.store.forget(first["id"], expected_revision=1)
     replacement = save(index, "replacement source record", "same-cardinality-replacement")
     monkeypatch.setattr(index, "status", lambda: pytest.fail("background index called status"))
-    assert index.index(summary=False) == {"indexed_now": 1, "examined": 1}
+    assert index.index(summary=False) == {
+        "indexed_now": 1,
+        "examined": 1,
+        "repair_pass_complete": True,
+    }
     assert index.search("replacement", limit=1)[0]["id"] == replacement["id"]
 
 
@@ -441,7 +458,11 @@ def test_due_failed_record_beyond_discovery_limit_does_not_starve(index):
     index._failed_retry_deadlines = {
         (record["id"], 1): (0 if record is records[-1] else float("inf")) for record in records
     }
-    assert index.index(batch_size=1, summary=False) == {"indexed_now": 1, "examined": 1}
+    assert index.index(batch_size=1, summary=False) == {
+        "indexed_now": 1,
+        "examined": 1,
+        "repair_pass_complete": False,
+    }
     assert index.search("new source", limit=1)[0]["id"] == pending["id"]
     # A bounded rotating pass must eventually reach a due row beyond its first
     # discovery page, even when earlier rows are deferred indefinitely.
@@ -480,7 +501,11 @@ def test_wrong_model_dimension_is_failed_before_vector_publication(index, vector
     result = index.index()
     assert result["indexed_now"] == result["repair_pending"] == 0
     assert result["failed"] == 1
-    assert index.index(summary=False) == {"indexed_now": 0, "examined": 0}
+    assert index.index(summary=False) == {
+        "indexed_now": 0,
+        "examined": 0,
+        "repair_pass_complete": True,
+    }
     with index.store.connection() as db:
         assert (
             db.execute(

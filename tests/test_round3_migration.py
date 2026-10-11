@@ -70,7 +70,7 @@ def test_actual_7085841_touch_can_upgrade_without_changing_canonical_rows(tmp_pa
     assert plan == {
         "state": "migration_required",
         "from_version": 2,
-        "to_version": 3,
+        "to_version": 4,
         "writes": False,
     }
     assert _file_bytes(store.directory) == original

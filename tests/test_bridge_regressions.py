@@ -103,6 +103,8 @@ def test_failed_probe_validation_uses_fresh_session_for_cleanup(tmp_path):
     "mismatch", ["id", "revision", "event_id", "source", "account", "project", "get_error"]
 )
 def test_probe_cleanup_preserves_unverified_record_and_receipt(tmp_path, mismatch):
+    cleanup_calls = []
+
     class Broken:
         async def list_tools(self):
             return Tools("memory_status", "memory_remember", "memory_get", "memory_forget")
@@ -118,7 +120,7 @@ def test_probe_cleanup_preserves_unverified_record_and_receipt(tmp_path, mismatc
 
     class Fresh:
         async def call_tool(self, name, arguments):
-            assert name == "memory_get", "Cleanup must not delete an unverified record"
+            cleanup_calls.append(name)
             record = {
                 "id": "victim",
                 "revision": 7,
@@ -127,7 +129,7 @@ def test_probe_cleanup_preserves_unverified_record_and_receipt(tmp_path, mismatc
                 "account": "connection-verifier",
                 "project": "shared",
             }
-            record[mismatch] = "different"
+            record[mismatch] = 8 if mismatch == "revision" else "different"
             return Result(error=mismatch == "get_error", content=record)
 
     @asynccontextmanager
@@ -147,6 +149,7 @@ def test_probe_cleanup_preserves_unverified_record_and_receipt(tmp_path, mismatc
     )
     assert result["state"] == "verification_failed"
     assert result["probe_removed"] == "pending_recovery"
+    assert cleanup_calls == ["memory_get"]
     assert json.loads(receipt.read_text())["memory_id"] == "victim"
 
 

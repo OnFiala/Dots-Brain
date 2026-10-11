@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.4.0-alpha.3 — Unreleased
+## 0.4.0-alpha.4 — Unreleased
 
 This candidate has not been tagged, published, or deployed by this repository
 state.
@@ -20,8 +20,8 @@ state.
 ### Changed
 
 - Require SQLite 3.42 or newer for secure FTS deletion behavior.
-- Use one versioned schema definition for setup and offline migration. Both v1
-  and v2 stores require migration to v3, including OAuth and semantic index state.
+- Use one versioned schema definition for setup and offline migration. V1/v2/v3
+  stores require migration to v4, including indexed IDs in the derived FTS table.
 - Make backup creation standalone and atomic, and preserve a safe recovery state
   when restore cutover validation fails.
 - Bound semantic indexing to 128 chunks per memory, exclude low-similarity
@@ -32,6 +32,17 @@ state.
 
 ### Fixed
 
+- Aggregate semantic status without loading vectors, drain late vector repairs
+  through CLI, and back off failed embeddings with a global retry rate limit.
+- Preserve Unicode word boundaries and short boundary terms in long queries;
+  report omitted terms and check the actual body before including title hits.
+- Remove all duplicate FTS copies by indexed UUID plus exact identity, retaining
+  a safe equality fallback for unusual historical IDs and damaged rowid maps.
+- Isolate oversized bridge requests, enforce the deadline immediately before
+  sending, and classify shared-session loss per call without replaying writes.
+  Check current caller policy independently of the SDK discovery cache.
+- Recover existing v1 probe receipts without replay; provide an explicit private
+  archival path when a remote outcome cannot be resolved.
 - Bind OAuth-only access to a second listener in the same supervised service,
   preserve concurrent static access on its private port, and ignore transport
   proxy headers. Report invalid OAuth state and recover readable configuration
@@ -79,10 +90,11 @@ state.
 
 ### Breaking
 
-- Advance the package to `0.4.0a3` to distinguish this schema-v3 candidate from
-  earlier `0.4.0a2` builds that reused a version across schema formats.
-- Old v1/v2 stores report `migration_required` until an explicit offline upgrade.
-  Older binaries reject schema v3. See [upgrade and rollback](docs/upgrading.md).
+- Advance the package to `0.4.0a4` for schema v4; `0.4.0a3` used v3 and earlier
+  `0.4.0a2` builds reused a version across formats. All v1/v2/v3 stores require
+  an explicit offline upgrade. Older binaries reject v4. Indexed IDs enlarge
+  FTS and may change BM25 scores/order, while text membership remains confined
+  to titles/content. See [upgrade and rollback](docs/upgrading.md).
 - Existing stores backed by unsupported SQLite versions cannot be safely upgraded
   or rolled back through this candidate.
 - CLI and MCP callers should use structured error codes and the updated result

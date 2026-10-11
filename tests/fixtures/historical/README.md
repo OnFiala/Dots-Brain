@@ -8,6 +8,9 @@ Do not replace them with copies of a user's database.
 `263c38617aa17ae1ebaea84c8938065c131cfae1`. `v2-c963700` was created by
 `c9637003f365f184751a3825013b2c425efd1517`. Each manifest records the generated
 file hashes and record identities. Tests verify those hashes before copying.
+`v3-f34b90e` was produced by commit
+`f34b90e02bd337b38af710a25189d1823168189a` using the same generator, with two
+synthetic audit events (configuration and fixture action).
 
 To regenerate intentionally, export that commit to an empty scratch directory,
 then run the generator with the historical source first on `PYTHONPATH`:
@@ -23,4 +26,4 @@ schema. The WAL test creates a committed historical-format WAL in a subprocess
 that exits without checkpointing; no live process or WAL file is shipped here.
 
 The Linux CI also runs the pinned historical code against migration backups and
-confirms that the old writer rejects schema v3. Other tests need no Git access.
+confirms that the old writers reject schema v4. Other tests need no Git access.

@@ -100,6 +100,11 @@ def test_migration_rebuilds_fts_mapping_and_removes_derived_orphans(store):
             "oauth_config_commits",
         ):
             db.execute(f"DROP TABLE {table}")
+        db.execute("DROP TABLE memory_fts")
+        db.execute(
+            "CREATE VIRTUAL TABLE memory_fts USING fts5("
+            "memory_id UNINDEXED, title, content, tokenize='unicode61 remove_diacritics 2')"
+        )
         db.execute(
             "INSERT INTO memory_fts(memory_id,title,content) "
             "VALUES ('orphaned-derived-row','','old')"
@@ -274,7 +279,7 @@ def test_multiprocess_setup_and_prepublication_crash_leave_one_complete_database
     store = Store(directory)
     assert store.status()["memories"] == 0
     with store.connection() as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 3
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 4
         assert db.execute("PRAGMA application_id").fetchone()[0] != 0
         assert db.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
 

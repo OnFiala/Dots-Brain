@@ -40,11 +40,11 @@ remain for explicit owner recovery. On first HTTP startup, absent legacy listene
 diagnostics are replaced by version-1 `http-listeners.json`; this derived state
 does not change the database schema, tokens or listener authorization policy.
 
-## Schema v1 or v2 to v3
+## Schema v1, v2 or v3 to v4
 
-The `0.4.0a3` candidate requires schema v3. The earlier unreleased `0.4.0a2`
+The `0.4.0a4` candidate requires schema v4. The earlier unreleased `0.4.0a2`
 number was reused across v2 and v3 builds; record the exact commit when identifying
-one of those builds. Both published v1 stores and older v2
+one of those builds. `0.4.0a3` uses v3. Published v1 and older v2/v3
 stores need this migration. `setup`, `serve` and OAuth configuration do not add
 missing tables. `doctor` reports `migration_required` until migration completes.
 
@@ -76,7 +76,8 @@ so apply repeats validation after taking the writer lock.
 
 Historical DDL is frozen separately from the current schema. Formatting outside
 SQL tokens is ignored; literals, identifiers, constraints and triggers are checked.
-This includes v1/v2 stores opened or migrated by commit `7085841`.
+This includes v1/v2 stores opened or migrated by commit `7085841`, and the full
+v3 layout with its required application ID.
 
 Apply makes a verified standalone backup including committed WAL data,
 under SQLite's writer lock, then upgrades in one transaction. Another writer cannot
@@ -85,11 +86,21 @@ static credentials, OAuth grants and tokens. It rebuilds the derived full-text
 index. OAuth configuration does not need to be repeated for the same issuer.
 Historical grants keep unknown provenance fields empty.
 
+V4 recreates the derived FTS table with indexed memory IDs so normal UUID updates
+and deletions can find every copy without scanning unrelated text. Exact equality
+still protects other IDs with the same tokenizer representation; unusual historical
+IDs use the slower equality fallback. Text search matches only titles and content.
+The extra indexed ID tokens increase index size and can change BM25 scores and
+result ordering, including hybrid ranking. This follows SQLite's document-length
+normalization in [BM25](https://www.sqlite.org/fts5.html#the_bm25_function).
+Canonical contents, revisions, scopes and deletion barriers are unchanged.
+
 ### Failed migration and disk space
 
 Reserve space for the original database, its snapshot, journals and temporary
-tables. Rough working allowances are **2 times the database size for v2** and
-**3.5 times for v1**, plus any existing WAL and manual copies. These are planning
+tables. Use at least **3.5 times the database size** as an initial working allowance
+for the original, backup and rebuilt index, plus existing WAL and manual copies.
+The indexed IDs enlarge FTS, especially for very short records. These are planning
 estimates, not guaranteed upper bounds; content and SQLite page usage vary.
 
 After an ordinary failure, the migration rolls back and validates the old store.

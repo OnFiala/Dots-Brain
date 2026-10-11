@@ -4,7 +4,8 @@ Operator commands write a JSON result. `serve` and `bridge` carry MCP protocol
 traffic; `--help` and `--version` print text. Invalid command arguments exit 2.
 Other failures exit 1 with `state: "error"` and a typed `code`; a successful
 command exits 0 unless its result state is `partial`, `blocked`,
-`verification_failed`, `capture_partial`, `capture_recovery_required`, or `invalid`. Those
+`verification_failed`, `capture_partial`, `capture_recovery_required`,
+`probe_recovery_needed`, or `invalid`. Those
 states require operator action even when a result was written. Use a private
 absolute data directory outside the checkout.
 
@@ -81,6 +82,8 @@ dots-brain --data-dir /absolute/private/memory index --retry-failed
 `model prepare` downloads the pinned local model. Index state can be `indexed`,
 `empty`, or `failed`; a record may also be marked `truncated` when bounded chunk
 processing reaches its limit. Full-text search continues to work without it.
+`index` finishes a bounded repair sweep before returning. Status is a structural
+count, not a numeric validation of every vector; see [using memory](../using-memory.md).
 
 ## Credentials and local bridge
 
@@ -96,9 +99,41 @@ Credential files are private capabilities. The CLI does not print them. `verify`
 checks a real read connection by default. It creates and then removes a synthetic
 probe only with `--write`. That probe needs `memory:read`, `memory:write`, and
 `memory:forget` on the selected project so it can verify and remove its record.
+The probe leaves durable audit and reimport-suppression metadata even after its
+content is removed. A saved unresolved receipt blocks another write probe.
+
+```sh
+dots-brain verify --credential-file /absolute/private/credential.json --recover-probe
+dots-brain verify --credential-file /absolute/private/credential.json --recover-probe --probe-memory-id observed-id --probe-revision 1
+dots-brain verify --credential-file /absolute/private/credential.json --archive-probe-receipt
+```
+
+Recovery never replays the write. A `written` v1 receipt supplies its ID/revision;
+a `sending` receipt needs the pair observed by the operator. On the memory host,
+inspect `dots-brain --data-dir /absolute/private/memory audit events --project work`
+and the exact memory before binding it. Cleanup re-reads all probe identity fields
+on a fresh session and deletes only that matching revision. An absent, changed or
+unverifiable record keeps the receipt and returns `probe_recovery_needed` (exit 1).
+
+If the outcome cannot be resolved, `--archive-probe-receipt` explicitly archives
+the exact local receipt with private permissions and a unique filename. It makes
+no upstream call, and reports the remaining remote probe as `unknown`; it does
+not establish deletion. It unblocks a later explicit write verification. The
+archive remains private evidence for manual resolution.
+
 `client create` defaults to `memory:read` and a 30-day credential lifetime;
 use explicit scopes and `--days` (up to 365) for another grant. Expired or revoked
 credentials are rejected rather than renewed.
+
+Bridge calls share one connection, with eight in flight and at most 128 pending.
+The absolute request deadline includes waiting in the queue. The complete
+serialized MCP envelope must fit the 1 MiB limit before queuing and sending.
+Oversize requests return `request_too_large` without disrupting valid calls.
+Actual connection loss can leave sent mutations with `outcome_unknown` and a
+stable request reference. They are never automatically replayed. Await a write's
+confirmed response before a dependent read; concurrently issued calls do not
+establish read-after-write ordering. Eight blocked calls can occupy every slot
+until their deadlines; queueing does not guarantee per-client fairness.
 
 ## OAuth
 

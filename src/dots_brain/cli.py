@@ -392,10 +392,27 @@ def _add_service_commands(commands):
                 help="Resume only the managed local instance matching this credential.",
             )
         else:
-            command.add_argument(
+            probe_action = command.add_mutually_exclusive_group()
+            probe_action.add_argument(
                 "--write",
                 action="store_true",
                 help="Write, read and remove a synthetic probe; requires read/write/forget.",
+            )
+            probe_action.add_argument(
+                "--recover-probe",
+                action="store_true",
+                help="Recover a recorded probe without replaying its write.",
+            )
+            probe_action.add_argument(
+                "--archive-probe-receipt",
+                action="store_true",
+                help="Archive a blocked receipt locally; the remote probe may still exist.",
+            )
+            command.add_argument(
+                "--probe-memory-id", help="Observed memory ID for sending-receipt recovery."
+            )
+            command.add_argument(
+                "--probe-revision", type=int, help="Observed revision; requires --probe-memory-id."
             )
             command.add_argument(
                 "--project",
@@ -447,7 +464,15 @@ def run(args) -> dict:
                 resume_local_connection(args.credential_file, args.local_data_dir)
             return asyncio.run(run_bridge(args.credential_file))
         return asyncio.run(
-            verify_connection(args.credential_file, write=args.write, project=args.project)
+            verify_connection(
+                args.credential_file,
+                write=args.write,
+                project=args.project,
+                recover_probe=args.recover_probe,
+                probe_memory_id=args.probe_memory_id,
+                probe_revision=args.probe_revision,
+                archive_probe_receipt=args.archive_probe_receipt,
+            )
         )
     if args.command == "capture":
         from .capture_delivery import collect_remote
@@ -556,7 +581,7 @@ def run(args) -> dict:
         while True:
             result = semantic.index()
             indexed += result["indexed_now"]
-            if result["examined"] == 0:
+            if result["examined"] == 0 and result["repair_pass_complete"]:
                 return {"indexed_this_run": indexed, **semantic.status()}
     if args.command == "export":
         from .operator_cli import export_store
@@ -597,6 +622,7 @@ def main() -> None:
                 "capture_partial",
                 "capture_recovery_required",
                 "invalid",
+                "probe_recovery_needed",
             }:
                 raise SystemExit(1)
     except Exception as exc:

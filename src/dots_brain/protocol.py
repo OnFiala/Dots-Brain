@@ -66,6 +66,13 @@ def _classify_error(exc: BaseException) -> dict:
                 and all(char.isalnum() or char in "-_" for char in operation_id)
             ):
                 value["operation_id"] = operation_id
+            reference = getattr(error, "reference", None)
+            if (
+                isinstance(reference, str)
+                and len(reference) == 32
+                and all(char in "0123456789abcdef" for char in reference)
+            ):
+                value["reference"] = reference
             return value
     for error in chain:
         if isinstance(error, (ValidationError, jsonschema.ValidationError)):
@@ -74,6 +81,11 @@ def _classify_error(exc: BaseException) -> dict:
             return {
                 "code": "credential_rejected",
                 "message": "Credential rejected, expired, or installation disabled.",
+            }
+        if isinstance(error, httpx.HTTPStatusError) and error.response.status_code == 413:
+            return {
+                "code": "request_too_large",
+                "message": "The serialized request exceeds the service limit; reduce its size.",
             }
         if isinstance(error, (TimeoutError, httpx.TimeoutException)):
             return {"code": "timed_out", "message": "The memory service timed out."}
@@ -159,7 +171,7 @@ def error_result(exc: BaseException, *, operation: str = "tools/call") -> CallTo
     )
 
 
-def protect_tool_dispatch(server) -> None:
+def protect_tool_dispatch(server, *, resolve_tool=None) -> None:
     """Keep SDK discovery/validation failures inside the same safe error boundary.
 
     The SDK looks up a tool before entering our callback. Resolve and validate
@@ -170,9 +182,15 @@ def protect_tool_dispatch(server) -> None:
 
     async def call(request):
         try:
-            if request.params.name not in server._tool_cache:
-                await server.request_handlers[ListToolsRequest](None)
-            tool = server._tool_cache.get(request.params.name)
+            if resolve_tool is not None:
+                # Authorization belongs to this request, never to discovery's
+                # shared cache, which can contain another caller's tool list.
+                tool = await resolve_tool(request.params.name)
+                server._tool_cache[request.params.name] = tool
+            else:
+                if request.params.name not in server._tool_cache:
+                    await server.request_handlers[ListToolsRequest](None)
+                tool = server._tool_cache.get(request.params.name)
             if tool is None:
                 raise InputError("Unknown or unavailable memory tool.")
             arguments = request.params.arguments or {}
@@ -199,7 +217,17 @@ class BrainMCP(FastMCP):
         self.current_policy = None
         super().__init__(*args, instructions=INSTRUCTIONS, **kwargs)
         self._mcp_server.version = __version__
-        protect_tool_dispatch(self._mcp_server)
+        protect_tool_dispatch(self._mcp_server, resolve_tool=self._resolve_tool)
+
+    async def _resolve_tool(self, name):
+        if self.current_policy is None or name not in self.required_scopes:
+            raise InputError("Unknown or unavailable memory tool.")
+        policy = self.current_policy()
+        for scope in self.required_scopes[name]:
+            policy.require(scope)
+        # FastMCP's registered schemas are complete; filtered discovery is only
+        # a presentation for its caller and remains filtered in list_tools.
+        return next(tool for tool in await super().list_tools() if tool.name == name)
 
     async def list_tools(self):
         tools = await super().list_tools()

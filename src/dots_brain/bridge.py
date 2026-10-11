@@ -1,8 +1,13 @@
 """A local stdio client for the same authenticated remote memory service."""
 
 import asyncio
+import os
 import re
+import shlex
+import stat
+import tempfile
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from pathlib import Path
 from uuid import uuid4
 
@@ -12,15 +17,48 @@ from mcp.client.stdio import stdio_client
 from mcp.client.streamable_http import streamable_http_client
 from mcp.server.lowlevel import Server
 from mcp.server.stdio import stdio_server
+from mcp.types import CallToolRequest, CallToolRequestParams, JSONRPCRequest
 
 from . import __version__
 from .auth import authenticate, read_connection
 from .errors import BrainError, BusyError, InputError
-from .local import read_json, write_json
+from .local import publish_new, read_json, sync_directory, write_json
 from .protocol import INSTRUCTIONS, error_result, protect_tool_dispatch, safe_error
 
 PROBE_SOURCE = "dots-brain-probe"
 PROBE_ACCOUNT = "connection-verifier"
+WRITE_TOOLS = frozenset(
+    {"memory_remember", "memory_forget", "audit_record", "cortex_publish", "cortex_reconcile"}
+)
+# Match create_server's transport cap. HTTPx owns serialization in both places.
+MAX_REQUEST_BYTES = 1048576
+
+
+def _check_request_size(name, arguments, *, request_id=0):
+    if name is None:
+        return
+    try:
+        request = CallToolRequest(params=CallToolRequestParams(name=name, arguments=arguments))
+        message = JSONRPCRequest(
+            jsonrpc="2.0",
+            id=request_id,
+            **request.model_dump(by_alias=True, mode="json", exclude_none=True),
+        )
+        payload = message.model_dump(by_alias=True, mode="json", exclude_none=True)
+        size = len(httpx.Request("POST", "http://127.0.0.1/mcp", json=payload).content)
+    except (TypeError, ValueError):
+        raise InputError("Arguments cannot be serialized as a valid MCP request.") from None
+    if size > MAX_REQUEST_BYTES:
+        raise BridgeFailure(
+            {
+                "code": "request_too_large",
+                "message": "The serialized request exceeds the service limit; reduce its size.",
+            }
+        )
+
+
+def _probe_command(path, action="--recover-probe"):
+    return f"dots-brain verify --credential-file {shlex.quote(str(path))} {action}"
 
 
 def _probe_receipt_path(path: Path) -> Path:
@@ -36,7 +74,10 @@ def _probe_identity(path: Path) -> tuple[str, Path]:
         if not isinstance(event_id, str) or not re.fullmatch(
             r"connection-probe-[a-f0-9]{32,64}", event_id
         ):
-            raise InputError("The unfinished probe receipt is invalid; preserve it for review.")
+            raise InputError(
+                "The unfinished probe receipt is invalid; preserve it for review. "
+                f"Next command: {_probe_command(path, '--archive-probe-receipt')}"
+            )
         return event_id, receipt
     return "connection-probe-" + uuid4().hex, receipt
 
@@ -74,7 +115,14 @@ def _pending_probe(path: Path | None, *, event_id: str, project: str) -> None:
         or receipt.get("source") != PROBE_SOURCE
         or receipt.get("account") != PROBE_ACCOUNT
     ):
-        raise InputError("A different unresolved connection probe exists; it was preserved.")
+        raise InputError(
+            "A different unresolved connection probe exists; it was preserved. "
+            "Next command: dots-brain verify --credential-file <credential> --recover-probe"
+        )
+    raise InputError(
+        "An unresolved connection probe exists; its receipt was preserved. "
+        "Next command: dots-brain verify --credential-file <credential> --recover-probe"
+    )
 
 
 def resume_local_connection(path: Path, directory: Path) -> None:
@@ -119,11 +167,40 @@ async def connect(path: Path):
 
 
 async def verify_connection(
-    path: Path, *, write: bool = False, project: str = "default", cleanup_store=None
+    path: Path,
+    *,
+    write: bool = False,
+    project: str = "default",
+    cleanup_store=None,
+    recover_probe=False,
+    probe_memory_id=None,
+    probe_revision=None,
+    archive_probe_receipt=False,
 ) -> dict:
-    event_id, receipt_path = _probe_identity(path)
+    if (
+        sum(bool(value) for value in (write, recover_probe, archive_probe_receipt)) > 1
+        or (probe_memory_id is not None) != (probe_revision is not None)
+        or ((probe_memory_id is not None or probe_revision is not None) and not recover_probe)
+    ):
+        raise InputError(
+            "Choose one verification action and supply recovery ID/revision together. "
+            f"Next command: {_probe_command(path)}"
+        )
+    if archive_probe_receipt:
+        return _archive_probe_receipt(path)
+    if recover_probe:
+        return await _recover_probe(
+            path, memory_id=probe_memory_id, revision=probe_revision, cleanup_store=cleanup_store
+        )
+    receipt_path = _probe_receipt_path(path)
+    if write and receipt_path.exists():
+        raise InputError(
+            "An unresolved connection probe exists; its receipt was preserved. "
+            f"Next command: {_probe_command(path)}"
+        )
+    event_id = _probe_identity(path)[0] if write else None
     async with connect(path) as session:
-        return await verify_session(
+        result = await verify_session(
             session,
             write=write,
             project=project,
@@ -132,6 +209,9 @@ async def verify_connection(
             probe_receipt_path=receipt_path,
             fresh_session=lambda: connect(path),
         )
+    if receipt_path.exists():
+        result.update(probe_recovery="pending", next_command=_probe_command(path))
+    return result
 
 
 @asynccontextmanager
@@ -147,6 +227,11 @@ async def _stdio_session(entry: dict):
 async def verify_command(entry: dict, **checks) -> dict:
     credential_path = _entry_credential_path(entry)
     if credential_path is not None:
+        if checks.get("write") and _probe_receipt_path(credential_path).exists():
+            raise InputError(
+                "An unresolved connection probe exists; its receipt was preserved. "
+                f"Next command: {_probe_command(credential_path)}"
+            )
         event_id, receipt_path = _probe_identity(credential_path)
         checks.setdefault("probe_event_id", event_id)
         checks.setdefault("probe_receipt_path", receipt_path)
@@ -164,9 +249,148 @@ def _matches_probe(record, *, memory_id, revision, event_id, project) -> bool:
         "source": PROBE_SOURCE,
         "account": PROBE_ACCOUNT,
     }
-    return isinstance(record, dict) and all(
-        record.get(key) == value for key, value in expected.items()
+    return (
+        isinstance(record, dict)
+        and isinstance(memory_id, str)
+        and bool(memory_id)
+        and type(revision) is int
+        and revision >= 1
+        and type(record.get("revision")) is int
+        and all(record.get(key) == value for key, value in expected.items())
     )
+
+
+def _archive_probe_receipt(path):
+    receipt_path = _probe_receipt_path(path)
+    command = _probe_command(path, "--archive-probe-receipt")
+    try:
+        fd = os.open(receipt_path, os.O_RDONLY | os.O_NOFOLLOW)
+    except OSError:
+        raise InputError(
+            "No readable regular probe receipt is available; preserve any local evidence. "
+            f"Next command: {_probe_command(path, '')}"
+        ) from None
+    temporary = None
+    try:
+        with os.fdopen(fd, "rb") as source:
+            identity = os.fstat(source.fileno())
+            if not stat.S_ISREG(identity.st_mode):
+                raise InputError(f"Probe receipt must be a regular file. Next command: {command}")
+            content = source.read()
+        descriptor, temporary_name = tempfile.mkstemp(prefix=".probe-archive-", dir=path.parent)
+        temporary = Path(temporary_name)
+        with os.fdopen(descriptor, "wb") as stream:
+            os.fchmod(stream.fileno(), 0o600)
+            stream.write(content)
+            stream.flush()
+            os.fsync(stream.fileno())
+        # A fresh name plus publish_new never replaces earlier recovery evidence.
+        for _ in range(3):
+            archive = receipt_path.with_name(receipt_path.name + ".archived-" + uuid4().hex)
+            try:
+                publish_new(temporary, archive)
+            except FileExistsError:
+                continue
+            break
+        else:
+            raise InputError(
+                "Cannot allocate a new probe archive; all evidence was preserved. "
+                f"Next command: {command}"
+            )
+        sync_directory(path.parent)
+        current = receipt_path.lstat()
+        if (current.st_dev, current.st_ino, current.st_size, current.st_mtime_ns) != (
+            identity.st_dev,
+            identity.st_ino,
+            identity.st_size,
+            identity.st_mtime_ns,
+        ):
+            raise InputError(
+                "Probe receipt changed during archival; both files were preserved. "
+                f"Next command: {command}"
+            )
+        receipt_path.unlink()
+        sync_directory(path.parent)
+        return {
+            "state": "probe_receipt_archived",
+            "archive": archive.name,
+            "remaining_probe": "unknown",
+            "probe_removed": "unknown",
+            "next_command": _probe_command(path, "--write"),
+        }
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
+async def _recover_probe(path, *, memory_id=None, revision=None, cleanup_store=None):
+    receipt_path = _probe_receipt_path(path)
+    archive_command = _probe_command(path, "--archive-probe-receipt")
+    if not receipt_path.is_file() or receipt_path.is_symlink():
+        raise InputError(
+            "No regular probe receipt is available for recovery. "
+            f"Next command: {_probe_command(path, '')}"
+        )
+    try:
+        receipt = read_json(receipt_path)
+    except InputError:
+        raise InputError(
+            f"Probe receipt is invalid; it was preserved. Next command: {archive_command}"
+        ) from None
+    if (
+        type(receipt.get("version")) is not int
+        or receipt["version"] != 1
+        or receipt.get("state") not in {"sending", "written"}
+        or not isinstance(receipt.get("project"), str)
+        or receipt.get("source") != PROBE_SOURCE
+        or receipt.get("account") != PROBE_ACCOUNT
+    ):
+        raise InputError(
+            f"Probe receipt is invalid; it was preserved. Next command: {archive_command}"
+        )
+    event_id, _ = _probe_identity(path)
+    if receipt["state"] == "written":
+        if memory_id is not None and (memory_id, revision) != (
+            receipt.get("memory_id"),
+            receipt.get("revision"),
+        ):
+            raise InputError(
+                "Recovery target differs from the saved probe; it was preserved. "
+                f"Next command: {_probe_command(path)}"
+            )
+        memory_id, revision = receipt.get("memory_id"), receipt.get("revision")
+    elif memory_id is None:
+        return {
+            "state": "probe_recovery_needed",
+            "write": "unknown",
+            "probe_removed": "unknown",
+            "next_command": (
+                _probe_command(path) + " --probe-memory-id <id> --probe-revision <revision>"
+            ),
+            "inspection": "On the memory host, inspect dots-brain audit events for this probe. "
+            "If its outcome cannot be resolved, explicitly archive its receipt.",
+            "archive_command": archive_command,
+        }
+    if not isinstance(memory_id, str) or not memory_id or type(revision) is not int or revision < 1:
+        raise InputError(
+            "Recovery needs an observed probe ID and positive integer revision. "
+            f"Next command: {archive_command}"
+        )
+    removed = await _remove_probe_on_fresh_session(
+        lambda: connect(path),
+        memory_id=memory_id,
+        revision=revision,
+        event_id=event_id,
+        project=receipt["project"],
+        cleanup_store=cleanup_store,
+    )
+    if removed:
+        _clear_probe_receipt(receipt_path)
+    return {
+        "state": "probe_recovered" if removed else "probe_recovery_needed",
+        "probe_removed": True if removed else "pending_recovery",
+        "next_command": _probe_command(path, "--write") if removed else archive_command,
+    }
 
 
 async def _remove_probe(session, *, memory_id, revision, event_id, project, cleanup_store) -> bool:
@@ -298,8 +522,8 @@ async def verify_session(
             },
         )
     except Exception:
-        # The write may have reached the service. Keep the receipt and let an
-        # explicit later --write rerun use the same idempotency identity.
+        # The write may have reached the service. Keep the receipt for explicit
+        # identity-checked recovery; never replay the write automatically.
         return _verification_result(
             state="verification_failed",
             names=names,
@@ -380,6 +604,30 @@ class BridgeFailure(BrainError):
     def __init__(self, error):
         super().__init__(error["message"])
         self.code = error["code"]
+        self.reference = error.get("reference")
+
+
+@dataclass
+class _BridgeRequest:
+    name: str | None
+    arguments: dict | None
+    result: asyncio.Future
+    reference: str
+    deadline: float
+    sent: bool = False
+
+    def failure(self, fallback):
+        if self.sent and self.name in WRITE_TOOLS:
+            return {
+                "code": "outcome_unknown",
+                "message": (
+                    "The write was sent but its outcome is unknown. Do not replay it. "
+                    "On the memory host, inspect dots-brain audit events and the target revision; "
+                    "use this reference when checking the bridge log."
+                ),
+                "reference": self.reference,
+            }
+        return fallback
 
 
 class BridgeSession:
@@ -397,30 +645,40 @@ class BridgeSession:
         self.path = path
         self.queue = asyncio.Queue(maxsize=self.MAX_PENDING)
         self.pending = set()
+        self.requests = {}
         self.closed = False
         self.owner = None
 
     async def request(self, name, arguments=None):
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + self.REQUEST_TIMEOUT
+        _check_request_size(name, arguments)
         if self.closed:
             raise BridgeFailure(
                 {"code": "service_unavailable", "message": "The local bridge is closed."}
             )
         if len(self.pending) >= self.MAX_PENDING:
             raise BusyError("The local bridge capacity is full; retry later.")
-        result = asyncio.get_running_loop().create_future()
+        if loop.time() >= deadline:
+            raise BridgeFailure(safe_error(TimeoutError()))
+        result = loop.create_future()
+        request = _BridgeRequest(name, arguments, result, uuid4().hex, deadline)
         self.pending.add(result)
+        self.requests[result] = request
         try:
-            self.queue.put_nowait((name, arguments, result))
+            self.queue.put_nowait(request)
         except asyncio.QueueFull:
             self.pending.discard(result)
+            self.requests.pop(result, None)
             result.cancel()
             raise BusyError("The local bridge capacity is full; retry later.") from None
         try:
-            return await asyncio.wait_for(result, timeout=self.REQUEST_TIMEOUT)
+            return await asyncio.wait_for(result, timeout=max(0, deadline - loop.time()))
         except TimeoutError as exc:
-            raise BridgeFailure(safe_error(exc)) from None
+            raise BridgeFailure(request.failure(safe_error(exc))) from None
         finally:
             self.pending.discard(result)
+            self.requests.pop(result, None)
 
     def _settle_pending(self, error=None):
         while not self.queue.empty():
@@ -430,7 +688,8 @@ class BridgeSession:
                 if error is None:
                     result.cancel()
                 else:
-                    result.set_exception(BridgeFailure(error))
+                    request = self.requests[result]
+                    result.set_exception(BridgeFailure(request.failure(error)))
 
     async def close(self):
         self.closed = True
@@ -438,8 +697,8 @@ class BridgeSession:
         if self.owner is not None and not self.owner.done():
             self.owner.cancel()
 
-    async def _call(self, session, slots, request):
-        name, arguments, result = request
+    async def _call(self, session, slots, failed, request):
+        name, arguments, result = request.name, request.arguments, request.result
         task = asyncio.current_task()
 
         def cancel_abandoned(future):
@@ -449,8 +708,14 @@ class BridgeSession:
         result.add_done_callback(cancel_abandoned)
         try:
             async with slots:
-                if result.done():
+                if result.done() or failed.is_set():
                     return
+                _check_request_size(name, arguments, request_id=getattr(session, "_request_id", 0))
+                if asyncio.get_running_loop().time() >= request.deadline:
+                    if not result.done():
+                        result.set_exception(BridgeFailure(safe_error(TimeoutError())))
+                    return
+                request.sent = True
                 value = (
                     await session.list_tools()
                     if name is None
@@ -458,6 +723,14 @@ class BridgeSession:
                 )
                 if not result.done():
                     result.set_result(value)
+        except Exception as exc:
+            error = safe_error(exc)
+            if error["code"] in {"request_too_large", "invalid_input"}:
+                if not result.done():
+                    result.set_exception(BridgeFailure(error))
+            else:
+                failed.set()
+                raise
         finally:
             result.remove_done_callback(cancel_abandoned)
 
@@ -467,18 +740,27 @@ class BridgeSession:
         try:
             while not self.closed:
                 request = await self.queue.get()
-                if request[2].done():
+                if request.result.done():
                     continue
                 try:
                     async with connect(self.path) as session, asyncio.TaskGroup() as calls:
+                        failed = asyncio.Event()
                         while not self.closed:
-                            if not request[2].done():
-                                calls.create_task(self._call(session, slots, request))
+                            if not request.result.done():
+                                calls.create_task(self._call(session, slots, failed, request))
                             request = await self.queue.get()
                 except asyncio.CancelledError:
                     raise
                 except Exception as exc:
-                    self._settle_pending(safe_error(exc))
+                    error = safe_error(exc, operation="bridge/session")
+                    if error["code"] in {"internal_error", "request_too_large", "timed_out"}:
+                        error = {
+                            "code": "service_unavailable",
+                            "message": (
+                                "The shared memory session failed; check the service and reconnect."
+                            ),
+                        }
+                    self._settle_pending(error)
         except asyncio.CancelledError:
             if not self.closed:
                 raise

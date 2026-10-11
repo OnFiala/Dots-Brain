@@ -62,7 +62,7 @@ def test_old_store_requires_explicit_migration_and_dry_run_has_no_writes(tmp_pat
     assert migrate_store(store, apply=False) == {
         "state": "migration_required",
         "from_version": 1,
-        "to_version": 3,
+        "to_version": 4,
         "writes": False,
     }
     assert store.path.read_bytes() == before

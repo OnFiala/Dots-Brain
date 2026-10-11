@@ -80,6 +80,9 @@ def _migrate(db: sqlite3.Connection) -> None:
     before = validate_snapshot(db, version)
     if version == 1:
         _migrate_v1(db)
+    # V4 indexes memory_id. IF NOT EXISTS cannot change a virtual table's
+    # definition; its derived contents are rebuilt from canonical revisions.
+    db.execute("DROP TABLE memory_fts")
     create_schema(db)
     rebuild_fts(db)
     db.execute(

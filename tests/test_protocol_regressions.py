@@ -158,7 +158,7 @@ def test_bridge_reuses_connection_and_does_not_retry_failed_mutation(monkeypatch
     class Session:
         async def call_tool(self, name, arguments):
             calls.append(name)
-            if name == "write":
+            if name == "memory_remember":
                 raise ExceptionGroup(
                     "unsafe request context", [httpx.ConnectError("PRIVATE_CANARY")]
                 )
@@ -179,12 +179,12 @@ def test_bridge_reuses_connection_and_does_not_retry_failed_mutation(monkeypatch
             assert await remote.request("read") == "read"
             assert len(opens) == 1
             with pytest.raises(BridgeFailure) as caught:
-                await remote.request("write")
-            assert caught.value.code == "service_unavailable"
+                await remote.request("memory_remember")
+            assert caught.value.code == "outcome_unknown"
             assert "PRIVATE_CANARY" not in str(caught.value)
             assert await remote.request("read") == "read"
             assert len(opens) == 2
-            assert calls.count("write") == 1
+            assert calls.count("memory_remember") == 1
         finally:
             worker.cancel()
             with suppress(asyncio.CancelledError):

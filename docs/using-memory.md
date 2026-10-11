@@ -8,7 +8,7 @@ does not infer a fact from an assistant conversation or provide provider history
 Since schema v2, a source is identified within a project by project, source,
 account, and event ID. Retrying the same source identity is idempotent.
 Suppression hashes created by schema v1 remain global because their original
-project cannot be reconstructed. The current database schema is v3.
+project cannot be reconstructed. The current database schema is v4.
 
 ## Tool scopes
 
@@ -51,17 +51,40 @@ heuristic: unknown formats, unlabeled opaque values and intentionally disguised
 secrets can escape detection. It is not a secret vault and cannot prove that all
 sensitive material has been detected.
 
+## Full-text search and context bounds
+
+Text queries are NFC-normalized and tokenized before lowercasing. They retain
+short words and identifiers. Up to 32 unique terms are used; longer tasks keep
+the first 16 and last 16 terms in encounter order. Terms in the middle can be
+omitted, so narrow the query when a specific middle term matters. Search and
+context return `fulltext_query_limited` plus `fulltext_query_terms` with `total`,
+`used` and `omitted` counts. Semantic search receives the complete query.
+
+Context rechecks each referenced revision and project. A title match expands to
+body text before the space check. A snippet is omitted when fewer than 64
+characters fit, unless its complete excerpt is shorter. `omitted_memories` and
+`truncated_excerpts` describe the result; the budget is characters, not tokens.
+
 ## Local semantic retrieval
 
 Semantic retrieval is optional and uses the pinned local CPU model. An index run
 does not write while `disabled.json` is present. Failed embeddings remain
-visible as `failed` and receive bounded retries with at least 30 seconds between
-attempts in the running process. A large backlog can delay a retry further.
-Missing or malformed derived vectors are reported as
-pending repair and are rebuilt by a bounded repair pass; source memories are
+visible as `failed`. Per-record retries back off from 30 seconds to one hour;
+automatic retries are limited to one failed record per five seconds across the
+instance, with new source work preferred. A backlog can delay retries further.
+This timing state resets on process restart. After fixing the cause, the explicit
+`index --retry-failed` command clears failure state and those delays.
+
+Status aggregates counts, dimensions, byte lengths and missing chunks in SQL;
+it does not load every vector into Python or check numeric finiteness. Search and
+repair reject NaN/Inf and malformed vectors. Thus a structurally valid corrupt
+vector may be counted as indexed until those paths discover it.
+Missing or structurally malformed derived vectors are reported as pending repair
+and rebuilt by a bounded repair pass; source memories are
 unchanged. Each background pass uses a bounded query for new source revisions
 and checks at most four already-indexed memories for vector repair, so it does
-not validate every vector on each polling interval.
+not validate every vector on each polling interval. The CLI drains a complete
+repair pass before exiting, even when the first slice contains no work.
 
 The pending-source query still examines the source set when all records are
 indexed. Bounded result size is not a constant-time guarantee; see the

@@ -601,6 +601,11 @@ def test_provenance_upgrade_preserves_legacy_auth_without_fabricating_history(
                 "oauth_tokens",
             )
             before = {name: list(db.execute(f"SELECT * FROM {name}")) for name in tables}
+            db.execute("DROP TABLE memory_fts")
+            db.execute(
+                "CREATE VIRTUAL TABLE memory_fts USING fts5("
+                "memory_id UNINDEXED, title, content, tokenize='unicode61 remove_diacritics 2')"
+            )
             db.execute("PRAGMA user_version=2")
         old_config = (store.directory / "oauth.json").read_bytes()
         with pytest.raises(MigrationRequiredError):

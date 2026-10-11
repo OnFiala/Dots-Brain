@@ -16,6 +16,11 @@
     {
       "fixture": "touched-7085841-v2",
       "sha256": "9aef8b56cd94b0d05a359a93e0970451314a7be689a5076ddfdeef10ac98c309"
+    },
+    {
+      "fixture": "v3-f34b90e",
+      "source_commit": "f34b90e02bd337b38af710a25189d1823168189a",
+      "sha256": "23b1cb3e579d1cd11efcda025a8df940aeca2e7f2dd26303817350e6dbc3960c"
     }
   ],
   "versions": {
@@ -177,6 +182,128 @@
       "semantic_state": {
         "type": "table",
         "sql": "CREATE TABLE semantic_state (\n    memory_id TEXT NOT NULL REFERENCES memories(id) ON DELETE CASCADE,\n    model TEXT NOT NULL, revision INTEGER NOT NULL,\n    state TEXT NOT NULL CHECK(state IN ('indexed','empty','failed')),\n    truncated INTEGER NOT NULL DEFAULT 0,\n    PRIMARY KEY(memory_id, model)\n)"
+      }
+    },
+    "3": {
+      "audit_events": {
+        "type": "table",
+        "sql": "CREATE TABLE audit_events (\n            id INTEGER PRIMARY KEY AUTOINCREMENT, project TEXT NOT NULL, principal TEXT NOT NULL,\n            client_event_id TEXT NOT NULL, kind TEXT NOT NULL, evidence TEXT NOT NULL,\n            occurred_at TEXT NOT NULL, recorded_at TEXT NOT NULL, action TEXT NOT NULL,\n            target TEXT NOT NULL, details TEXT NOT NULL, intent_event_id TEXT,\n            payload_hash TEXT NOT NULL, prev_hash TEXT NOT NULL, event_hash TEXT NOT NULL,\n            UNIQUE(principal, project, client_event_id)\n        )"
+      },
+      "audit_events_chain": {
+        "type": "trigger",
+        "sql": "CREATE TRIGGER audit_events_chain BEFORE INSERT ON audit_events\n           BEGIN SELECT CASE WHEN NEW.prev_hash != COALESCE(\n           (SELECT event_hash FROM audit_events ORDER BY id DESC LIMIT 1), '')\n           THEN RAISE(ABORT, 'audit hash chain mismatch') END; END"
+      },
+      "audit_events_intent": {
+        "type": "index",
+        "sql": "CREATE INDEX audit_events_intent\n        ON audit_events(project, principal, intent_event_id)\n    "
+      },
+      "audit_events_no_delete": {
+        "type": "trigger",
+        "sql": "CREATE TRIGGER audit_events_no_delete BEFORE DELETE ON audit_events\n           BEGIN SELECT RAISE(ABORT, 'audit events are append-only'); END"
+      },
+      "audit_events_no_update": {
+        "type": "trigger",
+        "sql": "CREATE TRIGGER audit_events_no_update BEFORE UPDATE ON audit_events\n           BEGIN SELECT RAISE(ABORT, 'audit events are append-only'); END"
+      },
+      "audit_events_project_id": {
+        "type": "index",
+        "sql": "CREATE INDEX audit_events_project_id ON audit_events(project, id)\n    "
+      },
+      "clients": {
+        "type": "table",
+        "sql": "CREATE TABLE clients (\n        id TEXT PRIMARY KEY, name TEXT NOT NULL, token_hash TEXT UNIQUE NOT NULL,\n        scopes TEXT NOT NULL, projects TEXT, expires_at REAL NOT NULL,\n        revoked INTEGER NOT NULL DEFAULT 0\n    )"
+      },
+      "cortex_operations": {
+        "type": "table",
+        "sql": "CREATE TABLE cortex_operations (\n        operation_id TEXT PRIMARY KEY,\n        request_digest TEXT NOT NULL,\n        principal TEXT NOT NULL,\n        local_project TEXT NOT NULL,\n        cortex_project TEXT NOT NULL,\n        operation_kind TEXT NOT NULL,\n        source_ref TEXT NOT NULL,\n        state TEXT NOT NULL CHECK (state IN ('planned', 'sending', 'acknowledged', 'uncertain')),\n        receipt_json TEXT,\n        upstream_object_id TEXT,\n        error_code TEXT,\n        created_at TEXT NOT NULL,\n        updated_at TEXT NOT NULL\n    )"
+      },
+      "cortex_operations_project_state": {
+        "type": "index",
+        "sql": "CREATE INDEX cortex_operations_project_state\n        ON cortex_operations(local_project, state)\n    "
+      },
+      "memories": {
+        "type": "table",
+        "sql": "CREATE TABLE memories (\n    id TEXT PRIMARY KEY, identity_key TEXT NOT NULL,\n    source TEXT NOT NULL, account TEXT NOT NULL, event_id TEXT NOT NULL,\n    project TEXT NOT NULL, title TEXT NOT NULL, current_revision INTEGER NOT NULL,\n    created_at TEXT NOT NULL, updated_at TEXT NOT NULL,\n    UNIQUE(project, identity_key)\n)"
+      },
+      "memory_fts": {
+        "type": "table",
+        "sql": "CREATE VIRTUAL TABLE memory_fts USING fts5(\n        memory_id UNINDEXED, title, content, tokenize='unicode61 remove_diacritics 2'\n    )"
+      },
+      "memory_fts_rows": {
+        "type": "table",
+        "sql": "CREATE TABLE memory_fts_rows (\n        memory_id TEXT PRIMARY KEY REFERENCES memories(id) ON DELETE CASCADE,\n        fts_rowid INTEGER NOT NULL UNIQUE\n    )"
+      },
+      "oauth_client_revocations": {
+        "type": "table",
+        "sql": "CREATE TABLE oauth_client_revocations (\n        client_id TEXT PRIMARY KEY REFERENCES oauth_clients(id) ON DELETE CASCADE,\n        revoked_at REAL NOT NULL\n    )"
+      },
+      "oauth_clients": {
+        "type": "table",
+        "sql": "CREATE TABLE oauth_clients (\n        id TEXT PRIMARY KEY, metadata TEXT NOT NULL, created REAL NOT NULL\n    )"
+      },
+      "oauth_code_provenance": {
+        "type": "table",
+        "sql": "CREATE TABLE oauth_code_provenance (\n        code_hash TEXT PRIMARY KEY REFERENCES oauth_codes(hash) ON DELETE CASCADE,\n        request_id TEXT NOT NULL, request_created_at REAL\n    )"
+      },
+      "oauth_codes": {
+        "type": "table",
+        "sql": "CREATE TABLE oauth_codes (\n        hash TEXT PRIMARY KEY,\n        client_id TEXT NOT NULL REFERENCES oauth_clients(id) ON DELETE CASCADE,\n        params TEXT NOT NULL, projects TEXT, expires REAL NOT NULL\n    )"
+      },
+      "oauth_config_commits": {
+        "type": "table",
+        "sql": "CREATE TABLE oauth_config_commits (id TEXT PRIMARY KEY)"
+      },
+      "oauth_grant_provenance": {
+        "type": "table",
+        "sql": "CREATE TABLE oauth_grant_provenance (\n        grant_id TEXT PRIMARY KEY REFERENCES oauth_grants(id) ON DELETE CASCADE,\n        request_id TEXT, request_created_at REAL, created_at REAL NOT NULL\n    )"
+      },
+      "oauth_grants": {
+        "type": "table",
+        "sql": "CREATE TABLE oauth_grants (\n        id TEXT PRIMARY KEY, client_id TEXT NOT NULL REFERENCES oauth_clients(id) ON DELETE CASCADE,\n        scopes TEXT NOT NULL, projects TEXT, resource TEXT NOT NULL, expires REAL NOT NULL,\n        revoked INTEGER NOT NULL DEFAULT 0\n    )"
+      },
+      "oauth_request_approvals": {
+        "type": "table",
+        "sql": "CREATE TABLE oauth_request_approvals (\n        request_id TEXT PRIMARY KEY REFERENCES oauth_requests(id) ON DELETE CASCADE,\n        scopes TEXT NOT NULL\n    )"
+      },
+      "oauth_request_provenance": {
+        "type": "table",
+        "sql": "CREATE TABLE oauth_request_provenance (\n        request_id TEXT PRIMARY KEY REFERENCES oauth_requests(id) ON DELETE CASCADE,\n        request_created_at REAL NOT NULL\n    )"
+      },
+      "oauth_requests": {
+        "type": "table",
+        "sql": "CREATE TABLE oauth_requests (\n        id TEXT PRIMARY KEY, client_id TEXT NOT NULL REFERENCES oauth_clients(id) ON DELETE CASCADE,\n        params TEXT NOT NULL, status TEXT NOT NULL, projects TEXT, expires REAL NOT NULL\n    )"
+      },
+      "oauth_tokens": {
+        "type": "table",
+        "sql": "CREATE TABLE oauth_tokens (\n        hash TEXT PRIMARY KEY, kind TEXT NOT NULL,\n        grant_id TEXT NOT NULL REFERENCES oauth_grants(id) ON DELETE CASCADE,\n        scopes TEXT NOT NULL, expires REAL NOT NULL\n    )"
+      },
+      "oauth_tokens_grant": {
+        "type": "index",
+        "sql": "CREATE INDEX oauth_tokens_grant ON oauth_tokens(grant_id)\n    "
+      },
+      "revisions": {
+        "type": "table",
+        "sql": "CREATE TABLE revisions (\n    memory_id TEXT NOT NULL REFERENCES memories(id) ON DELETE CASCADE,\n    revision INTEGER NOT NULL, content TEXT NOT NULL, digest TEXT NOT NULL,\n    source_uri TEXT, title TEXT NOT NULL, writer_principal TEXT NOT NULL,\n    created_at TEXT NOT NULL,\n    PRIMARY KEY(memory_id, revision)\n)"
+      },
+      "scoped_suppressions": {
+        "type": "table",
+        "sql": "CREATE TABLE scoped_suppressions (\n    project TEXT NOT NULL, identity_key TEXT NOT NULL,\n    deleted_revision INTEGER NOT NULL, deleted_by TEXT NOT NULL, deleted_at TEXT NOT NULL,\n    PRIMARY KEY(project, identity_key)\n)"
+      },
+      "semantic_chunks": {
+        "type": "table",
+        "sql": "CREATE TABLE semantic_chunks (\n        memory_id TEXT NOT NULL REFERENCES memories(id) ON DELETE CASCADE,\n        revision INTEGER NOT NULL, model TEXT NOT NULL, chunk_index INTEGER NOT NULL,\n        field TEXT NOT NULL CHECK(field IN ('title','content')),\n        start_char INTEGER NOT NULL, end_char INTEGER NOT NULL,\n        dimension INTEGER NOT NULL, vector BLOB NOT NULL,\n        PRIMARY KEY(memory_id, model, chunk_index)\n    )"
+      },
+      "semantic_state": {
+        "type": "table",
+        "sql": "CREATE TABLE semantic_state (\n        memory_id TEXT NOT NULL REFERENCES memories(id) ON DELETE CASCADE,\n        model TEXT NOT NULL, revision INTEGER NOT NULL,\n        state TEXT NOT NULL CHECK(state IN ('indexed','empty','failed')),\n        truncated INTEGER NOT NULL DEFAULT 0,\n        PRIMARY KEY(memory_id, model)\n    )"
+      },
+      "suppressions": {
+        "type": "table",
+        "sql": "CREATE TABLE suppressions (source_key TEXT PRIMARY KEY, deleted_at TEXT NOT NULL)"
+      },
+      "vectors": {
+        "type": "table",
+        "sql": "CREATE TABLE vectors (\n    memory_id TEXT NOT NULL REFERENCES memories(id) ON DELETE CASCADE,\n    revision INTEGER NOT NULL, model TEXT NOT NULL,\n    dimension INTEGER NOT NULL, vector BLOB NOT NULL,\n    PRIMARY KEY(memory_id, model)\n)"
       }
     }
   }

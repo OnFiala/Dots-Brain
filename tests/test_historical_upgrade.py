@@ -23,7 +23,7 @@ from dots_brain.store import Store
 FIXTURES = Path(__file__).parent / "fixtures" / "historical"
 
 
-@pytest.fixture(params=["v1-263c386", "v2-c963700"])
+@pytest.fixture(params=["v1-263c386", "v2-c963700", "v3-f34b90e"])
 def historical(request, tmp_path):
     fixture = FIXTURES / request.param
     manifest = json.loads((fixture / "manifest.json").read_text())
@@ -45,7 +45,7 @@ def test_historical_upgrade_preserves_data_grants_and_deletions(historical, tmp_
     assert plan == {
         "state": "migration_required",
         "from_version": manifest["schema_version"],
-        "to_version": 3,
+        "to_version": 4,
         "writes": False,
     }
     assert store.path.read_bytes() == original

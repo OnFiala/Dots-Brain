@@ -24,6 +24,9 @@ retry idempotent inside its project. Legacy v1 suppression hashes remain global.
 Limits are enforced at the server: query text is at most 2,000 characters,
 content 32,000 characters, title 300 characters, search `limit` 1–50, and
 context `max_chars` 256–24,000. The HTTP MCP body is capped at 1 MiB.
+Long full-text queries keep at most 32 unique terms (first 16 and last 16).
+Search/context report `fulltext_query_limited` and `fulltext_query_terms` counts;
+semantic retrieval receives the full query. See [using memory](../using-memory.md).
 
 Hybrid search retains `semantic_score` when a full-text body excerpt replaces
 a semantic title match. That excerpt has `passage.field="content"` and
@@ -35,6 +38,8 @@ use that code for control flow and treat the message as operator context. Common
 codes include `invalid_input`, `revision_conflict`, `source_suppressed`,
 `forbidden`, `not_found`, `migration_required`, `capability_unavailable`, `busy`,
 `credential_rejected`, `service_unavailable`, `timed_out`, and `internal_error`.
+Bridge transport failures also include `request_too_large` and `outcome_unknown`;
+see [bridge limits and recovery](cli.md#credentials-and-local-bridge).
 An error code reports only this request's result; it does not prove or revoke an
 external client configuration.
 

@@ -35,12 +35,16 @@ jobs:
           git fetch --no-tags --depth=1 origin c9637003f365f184751a3825013b2c425efd1517
           mkdir -p "$RUNNER_TEMP/dots-historical-v2"
           git archive c9637003f365f184751a3825013b2c425efd1517 src | tar -x -C "$RUNNER_TEMP/dots-historical-v2"
+          git fetch --no-tags --depth=1 origin f34b90e02bd337b38af710a25189d1823168189a
+          mkdir -p "$RUNNER_TEMP/dots-historical-v3"
+          git archive f34b90e02bd337b38af710a25189d1823168189a src | tar -x -C "$RUNNER_TEMP/dots-historical-v3"
       - run: uv run ruff check src tests scripts
       - run: uv run ruff format --check src tests scripts
       - run: uv run pytest -q --ignore=tests/test_runtime_latency.py
         env:
           BRAIN_TEST_OLD_V1_SRC: ${{ runner.temp }}/dots-historical-v1/src
           BRAIN_TEST_OLD_V2_SRC: ${{ runner.temp }}/dots-historical-v2/src
+          BRAIN_TEST_OLD_V3_SRC: ${{ runner.temp }}/dots-historical-v3/src
       - name: Compare managed and direct HTTP latency
         run: uv run pytest -q -s tests/test_runtime_latency.py
       - run: uv run python scripts/validate_project.py

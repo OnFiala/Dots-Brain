@@ -238,7 +238,7 @@ def test_absent_listener_metadata_upgrades_on_first_serve_without_schema_change(
         assert data["mode"] == "private"
         assert (store.directory / "http-listeners.json").stat().st_mode & 0o777 == 0o600
         with store.connection() as db:
-            assert db.execute("PRAGMA user_version").fetchone()[0] == 3
+            assert db.execute("PRAGMA user_version").fetchone()[0] == 4
 
 
 def test_doctor_compares_current_issuer_with_running_private_listener(tmp_path):

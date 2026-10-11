@@ -14,7 +14,7 @@ from importlib.resources import files
 
 from .errors import IntegrityError
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 APPLICATION_ID = 0x444F5453
 
 MEMORIES = """
@@ -59,7 +59,7 @@ STATEMENTS = (
     REVISIONS,
     """
     CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(
-        memory_id UNINDEXED, title, content, tokenize='unicode61 remove_diacritics 2'
+        memory_id, title, content, tokenize='unicode61 remove_diacritics 2'
     )
     """,
     """
@@ -296,9 +296,9 @@ def _objects(db: sqlite3.Connection) -> dict[str, tuple[str, tuple[str, ...]]]:
     }
 
 
-@lru_cache(maxsize=3)
+@lru_cache(maxsize=4)
 def _reference_objects(version: int) -> dict[str, tuple[str, tuple[str, ...]]]:
-    if version in (1, 2):
+    if version in (1, 2, 3):
         historical = json.loads(files("dots_brain").joinpath("historical_schema.json").read_text())
         return {
             name: (value["type"], _sql_tokens(value["sql"]))
@@ -314,9 +314,9 @@ def validate_schema(db: sqlite3.Connection, version: int) -> None:
     """Accept only known historical layouts, before mutating a real database."""
     actual_version = db.execute("PRAGMA user_version").fetchone()[0]
     application = db.execute("PRAGMA application_id").fetchone()[0]
-    allowed_ids = {APPLICATION_ID} if version == SCHEMA_VERSION else {0, APPLICATION_ID}
+    allowed_ids = {APPLICATION_ID} if version >= 3 else {0, APPLICATION_ID}
     if (
-        version not in (1, 2, SCHEMA_VERSION)
+        version not in (1, 2, 3, SCHEMA_VERSION)
         or actual_version != version
         or application not in allowed_ids
     ):
@@ -352,7 +352,7 @@ def validate_schema(db: sqlite3.Connection, version: int) -> None:
     )
     if oauth_base.intersection(actual):
         required |= oauth_base
-    if version == SCHEMA_VERSION:
+    if version >= 3:
         required = set(reference)
     for name in sorted(required | actual.keys()):
         if name not in actual or actual[name] != reference.get(name):

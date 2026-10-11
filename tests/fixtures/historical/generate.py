@@ -73,6 +73,18 @@ with store.connection() as db:
         ),
     )
     version = db.execute("PRAGMA user_version").fetchone()[0]
+if version >= 3:
+    from dots_brain.activity import AuditLog
+    from dots_brain.auth import Policy
+
+    AuditLog(store).observed(
+        Policy(),
+        project="test",
+        kind="action",
+        client_event_id="fixture-action",
+        action={"tool": "fixture"},
+        details={"status": "completed"},
+    )
 files = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in destination.iterdir()}
 (destination / "manifest.json").write_text(
     json.dumps(

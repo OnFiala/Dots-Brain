@@ -29,6 +29,7 @@ def index(tmp_path):
     result = SemanticIndex.__new__(SemanticIndex)
     result.store, result.np = store, np
     result.vector_dimension = 2
+    result._initialize_runtime_state()
     result._chunks = lambda text: [(0, len(text))]
     result._embed = lambda text: np.array([1.0, 0.0], dtype="<f4")
     return result

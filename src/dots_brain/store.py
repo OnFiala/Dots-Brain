@@ -34,6 +34,8 @@ from .schema import SCHEMA_VERSION, create_schema, validate_schema
 
 MIN_SQLITE_VERSION = (3, 42, 0)
 WAL_LOCK_TIMEOUT = 10.0
+MAX_FULLTEXT_TERMS = 32
+_UUID_ID = re.compile(r"[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}")
 
 
 def now() -> str:
@@ -71,11 +73,35 @@ def validate_integer(value: int, name: str, minimum: int = 1, maximum: int = 2**
 
 
 def fulltext_terms(query: str) -> list[str]:
-    """Prefer informative words when a natural-language task exceeds the FTS budget."""
-    words = list(
-        dict.fromkeys(re.findall(r"[^\W_]+", unicodedata.normalize("NFC", query).casefold()))
+    """Keep word boundaries before lowercasing; unicode61 does not expand sharp s."""
+    return list(
+        dict.fromkeys(
+            word.lower() for word in re.findall(r"[^\W_]+", unicodedata.normalize("NFC", query))
+        )
     )
-    return sorted(words, key=len, reverse=True)
+
+
+def bounded_fulltext_terms(terms: list[str]) -> list[str]:
+    """Keep both task boundaries without assigning importance from word length."""
+    if len(terms) <= MAX_FULLTEXT_TERMS:
+        return terms
+    half = MAX_FULLTEXT_TERMS // 2
+    return terms[:half] + terms[-half:]
+
+
+def delete_fulltext(db: sqlite3.Connection, memory_id: str) -> None:
+    """Remove every matching derived row, including duplicates and damaged maps."""
+    if isinstance(memory_id, str) and _UUID_ID.fullmatch(memory_id):
+        # UUIDs always tokenize. Exact equality protects other IDs whose FTS
+        # normalization collides; the rowid map never authorizes this deletion.
+        db.execute(
+            "DELETE FROM memory_fts WHERE memory_fts MATCH ? AND memory_id=?",
+            ('memory_id : "' + memory_id + '"', memory_id),
+        )
+    else:
+        # Historical/manual IDs may contain no tokens, quotes or Unicode. This
+        # slower path preserves their exact identity without constructing FTS.
+        db.execute("DELETE FROM memory_fts WHERE memory_id=?", (memory_id,))
 
 
 def normalize_projects(projects) -> tuple[str, ...] | None:
@@ -217,7 +243,7 @@ class Store:
     @staticmethod
     def _validate_connection(db: sqlite3.Connection) -> None:
         version = db.execute("PRAGMA user_version").fetchone()[0]
-        if version in (1, 2):
+        if version in (1, 2, 3):
             raise MigrationRequiredError(
                 f"Database schema v{version} requires an explicit offline migration; "
                 "run dots-brain migrate, then migrate --apply --writers-stopped."
@@ -388,7 +414,7 @@ class Store:
             )
             if existing:
                 # A derived rowid mapping cannot authorize deletion of another memory's text.
-                db.execute("DELETE FROM memory_fts WHERE memory_id=?", (memory_id,))
+                delete_fulltext(db, memory_id)
             inserted = db.execute(
                 "INSERT INTO memory_fts(memory_id,title,content) VALUES (?,?,?)",
                 (memory_id, title, content),
@@ -440,10 +466,10 @@ class Store:
     ) -> list[dict]:
         validate_text(query, "query", 2000)
         validate_integer(limit, "limit", maximum=50)
-        terms = fulltext_terms(query)[:32]
+        terms = bounded_fulltext_terms(fulltext_terms(query))
         if not terms:
             return []
-        expression = " OR ".join('"' + term + '"' for term in terms)
+        expression = "{title content} : (" + " OR ".join('"' + term + '"' for term in terms) + ")"
         clause, args = self._filter(projects, project)
         with self.connection() as db:
             rows = db.execute(
@@ -486,7 +512,7 @@ class Store:
                 "INSERT OR IGNORE INTO scoped_suppressions VALUES (?,?,?,?,?)",
                 (row["project"], row["identity_key"], expected_revision, writer_principal, now()),
             )
-            db.execute("DELETE FROM memory_fts WHERE memory_id=?", (memory_id,))
+            delete_fulltext(db, memory_id)
             db.execute("DELETE FROM memories WHERE id=?", (memory_id,))
         return {"deleted": True, "reimport_suppressed": True}
 

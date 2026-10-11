@@ -21,6 +21,8 @@ MIN_SEMANTIC_SCORE = 0.20
 MAX_CHUNKS_PER_MEMORY = 128
 MAX_QUERY_CHUNKS = 16
 FAILED_RETRY_DELAY_SECONDS = 30
+FAILED_RETRY_MAX_DELAY_SECONDS = 3600
+FAILED_RETRY_INTERVAL_SECONDS = 5
 MODEL_VECTOR_DIMENSION = 384
 REPAIR_SCAN_BATCH_SIZE = 4
 
@@ -147,13 +149,21 @@ class SemanticIndex:
         self.tokenizer = self.model.model.tokenizer
         if self.tokenizer is None:
             raise CapabilityError("The embedding model did not load its tokenizer.")
+        self.vector_dimension = MODEL_VECTOR_DIMENSION
+        self._initialize_runtime_state()
+
+    def _initialize_runtime_state(self) -> None:
+        """Process-local state; an operator restart resets retry backoff."""
         self._failed_retry_deadlines: dict[tuple[str, int], float] = {}
+        self._failed_retry_attempts: dict[tuple[str, int], int] = {}
+        self._next_failed_retry_at = 0.0
+        self._repair_pass_complete = False
         self._failed_cursor = ""
         self._repair_cursor = ""
         self._repair_requested: set[tuple[str, int]] = set()
 
     def _vector_dimension(self) -> int:
-        return getattr(self, "vector_dimension", MODEL_VECTOR_DIMENSION)
+        return self.vector_dimension
 
     def _valid_vector(self, vector: bytes | None, dimension: int | None) -> bool:
         expected = self._vector_dimension()
@@ -208,7 +218,8 @@ class SemanticIndex:
 
     def _repair_candidates(self, db, *, limit: int) -> list:
         """Bounded integrity sweep; background indexing never scans every vector."""
-        requested = getattr(self, "_repair_requested", set())
+        requested = self._repair_requested
+        self._repair_pass_complete = False
         candidates = []
         for memory_id, revision in list(islice(requested, limit)):
             row = db.execute(
@@ -226,7 +237,7 @@ class SemanticIndex:
         if len(candidates) == limit:
             return candidates
 
-        cursor = getattr(self, "_repair_cursor", "")
+        cursor = self._repair_cursor
 
         def scan(after: str):
             return db.execute(
@@ -240,10 +251,8 @@ class SemanticIndex:
             ).fetchall()
 
         scanned = scan(cursor)
-        if not scanned and cursor:
-            scanned = scan("")
-        if scanned:
-            self._repair_cursor = scanned[-1]["id"]
+        self._repair_pass_complete = len(scanned) < limit - len(candidates)
+        self._repair_cursor = "" if self._repair_pass_complete else scanned[-1]["id"]
         for row in scanned:
             if row["id"] in {candidate["id"] for candidate in candidates}:
                 continue
@@ -264,7 +273,6 @@ class SemanticIndex:
     ) -> list:
         """Return due failures without letting deferred rows block new source work."""
         candidates = []
-        seen = set()
         # Rotate a bounded slice, including stale entries. A long failure backlog
         # must not become one SQL lookup per failed memory on every idle tick.
         for key in list(islice(deadlines, limit)):
@@ -278,15 +286,17 @@ class SemanticIndex:
                 (MODEL_ID, key[0]),
             ).fetchone()
             if row is None or row["revision"] != key[1]:
+                self._failed_retry_attempts.pop(key, None)
                 continue
             deadlines[key] = deadline
-            if deadline <= now:
+            if deadline <= now and now >= self._next_failed_retry_at and not candidates:
                 candidates.append(row)
-                seen.add(key)
 
-        if len(candidates) == limit:
+        if now < self._next_failed_retry_at:
             return candidates
-        cursor = getattr(self, "_failed_cursor", "")
+        # Advance discovery even when a tracked row is already due. Otherwise
+        # a large due population can permanently hide failures beyond this page.
+        cursor = self._failed_cursor
 
         def scan(after: str):
             return db.execute(
@@ -306,18 +316,22 @@ class SemanticIndex:
         for row in discovered:
             key = (row["id"], row["revision"])
             deadline = deadlines.setdefault(key, now)
-            if key not in seen and deadline <= now and len(candidates) < limit:
+            if deadline <= now and not candidates:
                 candidates.append(row)
-                seen.add(key)
         return candidates
 
     def index(self, *, batch_size: int = 16, summary: bool = True) -> dict:
+        """Index a bounded batch; report whether the integrity sweep reached its end.
+
+        A drain must continue until examined is zero AND repair_pass_complete is
+        true: validating a healthy slice can examine no source rows. Deferred
+        failures keep their SQL state and do not force a drain to wait for retry.
+        """
         validate_integer(batch_size, "batch_size", maximum=128)
         self.store.ensure_writable()
         now = time.monotonic()
-        deadlines = getattr(self, "_failed_retry_deadlines", None)
-        if deadlines is None:
-            deadlines = self._failed_retry_deadlines = {}
+        deadlines = self._failed_retry_deadlines
+        self._repair_pass_complete = False
         with self.store.connection() as db:
             # This bounded query is the source-of-truth change detector.  Do not
             # collapse it to an aggregate: a same-size revision-one replacement
@@ -335,6 +349,8 @@ class SemanticIndex:
                 failed = self._failed_candidates(
                     db, deadlines, now=now, limit=batch_size - len(rows)
                 )
+                if failed:
+                    self._next_failed_retry_at = now + FAILED_RETRY_INTERVAL_SECONDS
                 rows.extend(row for row in failed if (row["id"], row["revision"]) not in known)
                 known.update((row["id"], row["revision"]) for row in rows)
             if len(rows) < batch_size:
@@ -368,7 +384,10 @@ class SemanticIndex:
                     "SELECT current_revision AS revision FROM memories WHERE id=?", (row["id"],)
                 ).fetchone()
                 if current is None or current["revision"] != row["revision"]:
-                    deadlines.pop((row["id"], row["revision"]), None)
+                    key = (row["id"], row["revision"])
+                    deadlines.pop(key, None)
+                    self._failed_retry_attempts.pop(key, None)
+                    self._repair_requested.discard(key)
                     continue
                 db.execute("DELETE FROM semantic_chunks WHERE memory_id=?", (row["id"],))
                 db.executemany(
@@ -403,11 +422,22 @@ class SemanticIndex:
                 indexed += int(bool(chunks))
                 key = (row["id"], row["revision"])
                 if failed:
-                    deadlines[key] = time.monotonic() + FAILED_RETRY_DELAY_SECONDS
+                    attempts = min(self._failed_retry_attempts.get(key, 0) + 1, 8)
+                    self._failed_retry_attempts[key] = attempts
+                    delay = min(
+                        FAILED_RETRY_DELAY_SECONDS * 2 ** (attempts - 1),
+                        FAILED_RETRY_MAX_DELAY_SECONDS,
+                    )
+                    deadlines[key] = time.monotonic() + delay
                 else:
                     deadlines.pop(key, None)
-                    getattr(self, "_repair_requested", set()).discard(key)
-        result = {"indexed_now": indexed, "examined": len(rows)}
+                    self._failed_retry_attempts.pop(key, None)
+                    self._repair_requested.discard(key)
+        result = {
+            "indexed_now": indexed,
+            "examined": len(rows),
+            "repair_pass_complete": self._repair_pass_complete,
+        }
         return {**result, **self.status()} if summary else result
 
     def retry_failed(self) -> int:
@@ -417,7 +447,9 @@ class SemanticIndex:
             retried = db.execute(
                 "DELETE FROM semantic_state WHERE model=? AND state='failed'", (MODEL_ID,)
             ).rowcount
-        getattr(self, "_failed_retry_deadlines", {}).clear()
+        self._failed_retry_deadlines.clear()
+        self._failed_retry_attempts.clear()
+        self._next_failed_retry_at = 0.0
         return retried
 
     def status(self, *, projects: tuple[str, ...] | None = None) -> dict:
@@ -427,13 +459,20 @@ class SemanticIndex:
                 "SELECT COUNT(*) FROM memories m WHERE 1" + clause,
                 args,
             ).fetchone()[0]
-            indexed_rows = db.execute(
-                "SELECT m.id,m.current_revision AS revision,v.dimension,v.vector FROM memories m "
+            # Status checks structural integrity in SQLite without materializing
+            # vectors. Numeric contents (NaN/Inf) are validated by repair/search.
+            indexed = db.execute(
+                "SELECT COUNT(*) FROM memories m "
                 "JOIN semantic_state s ON s.memory_id=m.id AND s.model=? "
-                "AND s.revision=m.current_revision JOIN semantic_chunks v ON v.memory_id=m.id "
-                "AND v.model=s.model AND v.revision=s.revision WHERE s.state='indexed'" + clause,
-                [MODEL_ID, *args],
-            ).fetchall()
+                "AND s.revision=m.current_revision WHERE s.state='indexed'"
+                + clause
+                + " AND EXISTS (SELECT 1 FROM semantic_chunks v WHERE v.memory_id=m.id "
+                "AND v.model=s.model AND v.revision=s.revision) "
+                "AND NOT EXISTS (SELECT 1 FROM semantic_chunks v WHERE v.memory_id=m.id "
+                "AND v.model=s.model AND v.revision=s.revision "
+                "AND (v.dimension!=? OR LENGTH(v.vector)!=?))",
+                [MODEL_ID, *args, self._vector_dimension(), self._vector_dimension() * 4],
+            ).fetchone()[0]
             attempts = db.execute(
                 "SELECT s.state,COUNT(*),SUM(s.truncated) FROM semantic_state s "
                 "JOIN memories m ON m.id=s.memory_id AND m.current_revision=s.revision "
@@ -442,13 +481,6 @@ class SemanticIndex:
             ).fetchall()
         counts = {row[0]: row[1] for row in attempts}
         failed, empty = counts.get("failed", 0), counts.get("empty", 0)
-        indexed_ids = {row["id"] for row in indexed_rows}
-        invalid_ids = {
-            row["id"]
-            for row in indexed_rows
-            if not self._valid_vector(row["vector"], row["dimension"])
-        }
-        indexed = len(indexed_ids - invalid_ids)
         repair_pending = max(0, counts.get("indexed", 0) - indexed)
         truncated = sum(row[2] for row in attempts)
         pending = max(0, count - indexed - failed - empty)
@@ -482,9 +514,7 @@ class SemanticIndex:
         clause, args = self.store._filter(projects, project)
         best = {}
         invalid_vectors = 0
-        requested = getattr(self, "_repair_requested", None)
-        if requested is None:
-            requested = self._repair_requested = set()
+        requested = self._repair_requested
         with self.store.connection() as db:
             cursor = db.execute(
                 "SELECT m.id,m.current_revision AS revision,v.dimension,v.vector,"

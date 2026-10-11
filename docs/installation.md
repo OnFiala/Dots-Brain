@@ -4,7 +4,7 @@
 
 Managed deployment is supported on Linux with Python 3.11, 3.12, or 3.13 and
 SQLite 3.42 or newer. SQLite must support FTS secure deletion. Older SQLite
-builds are not a supported upgrade or rollback path for a schema-v3 store.
+builds are not a supported upgrade or rollback path for a schema-v4 store.
 macOS can run local source checks and stdio experiments, but managed lifecycle
 behavior is not accepted there. Windows is not supported.
 

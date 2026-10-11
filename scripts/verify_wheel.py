@@ -31,12 +31,12 @@ def main():
         path.parent for path in (root / "tests/fixtures/historical").glob("*/manifest.json")
     )
     require(
-        len(fixtures) == 4
+        len(fixtures) == 5
         and {
             json.loads((path / "manifest.json").read_text())["schema_version"] for path in fixtures
         }
-        == {1, 2},
-        "Both historical schemas and both intermediate 7085841 fixtures are required",
+        == {1, 2, 3},
+        "Three historical schemas and both intermediate 7085841 fixtures are required",
     )
     with tempfile.TemporaryDirectory(prefix="dots-wheel-") as name:
         directory = Path(name)
@@ -88,7 +88,8 @@ def main():
             )
             require(restored.get(record["id"])["revision"] == 2, "Restore lost original record")
     print(
-        "Installed wheel: v1/v2 migration, retained grants, CRUD, suppression and restore passed."
+        "Installed wheel: v1/v2/v3 migration, retained grants, CRUD, suppression "
+        "and restore passed."
     )
 
 
