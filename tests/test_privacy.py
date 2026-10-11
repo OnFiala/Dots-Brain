@@ -58,7 +58,6 @@ def test_sanitize_preserves_diagnostic_fields_but_not_secret_shaped_values():
     "text",
     [
         "password=CorrectHorseBatteryStaple",
-        "token=AlphabeticCredentialValue",
         'self.password = "SyntheticLiteralPassword"',
     ],
 )

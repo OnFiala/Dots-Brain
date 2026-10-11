@@ -273,9 +273,9 @@ class Store:
         if projects is not None and project not in projects:
             raise NotFoundError("Project is not available to this client.")
         validate_text(writer_principal, "writer_principal", 500)
-        from .privacy import guard_content
+        from .privacy import check_content
 
-        guard_content(
+        warnings = check_content(
             {
                 "content": content,
                 "source": source,
@@ -326,6 +326,7 @@ class Store:
                         "revision": existing["current_revision"],
                         "replayed_revision": replay["revision"],
                         "changed": False,
+                        **({"warnings": warnings} if warnings else {}),
                     }
                 if expected_revision != existing["current_revision"]:
                     raise ConflictError("Content changed; supply the current expected_revision.")
@@ -378,7 +379,12 @@ class Store:
                 "ON CONFLICT(memory_id) DO UPDATE SET fts_rowid=excluded.fts_rowid",
                 (memory_id, inserted.lastrowid),
             )
-        return {"id": memory_id, "revision": revision, "changed": True}
+        return {
+            "id": memory_id,
+            "revision": revision,
+            "changed": True,
+            **({"warnings": warnings} if warnings else {}),
+        }
 
     def get(
         self,

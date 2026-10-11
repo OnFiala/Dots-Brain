@@ -488,7 +488,7 @@ def _exception_leaves(exc: BaseException) -> list[BaseException]:
     return [exc]
 
 
-ContentGuard = Callable[[Mapping[str, object]], None]
+ContentGuard = Callable[[Mapping[str, object]], object]
 
 
 class CortexConnector:
@@ -528,7 +528,7 @@ class CortexConnector:
         ):
             raise InputError("CORTEX context limit is invalid.")
         arguments = {"query": query, "project_id": cortex_project}
-        self._content_guard({"content": query})
+        warnings = _content_warnings(self._content_guard({"content": query}))
         brief = await self._transport.call_tool("cortex_brief", arguments)
         search = await self._transport.call_tool("cortex_search", {**arguments, "limit": limit})
         raw = {"project_id": cortex_project, "brief": brief, "search": search}
@@ -545,6 +545,7 @@ class CortexConnector:
             "sanitization": minimized.summary(),
             "partial": bool(minimized.redactions or minimized.truncated or bounded),
             "untrusted_data": True,
+            **({"warnings": warnings} if warnings else {}),
         }
 
     async def write_note(
@@ -630,16 +631,18 @@ class CortexConnector:
         cortex_project, principal = self._authorize(policy, _WRITE_SCOPE, project)
         _validate_source_ref(source_ref)
         _validate_write_payload(kind, payload)
-        # Privacy policy is centralized by the parent.  It must reject any secret
-        # before this content is persisted in the receipt ledger or sent upstream.
-        self._content_guard(
-            {
-                "kind": kind,
-                "project": project,
-                "source_ref": source_ref,
-                "principal": principal,
-                "payload": dict(payload),
-            }
+        # Privacy policy rejects high-confidence secrets before any receipt-ledger
+        # transition or upstream send. Uncertain matches return metadata only.
+        warnings = _content_warnings(
+            self._content_guard(
+                {
+                    "kind": kind,
+                    "project": project,
+                    "source_ref": source_ref,
+                    "principal": principal,
+                    "payload": dict(payload),
+                }
+            )
         )
         actual_id = operation_id or _operation_id(
             principal, project, source_ref, kind, outcome_status=payload.get("status")
@@ -690,7 +693,7 @@ class CortexConnector:
                 )
             state = existing.get("state")
             if state == "acknowledged":
-                return _receipt_from_row(existing, replayed=True)
+                return _receipt_from_row(existing, replayed=True, warnings=warnings)
             if state in {"sending", "uncertain"}:
                 raise CortexWriteUncertain(actual_id)
             if state != "planned":
@@ -714,7 +717,7 @@ class CortexConnector:
             if existing is None or existing.get("request_digest") != digest:
                 raise ConflictError("CORTEX operation identity is bound to different content.")
             if existing.get("state") == "acknowledged":
-                return _receipt_from_row(existing, replayed=True)
+                return _receipt_from_row(existing, replayed=True, warnings=warnings)
             raise CortexWriteUncertain(actual_id)
         try:
             upstream = await self._transport.call_tool(f"cortex_record_{kind}", request)
@@ -728,7 +731,7 @@ class CortexConnector:
             row = await asyncio.to_thread(self._ledger.get, actual_id)
             if row is None:
                 raise CortexConnectorError("CORTEX operation receipt is unavailable.")
-            return _receipt_from_row(row, replayed=False)
+            return _receipt_from_row(row, replayed=False, warnings=warnings)
         except CortexWriteRejected as exc:
             # MCP isError is not proof of rollback: an upstream implementation
             # may commit and then fail while producing its response.
@@ -1094,7 +1097,32 @@ def _safe_receipt(receipt: Mapping[str, object]) -> dict:
     return clean
 
 
-def _receipt_from_row(row: Mapping[str, object], *, replayed: bool) -> dict[str, object]:
+def _content_warnings(value: object) -> list[dict[str, str]]:
+    """Expose only fixed warning metadata; legacy guard results remain compatible."""
+    if not isinstance(value, list):
+        return []
+    from .privacy import CONTENT_WARNING_CATEGORIES
+
+    result = []
+    for item in value:
+        if not isinstance(item, Mapping) or set(item) != {"code", "category"}:
+            continue
+        category = item["category"]
+        if (
+            item["code"] != "possible_secret"
+            or not isinstance(category, str)
+            or category not in CONTENT_WARNING_CATEGORIES
+        ):
+            continue
+        warning = {"code": "possible_secret", "category": category}
+        if warning not in result:
+            result.append(warning)
+    return result
+
+
+def _receipt_from_row(
+    row: Mapping[str, object], *, replayed: bool, warnings: list[dict[str, str]] | None = None
+) -> dict[str, object]:
     receipt_json = row.get("receipt_json")
     receipt = json.loads(receipt_json) if isinstance(receipt_json, str) else None
     object_id = row.get("upstream_object_id")
@@ -1107,6 +1135,7 @@ def _receipt_from_row(row: Mapping[str, object], *, replayed: bool) -> dict[str,
         "retrievable_source_ref": f"cortex://object/{object_id}" if object_id else None,
         "acknowledgement_only": object_id is None,
         "replayed": replayed,
+        **({"warnings": warnings} if warnings else {}),
     }
 
 

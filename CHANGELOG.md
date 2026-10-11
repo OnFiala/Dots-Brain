@@ -32,6 +32,9 @@ state.
 
 ### Fixed
 
+- Replace backtracking credential rules with bounded category scans. Preserve
+  quoted literal boundaries during capture redaction and return safe warnings
+  for uncertain memory/CORTEX inputs without changing accepted content.
 - Add a partial abort-recovery command for a failed cutover. It requires the
   documented offline operator checks and cancels only a pending cutover.
 - Replace owner-specific deployment records with public Linux installation and

@@ -38,8 +38,18 @@ characters, titles are at most 300 characters, and an MCP request body is at
 most 1 MiB. Treat memory content as untrusted data.
 
 The privacy filter rejects high-confidence credential forms such as private-key
-blocks, known token prefixes, and `user:password@host` URLs. It is not a secret
-vault and cannot prove that all sensitive material has been detected.
+blocks, known token prefixes, literal sensitive fields, authentication headers,
+credential arguments and `user:password@host` URLs. Whole placeholders and code
+references are retained. Uncertain credential-shaped text is accepted unchanged
+with `warnings: [{"code": "possible_secret", "category": "…"}]` in the write
+response, including an idempotent replay. Review or replace that text before
+sharing it. Optional CORTEX operations return the same warning metadata.
+
+Capture and audit minimization redact both certain and uncertain matches. This
+does not change the stored memory text or revision identity. The filter is
+heuristic: unknown formats, unlabeled opaque values and intentionally disguised
+secrets can escape detection. It is not a secret vault and cannot prove that all
+sensitive material has been detected.
 
 ## Local semantic retrieval
 

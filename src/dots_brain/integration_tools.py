@@ -297,7 +297,7 @@ def load_cortex(store):
 
     from .cortex_connector import CortexConnectionConfig, CortexConnector, SqliteCortexLedger
     from .local import read_json
-    from .privacy import guard_content
+    from .privacy import check_content
 
     path = store.directory / "cortex.json"
     if not path.exists():
@@ -310,4 +310,4 @@ def load_cortex(store):
         )
     except (OSError, KeyError, AttributeError, TypeError, ValueError) as exc:
         raise CapabilityError("CORTEX connection configuration is invalid.") from exc
-    return CortexConnector(config, ledger=SqliteCortexLedger(store), content_guard=guard_content)
+    return CortexConnector(config, ledger=SqliteCortexLedger(store), content_guard=check_content)
