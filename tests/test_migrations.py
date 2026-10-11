@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from dots_brain.errors import IntegrityError, MigrationRequiredError
+from dots_brain.errors import IntegrityError, MigrationFailedError, MigrationRequiredError
 from dots_brain.migrations import HISTORICAL_WRITER, migrate_store
 from dots_brain.store import APPLICATION_ID, Store
 
@@ -111,7 +111,7 @@ def test_migration_rollback_leaves_v1_untouched_and_repeat_is_a_noop(tmp_path, m
         db.execute("INVALID SQL AFTER REAL DDL")
 
     monkeypatch.setattr(migrations, "_migrate", fail_after_transform)
-    with pytest.raises(sqlite3.OperationalError):
+    with pytest.raises(MigrationFailedError, match="rolled back and validated"):
         migrate_store(store, apply=True, stop_guard=lambda: None)
     with closing(sqlite3.connect(store.path)) as db, db:
         assert db.execute("PRAGMA user_version").fetchone()[0] == 1
@@ -122,16 +122,7 @@ def test_migration_rollback_leaves_v1_untouched_and_repeat_is_a_noop(tmp_path, m
         )
         assert db.execute("SELECT COUNT(*) FROM revisions").fetchone()[0] == 2
         assert db.execute("SELECT id FROM oauth_grants").fetchone()[0] == "fixture-grant"
-    backup = next(store.directory.glob("*.v1-backup-*"))
-    with closing(sqlite3.connect(backup.resolve().as_uri() + "?mode=ro", uri=True)) as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 1
-        assert db.execute("SELECT COUNT(*) FROM revisions").fetchone()[0] == 2
-        assert (
-            db.execute(
-                "SELECT source_key FROM suppressions WHERE source_key='legacy-key'"
-            ).fetchone()[0]
-            == "legacy-key"
-        )
+    assert not list(store.directory.glob("*.v1-backup-*"))
     monkeypatch.undo()
     assert migrate_store(store, apply=True, stop_guard=lambda: None)["state"] == "migrated"
     backups = list(store.directory.glob("*.v1-backup-*"))

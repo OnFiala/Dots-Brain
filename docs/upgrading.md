@@ -21,7 +21,9 @@ upgrade path and this documentation makes no production-upgrade claim.
 
 ## Schema v1 or v2 to v3
 
-The current candidate requires schema v3. Both published v1 stores and older v2
+The `0.4.0a3` candidate requires schema v3. The earlier unreleased `0.4.0a2`
+number was reused across v2 and v3 builds; record the exact commit when identifying
+one of those builds. Both published v1 stores and older v2
 stores need this migration. `setup`, `serve` and OAuth configuration do not add
 missing tables. `doctor` reports `migration_required` until migration completes.
 
@@ -44,16 +46,70 @@ dots-brain --data-dir /absolute/private/memory migrate --apply --writers-stopped
 dots-brain --data-dir /absolute/private/memory doctor
 ```
 
-The plan includes `from_version` and `to_version` and does not checkpoint the
-database. Apply makes a verified standalone backup including committed WAL data,
+The plan includes `from_version` and `to_version`. It checks the same schema,
+SQLite integrity, foreign keys, revision sequence and audit chain as apply.
+It does not modify the main database or checkpoint committed WAL data. SQLite
+read-only WAL access may create an empty WAL and shared-memory coordination file;
+it never discards an existing committed WAL. A plan is a snapshot of that check,
+so apply repeats validation after taking the writer lock.
+
+Historical DDL is frozen separately from the current schema. Formatting outside
+SQL tokens is ignored; literals, identifiers, constraints and triggers are checked.
+This includes v1/v2 stores opened or migrated by commit `7085841`.
+
+Apply makes a verified standalone backup including committed WAL data,
 under SQLite's writer lock, then upgrades in one transaction. Another writer cannot
 commit between the backup and migration. It preserves revisions, deletion barriers,
 static credentials, OAuth grants and tokens. It rebuilds the derived full-text
 index. OAuth configuration does not need to be repeated for the same issuer.
 Historical grants keep unknown provenance fields empty.
 
-If migration fails, keep the backup and error result. Repeating a completed
-migration returns `already_current`. Old v2 binaries reject the new v3 database.
+### Failed migration and disk space
+
+Reserve space for the original database, its snapshot, journals and temporary
+tables. Rough working allowances are **2 times the database size for v2** and
+**3.5 times for v1**, plus any existing WAL and manual copies. These are planning
+estimates, not guaranteed upper bounds; content and SQLite page usage vary.
+
+After an ordinary failure, the migration rolls back and validates the old store.
+Only then does it remove the new automatic backup it created. An explicit
+`--backup` is retained for the operator, as are all pre-existing files and backups
+when rollback cannot be proved. The error names the retained snapshot and the
+next `migrate` check. A committed migration keeps its snapshot even if the later
+WAL checkpoint must be deferred. Repeating it returns `already_current`.
+
+A force-kill or power loss can leave `brain.sqlite3.vN-backup-*` or hidden
+`.partial` files. Keep writers stopped; run
+`dots-brain --data-dir /absolute/private/memory migrate` to validate the surviving
+database before retrying. Inspect leftover paths individually. Remove only
+abandoned outputs whose owner and recovery purpose you have confirmed; do not
+use a wildcard cleanup or remove the only recovery copy.
+
+Historical v2 snapshots may contain full-text terms from records deleted by an
+older version. Treat every snapshot as private. After accepting the upgrade and
+ending the rollback window, remove obsolete snapshots according to the host's
+encrypted-storage retention policy. Ordinary file removal does not guarantee
+physical erasure on SSDs or removal from filesystem snapshots and other backups.
+
+### A plan reports corrupt or unsupported data
+
+Do not remove constraints, repair revision numbers or edit the audit chain to
+force migration. Keep the rejected store for inspection and stop all writers.
+Use a known-good pre-upgrade snapshot in a **new** private directory:
+
+```sh
+mkdir -m 700 /absolute/private/recovery
+cp /absolute/private/known-good.sqlite3 /absolute/private/recovery/brain.sqlite3
+dots-brain --data-dir /absolute/private/recovery migrate
+dots-brain --data-dir /absolute/private/recovery migrate --apply --writers-stopped
+```
+
+The `cp` example requires a standalone snapshot. For a manual WAL copy, include
+its saved WAL companions as described below. The successful check and upgrade on
+that copy do not reconcile later writes or deletions; review that loss window
+before using it. Without a valid backup, preserve the evidence and recover it
+offline before retrying. An unknown schema requires its compatible producer or a
+separately reviewed migration; this candidate does not guess at foreign formats.
 
 ## Rollback before accepting new writes
 
@@ -109,5 +165,6 @@ candidate has not been deployed or accepted.
 
 New databases and migrations carry Dots Brain's SQLite `application_id`. Migration
 accepts historical ID zero only after checking the known table layouts. Foreign
-or unknown formats are rejected before any schema or journal write. This marker
+or unknown formats are rejected by read-only preflight before a writable database
+connection is opened. The main file and committed WAL are preserved. This marker
 identifies the format; it cannot protect against a local owner editing the file.

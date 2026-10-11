@@ -1,0 +1,42 @@
+{
+  "source_commit": "263c38617aa17ae1ebaea84c8938065c131cfae1",
+  "touched_by_commit": "708584169b50903ed83145676a506f7cbe017744",
+  "producing_source_sha256": {
+    "store": "a35752d5be0c3c0b3abe4f18198dd75e5ef0c4ca86f1a1866617efbc4d0fc391",
+    "migrations": "cf0b7882ea3b361eccd4ea4a88ff6cd0ffb7944998bf649533dc102b5ded29eb",
+    "activity": "b5a3b05de844bbda9e052554face989d4409677b6e9e11b4ccf6ee5831823ebc"
+  },
+  "origin_schema_version": 1,
+  "schema_version": 2,
+  "generator": "tests/fixtures/historical/touched-7085841-v1/generate.py",
+  "touch_actions": [
+    "migrate_v1_to_v2",
+    "Store.initialize",
+    "AuditLog.record"
+  ],
+  "files": {
+    "brain.sqlite3": "3f32dcb6f4d437639f628aa11bfa5e12dce70d49395b2b1590cdfc52d4fc12fd",
+    "oauth.json": "1bb06af979c93d267d69b62f2ff1fbe133146309f719e15d1e3582f3e5f617c0",
+    "service-probe.json": "7bed7a32428eed8cb08a426fb8a40294fa9f48a085ba35d99210f66c2bae4d7f"
+  },
+  "canonical_counts": {
+    "audit_events": 1,
+    "clients": 1,
+    "cortex_operations": 0,
+    "memories": 1,
+    "oauth_clients": 1,
+    "oauth_codes": 0,
+    "oauth_grants": 2,
+    "oauth_requests": 0,
+    "oauth_tokens": 2,
+    "revisions": 2,
+    "scoped_suppressions": 0,
+    "semantic_chunks": 0,
+    "semantic_state": 0,
+    "suppressions": 1,
+    "vectors": 0
+  },
+  "memory_fts_rows_sql": "CREATE TABLE memory_fts_rows (memory_id TEXT PRIMARY KEY REFERENCES memories(id) ON DELETE CASCADE,fts_rowid INTEGER NOT NULL UNIQUE)",
+  "memory_id": "9062d9e7-8e00-4291-ae87-b76fb38f563b",
+  "probe_id": "05cd2ac3-ea0b-4a8d-b69c-683a199c8ae8"
+}

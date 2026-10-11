@@ -563,7 +563,7 @@ def test_provenance_upgrade_preserves_legacy_auth_without_fabricating_history(
     installation, monkeypatch
 ):
     from dots_brain import migrations
-    from dots_brain.errors import MigrationRequiredError
+    from dots_brain.errors import MigrationFailedError, MigrationRequiredError
 
     store, state, _, app = installation
     with TestClient(app, base_url=ISSUER) as http:
@@ -575,6 +575,9 @@ def test_provenance_upgrade_preserves_legacy_auth_without_fabricating_history(
                 "oauth_request_provenance",
                 "oauth_code_provenance",
                 "oauth_grant_provenance",
+                "oauth_request_approvals",
+                "oauth_client_revocations",
+                "oauth_config_commits",
             ):
                 db.execute(f"DROP TABLE {table}")
             tables = (
@@ -597,7 +600,7 @@ def test_provenance_upgrade_preserves_legacy_auth_without_fabricating_history(
 
         with monkeypatch.context() as patch:
             patch.setattr(migrations, "_migrate", fail_after_transform)
-            with pytest.raises(sqlite3.OperationalError):
+            with pytest.raises(MigrationFailedError):
                 migrations.migrate_store(store, apply=True, stop_guard=lambda: None)
         assert (store.directory / "oauth.json").read_bytes() == old_config
         migrations.migrate_store(store, apply=True, stop_guard=lambda: None)
@@ -642,8 +645,10 @@ def test_provenance_upgrade_preserves_legacy_auth_without_fabricating_history(
 
 @pytest.mark.parametrize("stage", ["claim", "exchange"])
 def test_provenance_write_failure_rolls_back_consumption_and_allows_exact_retry(
-    installation, stage
+    installation, stage, monkeypatch
 ):
+    from contextlib import contextmanager
+
     store, state, _, app = installation
     with TestClient(app, base_url=ISSUER) as http:
         client = register(http)
@@ -672,15 +677,26 @@ def test_provenance_write_failure_rolls_back_consumption_and_allows_exact_retry(
                 )
             ]
             before = {name: list(db.execute(f"SELECT * FROM {name}")) for name in tables}
-            db.execute(
-                f"CREATE TRIGGER synthetic_failure BEFORE INSERT ON {table} "
-                "BEGIN SELECT RAISE(ABORT,'synthetic failure'); END"
-            )
-        with pytest.raises(sqlite3.IntegrityError, match="synthetic failure"):
-            operation()
+        original_connection = store.connection
+
+        @contextmanager
+        def failing_write(*, write=False):
+            with original_connection(write=write) as db:
+                if write:
+                    # Inject inside the validated transaction, not by leaving
+                    # the installation with an unsupported persistent trigger.
+                    db.execute(
+                        f"CREATE TRIGGER synthetic_failure BEFORE INSERT ON {table} "
+                        "BEGIN SELECT RAISE(ABORT,'synthetic failure'); END"
+                    )
+                yield db
+
+        with monkeypatch.context() as patch:
+            patch.setattr(store, "connection", failing_write)
+            with pytest.raises(sqlite3.IntegrityError, match="synthetic failure"):
+                operation()
         with store.connection(write=True) as db:
             assert {name: list(db.execute(f"SELECT * FROM {name}")) for name in tables} == before
-            db.execute("DROP TRIGGER synthetic_failure")
         operation()
         with store.connection() as db:
             assert db.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] == 1

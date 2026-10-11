@@ -7,6 +7,7 @@ not guess whether a process using the database is safe to interrupt.
 
 from __future__ import annotations
 
+import shlex
 import sqlite3
 from collections.abc import Callable
 from contextlib import closing
@@ -14,8 +15,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from .database_checks import validate_snapshot
-from .database_io import open_readonly, snapshot
-from .errors import InputError, IntegrityError
+from .database_io import PublishedSnapshot, create_snapshot, open_readonly, remove_owned
+from .errors import ConflictError, InputError, IntegrityError, MigrationFailedError
 from .schema import MEMORIES, REVISIONS, SCHEMA_VERSION, VECTORS, create_schema, validate_schema
 from .store import Store, rebuild_fts, require_sqlite
 
@@ -29,7 +30,15 @@ def _version(path: Path) -> int:
         raise InputError("The database must not be a symbolic link.")
     with closing(open_readonly(path)) as db:
         version = db.execute("PRAGMA user_version").fetchone()[0]
-        validate_schema(db, version)
+        try:
+            validate_snapshot(db, version)
+        except (IntegrityError, ConflictError) as exc:
+            raise IntegrityError(
+                f"{exc} Stop writers and copy a known-good pre-upgrade snapshot to "
+                "brain.sqlite3 in a new private directory, then run "
+                "dots-brain --data-dir /absolute/private/recovery migrate. "
+                "See docs/upgrading.md for WAL copies and unsupported formats."
+            ) from None
         return version
 
 
@@ -38,10 +47,10 @@ def _default_backup(path: Path, version: int) -> Path:
     return path.with_name(f"{path.name}.v{version}-backup-{stamp}")
 
 
-def _backup(path: Path, destination: Path, version: int) -> Path:
+def _backup(path: Path, destination: Path, version: int) -> PublishedSnapshot:
     with closing(open_readonly(path)) as source:
         validate_snapshot(source, version)
-        return snapshot(source, destination, version)
+        return create_snapshot(source, destination, version)
 
 
 def _migrate_v1(db: sqlite3.Connection) -> None:
@@ -110,13 +119,40 @@ def migrate_store(
         db.execute("PRAGMA foreign_keys=OFF")
         db.execute("PRAGMA secure_delete=ON")
         db.execute("PRAGMA synchronous=FULL")
-        with db:
+        backup = None
+        identity = None
+        try:
             db.execute("BEGIN IMMEDIATE")
             validate_schema(db, version)
-            backup = _backup(
+            created = _backup(
                 store.path, backup_path or _default_backup(store.path, version), version
             )
+            backup, identity = created.path, created.identity
             _migrate(db)
+            db.commit()
+        except BaseException as exc:
+            rolled_back = False
+            try:
+                db.rollback()
+                validate_snapshot(db, version)
+                rolled_back = True
+            except Exception:
+                pass  # Keep any backup when the old state cannot be proved.
+            removed = False
+            if rolled_back and backup_path is None and backup is not None and identity is not None:
+                try:
+                    removed = remove_owned(backup, identity)
+                except OSError:
+                    pass
+            if backup is None or not isinstance(exc, Exception):
+                raise
+            state = "rolled back and validated" if rolled_back else "requires offline inspection"
+            retained = "" if removed else f" Retained backup: {backup}."
+            command = f"dots-brain --data-dir {shlex.quote(str(store.directory))} migrate"
+            raise MigrationFailedError(
+                f"Migration failed; the database {state}.{retained} Keep writers stopped "
+                f"and run {command} before retrying. See docs/upgrading.md for recovery."
+            ) from exc
         try:
             checkpoint = db.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
             checkpoint_state = "deferred" if checkpoint[0] else "complete"

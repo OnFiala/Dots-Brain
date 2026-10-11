@@ -1,0 +1,44 @@
+{
+  "source_commit": "c9637003f365f184751a3825013b2c425efd1517",
+  "touched_by_commit": "708584169b50903ed83145676a506f7cbe017744",
+  "producing_source_sha256": {
+    "store": "a35752d5be0c3c0b3abe4f18198dd75e5ef0c4ca86f1a1866617efbc4d0fc391",
+    "migrations": "cf0b7882ea3b361eccd4ea4a88ff6cd0ffb7944998bf649533dc102b5ded29eb",
+    "activity": "b5a3b05de844bbda9e052554face989d4409677b6e9e11b4ccf6ee5831823ebc"
+  },
+  "origin_schema_version": 2,
+  "schema_version": 2,
+  "generator": "tests/fixtures/historical/touched-7085841-v1/generate.py",
+  "touch_actions": [
+    "Store.initialize",
+    "AuditLog.record"
+  ],
+  "files": {
+    "brain.sqlite3": "9aef8b56cd94b0d05a359a93e0970451314a7be689a5076ddfdeef10ac98c309",
+    "oauth.json": "1bb06af979c93d267d69b62f2ff1fbe133146309f719e15d1e3582f3e5f617c0",
+    "service-probe.json": "54aa2e09e5c8c714f0bbaa6777d94466e5d995dfdf924509ab67490701a72c99"
+  },
+  "canonical_counts": {
+    "audit_events": 1,
+    "clients": 1,
+    "cortex_operations": 0,
+    "memories": 1,
+    "oauth_clients": 1,
+    "oauth_code_provenance": 0,
+    "oauth_codes": 0,
+    "oauth_grant_provenance": 0,
+    "oauth_grants": 2,
+    "oauth_request_provenance": 0,
+    "oauth_requests": 0,
+    "oauth_tokens": 2,
+    "revisions": 2,
+    "scoped_suppressions": 1,
+    "semantic_chunks": 0,
+    "semantic_state": 0,
+    "suppressions": 0,
+    "vectors": 0
+  },
+  "memory_fts_rows_sql": "CREATE TABLE memory_fts_rows (memory_id TEXT PRIMARY KEY REFERENCES memories(id) ON DELETE CASCADE,fts_rowid INTEGER NOT NULL UNIQUE)",
+  "memory_id": "19856f05-3f47-47e4-9d76-50549688b11c",
+  "probe_id": "ae20bfbb-e3cf-4871-8310-0c15ee513ef8"
+}

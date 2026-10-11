@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.4.0-alpha.2 — Unreleased
+## 0.4.0-alpha.3 — Unreleased
 
 This candidate has not been tagged, published, or deployed by this repository
 state.
@@ -32,6 +32,11 @@ state.
 
 ### Fixed
 
+- Accept historical v1/v2 stores touched by `7085841`, comparing SQL tokens
+  against frozen historical DDL while preserving constraints and literals.
+- Validate canonical data during migration planning, reject unsupported stores
+  before a writable connection, and remove only owned automatic backups after a
+  proved rollback. Document retained explicit snapshots and interrupted attempts.
 - Replace backtracking credential rules with bounded category scans. Preserve
   quoted literal boundaries during capture redaction and return safe warnings
   for uncertain memory/CORTEX inputs without changing accepted content.
@@ -64,6 +69,8 @@ state.
 
 ### Breaking
 
+- Advance the package to `0.4.0a3` to distinguish this schema-v3 candidate from
+  earlier `0.4.0a2` builds that reused a version across schema formats.
 - Old v1/v2 stores report `migration_required` until an explicit offline upgrade.
   Older binaries reject schema v3. See [upgrade and rollback](docs/upgrading.md).
 - Existing stores backed by unsupported SQLite versions cannot be safely upgraded

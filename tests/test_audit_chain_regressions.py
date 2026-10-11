@@ -92,8 +92,12 @@ def test_v2_history_remains_verifiable_and_new_v3_event_binds_identity_and_stamp
     assert created["event_hash"].startswith("v3:")
     assert log.verify() == {"events": 2}
     with store.connection(write=True) as db:
+        trigger = db.execute(
+            "SELECT sql FROM sqlite_master WHERE name='audit_events_no_update'"
+        ).fetchone()[0]
         db.execute("DROP TRIGGER audit_events_no_update")
         db.execute("UPDATE audit_events SET recorded_at='2026-01-02T00:00:00+00:00' WHERE id=2")
+        db.execute(trigger)
     with pytest.raises(ConflictError):
         log.verify()
 

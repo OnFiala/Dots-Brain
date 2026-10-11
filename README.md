@@ -5,7 +5,7 @@ stores source metadata and revisions in one SQLite database, supports full-text
 search, and can add local CPU embeddings. It does not automatically collect
 assistant conversations.
 
-**Version: 0.4.0-alpha.2 (unreleased).** This candidate has local MCP storage,
+**Version: 0.4.0-alpha.3 (unreleased).** This candidate has local MCP storage,
 scoped client credentials, backup and staged restore commands. It is not a
 published release or a deployment claim. Live capture, a CORTEX connection,
 off-host recovery, and host reboot recovery need separate configuration and

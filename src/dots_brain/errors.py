@@ -37,6 +37,10 @@ class MigrationRequiredError(StateError):
     code = "migration_required"
 
 
+class MigrationFailedError(StateError):
+    code = "migration_failed"
+
+
 class BusyError(StateError):
     code = "busy"
 

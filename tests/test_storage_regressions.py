@@ -93,7 +93,13 @@ def test_forgotten_terms_are_removed_from_new_snapshots_and_restores(store, tmp_
 def test_migration_rebuilds_fts_mapping_and_removes_derived_orphans(store):
     record = put(store)
     with store.connection(write=True) as db:
-        db.execute("DROP TABLE memory_fts_rows")
+        for table in (
+            "memory_fts_rows",
+            "oauth_request_approvals",
+            "oauth_client_revocations",
+            "oauth_config_commits",
+        ):
+            db.execute(f"DROP TABLE {table}")
         db.execute(
             "INSERT INTO memory_fts(memory_id,title,content) "
             "VALUES ('orphaned-derived-row','','old')"

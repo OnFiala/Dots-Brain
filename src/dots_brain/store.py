@@ -16,6 +16,7 @@ from contextlib import closing, contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
+from .database_io import open_readonly
 from .errors import (
     CapabilityError,
     ConflictError,
@@ -28,7 +29,8 @@ from .errors import (
 )
 from .installation_state import marker_path
 from .local import locked, publish_new, sync_directory, sync_file_and_parent
-from .schema import APPLICATION_ID, SCHEMA_VERSION, create_schema, validate_schema
+from .schema import APPLICATION_ID as APPLICATION_ID
+from .schema import SCHEMA_VERSION, create_schema, validate_schema
 
 MIN_SQLITE_VERSION = (3, 42, 0)
 WAL_LOCK_TIMEOUT = 10.0
@@ -161,7 +163,6 @@ class Store:
         if not self.path.exists():
             self._create_database()
         with self.connection() as db:
-            validate_schema(db, SCHEMA_VERSION)
             enable_wal(db)
 
     def _create_database(self) -> None:
@@ -192,22 +193,14 @@ class Store:
             raise InputError("Memory is not initialized. Run dots-brain setup first.")
         if self.path.is_symlink():
             raise InputError("The database must not be a symbolic link.")
+        # Opening and closing a writable connection can checkpoint a WAL even
+        # when no statement writes. Reject unsupported stores before that open.
+        with closing(open_readonly(self.path)) as preflight:
+            self._validate_connection(preflight)
         db = sqlite3.connect(self.path, timeout=10)
         db.row_factory = sqlite3.Row
         try:
-            version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version in (1, 2):
-                raise MigrationRequiredError(
-                    f"Database schema v{version} requires an explicit offline migration; "
-                    "run dots-brain migrate, then migrate --apply --writers-stopped."
-                )
-            if version != SCHEMA_VERSION:
-                raise IntegrityError(
-                    "Unsupported database version; use a compatible Brain release."
-                )
-            application = db.execute("PRAGMA application_id").fetchone()[0]
-            if application != APPLICATION_ID:
-                raise IntegrityError("This file belongs to another application.")
+            self._validate_connection(db)
             db.execute("PRAGMA foreign_keys=ON")
             db.execute("PRAGMA secure_delete=ON")
             db.execute("PRAGMA synchronous=FULL")
@@ -220,6 +213,32 @@ class Store:
             raise
         finally:
             db.close()
+
+    @staticmethod
+    def _validate_connection(db: sqlite3.Connection) -> None:
+        version = db.execute("PRAGMA user_version").fetchone()[0]
+        if version in (1, 2):
+            raise MigrationRequiredError(
+                f"Database schema v{version} requires an explicit offline migration; "
+                "run dots-brain migrate, then migrate --apply --writers-stopped."
+            )
+        if version != SCHEMA_VERSION:
+            raise IntegrityError(
+                "Unsupported database version; use a compatible Brain release and run "
+                "dots-brain --data-dir /absolute/private/memory doctor."
+            )
+        if db.execute("PRAGMA application_id").fetchone()[0] != APPLICATION_ID:
+            raise IntegrityError(
+                "This file belongs to another application. Select a known Dots Brain data "
+                "directory and run dots-brain --data-dir /absolute/private/memory doctor."
+            )
+        try:
+            validate_schema(db, version)
+        except IntegrityError as exc:
+            raise IntegrityError(
+                f"{exc} Select a known Dots Brain data directory and run "
+                "dots-brain --data-dir /absolute/private/memory doctor."
+            ) from None
 
     @staticmethod
     def _filter(projects: tuple[str, ...] | None, project: str | None = None):

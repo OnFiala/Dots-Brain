@@ -27,14 +27,16 @@ def main():
     require(
         not Path(dots_brain.__file__).resolve().is_relative_to(root), "Imported source, not wheel"
     )
-    fixtures = sorted((root / "tests/fixtures/historical").glob("v*-*"))
+    fixtures = sorted(
+        path.parent for path in (root / "tests/fixtures/historical").glob("*/manifest.json")
+    )
     require(
-        len(fixtures) == 2
+        len(fixtures) == 4
         and {
             json.loads((path / "manifest.json").read_text())["schema_version"] for path in fixtures
         }
         == {1, 2},
-        "Both historical schema fixtures are required",
+        "Both historical schemas and both intermediate 7085841 fixtures are required",
     )
     with tempfile.TemporaryDirectory(prefix="dots-wheel-") as name:
         directory = Path(name)

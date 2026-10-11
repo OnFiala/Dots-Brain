@@ -3,12 +3,11 @@
 import sqlite3
 
 from .errors import IntegrityError
-from .schema import SCHEMA_VERSION, validate_schema
+from .schema import validate_schema
 
 
 def validate_snapshot(db: sqlite3.Connection, version: int) -> dict[str, int]:
-    if version == SCHEMA_VERSION:
-        validate_schema(db, version)
+    validate_schema(db, version)
     if db.execute("PRAGMA user_version").fetchone()[0] != version:
         raise IntegrityError("Database schema does not match the requested recovery operation.")
     if db.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
@@ -27,8 +26,12 @@ def validate_snapshot(db: sqlite3.Connection, version: int) -> dict[str, int]:
     ).fetchone():
         raise IntegrityError("A memory has no current revision; recovery was not applied.")
     if db.execute(
-        f"SELECT 1 FROM memories m WHERE m.{column} != "
-        "(SELECT COUNT(*) FROM revisions r WHERE r.memory_id=m.id) LIMIT 1"
+        f"SELECT 1 FROM memories m WHERE typeof(m.{column}) != 'integer' OR m.{column} != "
+        "(SELECT COUNT(*) FROM revisions r WHERE r.memory_id=m.id) "
+        "OR 1 != (SELECT MIN(revision) FROM revisions r WHERE r.memory_id=m.id) "
+        f"OR m.{column} != (SELECT MAX(revision) FROM revisions r WHERE r.memory_id=m.id) "
+        "OR EXISTS (SELECT 1 FROM revisions r WHERE r.memory_id=m.id "
+        "AND typeof(r.revision) != 'integer') LIMIT 1"
     ).fetchone():
         raise IntegrityError("Memory revision counts are inconsistent.")
     tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}

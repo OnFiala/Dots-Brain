@@ -6,10 +6,11 @@ requires a new SCHEMA_VERSION and a migration test from a historical fixture.
 
 from __future__ import annotations
 
-import re
+import json
 import sqlite3
 from contextlib import closing
 from functools import lru_cache
+from importlib.resources import files
 
 from .errors import IntegrityError
 
@@ -233,10 +234,53 @@ def create_schema(db: sqlite3.Connection) -> None:
     db.execute(f"PRAGMA application_id={APPLICATION_ID}")
 
 
-def _objects(db: sqlite3.Connection) -> dict[str, tuple[str, str]]:
+@lru_cache(maxsize=256)
+def _sql_tokens(sql: str) -> tuple[str, ...]:
+    """Ignore formatting outside SQL tokens, never whitespace inside a literal.
+
+    This is deliberately lexical, not a general SQL equivalence checker. Quoted
+    names, literals, comments, operators and word boundaries remain significant.
+    Each input character is visited once; historical contracts are frozen below.
+    """
+    tokens = []
+    cursor = 0
+    while cursor < len(sql):
+        start, char = cursor, sql[cursor]
+        cursor += 1
+        if char.isspace():
+            continue
+        if char in "'\"`[":
+            end_quote = "]" if char == "[" else char
+            while cursor < len(sql):
+                if sql[cursor] == end_quote:
+                    cursor += 1
+                    if char != "[" and sql[cursor : cursor + 1] == end_quote:
+                        cursor += 1
+                        continue
+                    break
+                cursor += 1
+        elif sql[start : start + 2] == "--":
+            cursor = sql.find("\n", cursor + 1)
+            if cursor < 0:
+                cursor = len(sql)
+        elif sql[start : start + 2] == "/*":
+            end = sql.find("*/", cursor + 1)
+            cursor = len(sql) if end < 0 else end + 2
+        elif char.isalnum() or char in "_$":
+            while cursor < len(sql) and (sql[cursor].isalnum() or sql[cursor] in "_$"):
+                cursor += 1
+        elif sql[start : start + 2] in {"!=", "<=", ">=", "==", "<>", "||", "<<", ">>", "->"}:
+            cursor += 1
+            if sql[start:cursor] == "->" and sql[cursor : cursor + 1] == ">":
+                cursor += 1
+        tokens.append(sql[start:cursor])
+    return tuple(tokens)
+
+
+def _objects(db: sqlite3.Connection) -> dict[str, tuple[str, tuple[str, ...]]]:
     """Compare declared schema objects; SQLite-owned FTS shadow tables are derived."""
     return {
-        name: (kind, re.sub(r"\s+", " ", sql.strip()))
+        name: (kind, _sql_tokens(sql))
         for name, kind, sql in db.execute(
             "SELECT name,type,sql FROM sqlite_master WHERE sql IS NOT NULL ORDER BY name"
         )
@@ -252,18 +296,16 @@ def _objects(db: sqlite3.Connection) -> dict[str, tuple[str, str]]:
     }
 
 
-@lru_cache(maxsize=2)
-def _reference_objects(legacy_v1: bool) -> dict[str, tuple[str, str]]:
+@lru_cache(maxsize=3)
+def _reference_objects(version: int) -> dict[str, tuple[str, tuple[str, ...]]]:
+    if version in (1, 2):
+        historical = json.loads(files("dots_brain").joinpath("historical_schema.json").read_text())
+        return {
+            name: (value["type"], _sql_tokens(value["sql"]))
+            for name, value in historical["versions"][str(version)].items()
+        }
     with closing(sqlite3.connect(":memory:")) as reference:
         for statement in STATEMENTS:
-            if legacy_v1 and statement == MEMORIES:
-                statement = statement.replace(
-                    "identity_key TEXT NOT NULL", "source_key TEXT UNIQUE NOT NULL"
-                )
-                statement = statement.replace("current_revision", "revision")
-                statement = statement.replace(",\n    UNIQUE(project, identity_key)", "")
-            elif legacy_v1 and statement == REVISIONS:
-                statement = statement.replace(" writer_principal TEXT NOT NULL,", "")
             reference.execute(statement)
         return _objects(reference)
 
@@ -279,7 +321,7 @@ def validate_schema(db: sqlite3.Connection, version: int) -> None:
         or application not in allowed_ids
     ):
         raise IntegrityError("Not a supported Dots Brain database; no migration was applied.")
-    actual, reference = _objects(db), _reference_objects(version == 1)
+    actual, reference = _objects(db), _reference_objects(version)
     core = {"memories", "revisions", "memory_fts", "suppressions", "vectors", "clients"}
     oauth_base = {
         "oauth_clients",
