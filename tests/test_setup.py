@@ -52,8 +52,8 @@ def test_adapter_preserves_other_settings_is_idempotent_and_refuses_conflicts(tm
     )
     path.write_text(original)
     entry = {"command": sys.executable, "args": ["-m", "dots_brain.cli", "bridge"]}
-    assert configure(path, provider=provider, entry=entry)
-    assert not configure(path, provider=provider, entry=entry)
+    assert configure(path, directory=tmp_path / "memory", provider=provider, entry=entry)
+    assert not configure(path, directory=tmp_path / "memory", provider=provider, entry=entry)
     text = path.read_text()
     document = tomllib.loads(text) if provider == "codex" else json.loads(text)
     key = "mcp_servers" if provider == "codex" else "mcpServers"
@@ -66,7 +66,9 @@ def test_adapter_preserves_other_settings_is_idempotent_and_refuses_conflicts(tm
         assert document[key]["other"] == {"command": "other"}
     assert path.with_name(path.name + ".before-dots-brain").read_text() == original
     with pytest.raises(InputError):
-        configure(path, provider=provider, entry={"command": "different"})
+        configure(
+            path, directory=tmp_path / "memory", provider=provider, entry={"command": "different"}
+        )
     assert path.read_text() == text
 
 

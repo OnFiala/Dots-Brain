@@ -41,7 +41,9 @@ def record_connection(store, config, provider="cursor", *, legacy=False):
     )
     entry = bridge_entry(connection, store.directory, provider)
     ownership = {"credential_hash": file_hash(connection)}
-    configure(config, provider=provider, entry=entry, ownership=ownership)
+    configure(
+        config, directory=store.directory, provider=provider, entry=entry, ownership=ownership
+    )
     record = {
         "provider": provider,
         "config_file": str(config),
@@ -137,14 +139,16 @@ def test_removal_preserves_current_settings_and_never_restores_whole_backup(tmp_
         doc["theme"] = "new"
         doc["mcpServers"]["other"] = {"command": "keep"}
         write_json(config, doc)
-    assert remove_entry(record, dry_run=False)["state"] == "removed"
+    assert remove_entry(record, directory=store.directory, dry_run=False)["state"] == "removed"
     if provider == "codex":
         assert tomlkit.parse(config.read_text())["model"] == "new"
         assert "# comment" in config.read_text()
     else:
         assert read_json(config) == {"theme": "new", "mcpServers": {"other": {"command": "keep"}}}
     assert backup.read_bytes() == backup_before
-    assert remove_entry(record, dry_run=False)["state"] == "already_absent"
+    assert (
+        remove_entry(record, directory=store.directory, dry_run=False)["state"] == "already_absent"
+    )
 
 
 @pytest.mark.parametrize("kind", ["modified", "malformed", "symlink"])

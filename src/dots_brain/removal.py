@@ -12,6 +12,7 @@ from tomlkit import items as toml_items
 from .auth import revoke_client
 from .clients import (
     PROVIDERS,
+    config_lock_path,
     file_hash,
     integration_key,
     legacy_notice,
@@ -81,7 +82,7 @@ def retain_toml_comments(document, item):
             retain_toml_comments(document, child)
 
 
-def remove_entry(record: dict, *, dry_run: bool) -> dict:
+def remove_entry(record: dict, *, directory: Path, dry_run: bool) -> dict:
     path, provider = Path(record["config_file"]), record["provider"]
     result = {"provider": provider, "config_file": str(path)}
 
@@ -133,7 +134,7 @@ def remove_entry(record: dict, *, dry_run: bool) -> dict:
         # A preview must not create directories or lock files.
         if dry_run or not path.exists():
             return change()
-        with locked(path.with_name(path.name + ".dots-brain.lock")):
+        with locked(config_lock_path(directory, path)):
             return change()
     except InputError as error:
         return {
@@ -230,7 +231,7 @@ def disconnect_client(
         record = registry["items"].get(key)
         if record is None:
             return {"state": "partial" if issues else "already_absent", "issues": issues}
-        result = remove_entry(record, dry_run=dry_run)
+        result = remove_entry(record, directory=store.directory, dry_run=dry_run)
         if dry_run:
             return {"state": "preview", "client": result, "changes_applied": False}
         if result["state"] not in {"removed", "already_absent"}:
@@ -288,7 +289,10 @@ def uninstall(
 ) -> dict:
     def remove():
         registry, issues = inventory(store, extra_configs or [])
-        results = [remove_entry(record, dry_run=True) for record in registry["items"].values()]
+        results = [
+            remove_entry(record, directory=store.directory, dry_run=True)
+            for record in registry["items"].values()
+        ]
         common = {
             "data_dir": str(store.directory),
             "data_preserved": True,
@@ -352,7 +356,7 @@ def uninstall(
             results = []
             remaining = {}
             for key, record in registry["items"].items():
-                result = remove_entry(record, dry_run=False)
+                result = remove_entry(record, directory=store.directory, dry_run=False)
                 results.append(result)
                 if not record["local"]:
                     issues.append(

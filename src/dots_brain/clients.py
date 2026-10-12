@@ -102,9 +102,15 @@ def file_hash(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def config_lock_path(directory: Path, path: Path) -> Path:
+    digest = hashlib.sha256(str(path.resolve()).encode("utf-8")).hexdigest()
+    return directory / f"config-{digest}.lock"
+
+
 def configure(
     path: Path,
     *,
+    directory: Path,
     provider: str,
     entry: dict,
     dry_run=False,
@@ -112,7 +118,8 @@ def configure(
     ownership=None,
     publish=None,
 ) -> bool:
-    with locked(path.with_name(path.name + ".dots-brain.lock")):
+    lock = config_lock_path(directory, path)
+    with locked(lock):
         if path.is_symlink():
             raise InputError("Client configuration must not be a symbolic link.")
         existed = path.exists()
@@ -169,17 +176,19 @@ def configure(
             atomic_write(backup, original, expected=(False, b""))
             if rollback is not None:
                 rollback.callback(
-                    _undo_configuration, path, original, content, existed, backup, rollback
+                    _undo_configuration, path, original, content, existed, backup, rollback, lock
                 )
         if rollback is not None:
-            rollback.callback(_undo_configuration, path, original, content, existed, None, rollback)
+            rollback.callback(
+                _undo_configuration, path, original, content, existed, None, rollback, lock
+            )
         atomic_write(path, content, preserve=True, expected=(existed, original.encode("utf-8")))
         return True
 
 
-def _undo_configuration(path, original, written, existed, new_backup, rollback):
+def _undo_configuration(path, original, written, existed, new_backup, rollback, lock):
     try:
-        with locked(path.with_name(path.name + ".dots-brain.lock")):
+        with locked(lock):
             if path.is_symlink():
                 raise InputError("Concurrent configuration change.")
             current = path.read_text(encoding="utf-8") if path.exists() else ""
@@ -313,6 +322,7 @@ def _connect_client(store, *, provider, config, connection, projects, mcp_url, r
         with locked(private / f"{provider}.lock"):
             configure(
                 target,
+                directory=store.directory,
                 provider=provider,
                 entry=bridge_entry(connection, store.directory if managed else None, provider),
                 dry_run=True,
@@ -343,7 +353,7 @@ def _connect_client(store, *, provider, config, connection, projects, mcp_url, r
         connection = connection.expanduser().absolute()
         client_id = read_connection(connection)["client_id"]
     entry = bridge_entry(connection, store.directory if managed else None, provider)
-    configure(target, provider=provider, entry=entry, dry_run=True)
+    configure(target, directory=store.directory, provider=provider, entry=entry, dry_run=True)
     check = asyncio.run(
         asyncio.wait_for(
             _read_probe(
@@ -376,6 +386,7 @@ def _connect_client(store, *, provider, config, connection, projects, mcp_url, r
     )
     changed = configure(
         target,
+        directory=store.directory,
         provider=provider,
         entry=entry,
         rollback=rollback,

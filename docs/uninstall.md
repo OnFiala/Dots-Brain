@@ -51,7 +51,13 @@ ownership is not inferred from a matching command or filename.
 | Pre-existing or changed backup | Preserve. A whole-file backup is never restored over current settings. |
 | Local credential created by connect | Revoke only its recorded access; remove the file only with unchanged ownership evidence. A changed file is preserved. |
 | Supplied remote credential | Preserve the file; report `issuer_revocation_required`. Local entry removal does not prove remote revocation. |
-| Created directories | Remove only empty directories. Persistent advisory lock files and nonempty directories remain. |
+| Created directories | Remove only empty directories. Config locks live in the Dots Brain data directory, named by the SHA-256 of the resolved config path. Nonempty directories remain. |
+
+Older versions left `<config>.dots-brain.lock` beside application configurations.
+These files are not removed automatically: deleting a lock used by another process
+could allow concurrent writes. After stopping all older Dots Brain connect,
+disconnect and uninstall processes, you may remove these old adjacent lock files
+manually. New operations keep their persistent config locks in the data directory.
 
 Results distinguish entry cleanup, access revocation, credential-file cleanup
 and directory retention. A revocation failure keeps the registration for retry.

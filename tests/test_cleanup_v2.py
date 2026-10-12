@@ -101,7 +101,14 @@ def install(tmp_path, monkeypatch):
             if publish_hook is not None:
                 publish_hook(config)
 
-        configure(config, provider=provider, entry=entry, ownership=ownership, publish=publish)
+        configure(
+            config,
+            directory=store.directory,
+            provider=provider,
+            entry=entry,
+            ownership=ownership,
+            publish=publish,
+        )
         return SimpleNamespace(
             store=store,
             issuer=issuer,
@@ -358,8 +365,7 @@ def test_created_config_and_directories_are_removed_only_when_empty(install, ext
         )
     else:
         assert not private.exists()
-    # The persistent configuration lock is an explicit reason to retain its directory.
-    assert item.config.parent.exists()
+    assert item.config.parent.exists() == (extra == "configuration")
 
 
 def test_remote_supplied_credential_requires_issuer_revocation_without_local_database(install):
@@ -389,6 +395,7 @@ def test_backup_created_by_publisher_survives_collision_and_rollback(tmp_path, f
     with pytest.raises(InputError, match="concurrent|collision"), ExitStack() as rollback:
         configure(
             config,
+            directory=tmp_path / "memory",
             provider="cursor",
             entry={"command": "synthetic-bridge"},
             ownership={},
@@ -397,6 +404,50 @@ def test_backup_created_by_publisher_survives_collision_and_rollback(tmp_path, f
         )
     assert config.read_bytes() == original
     assert backup.read_bytes() == foreign
+
+
+@pytest.mark.parametrize("provider", ["claude-code", "cursor", "codex", "mcp-json"])
+@pytest.mark.parametrize("legacy_lock", [False, True])
+def test_connect_disconnect_leaves_home_unchanged(tmp_path, monkeypatch, provider, legacy_lock):
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+    config = clients.target_path(provider, home / "mcp.json" if provider == "mcp-json" else None)
+    if legacy_lock:
+        config.parent.mkdir(parents=True, exist_ok=True)
+        config.with_name(config.name + ".dots-brain.lock").write_bytes(b"legacy lock")
+    before = {p.relative_to(home): p.read_bytes() if p.is_file() else None for p in home.rglob("*")}
+    store = Store(tmp_path / "memory")
+    store.initialize()
+
+    async def probe(*args, **kwargs):
+        return {"state": "verified_read", "read": True, "write": "not_tested"}
+
+    monkeypatch.setattr(clients, "_read_probe", probe)
+    monkeypatch.setattr(clients, "up", lambda *a, **kw: pytest.fail("Unexpected managed service"))
+    clients.connect_client(
+        store, provider=provider, config=config, mcp_url="http://127.0.0.1:9876/mcp"
+    )
+    record = registrations(store.directory)["items"][integration_key(provider, config)]
+    token = read_connection(Path(record["connection_file"]))["token"]
+    assert authenticate(store, token) is not None
+    lock = clients.config_lock_path(store.directory, config)
+    assert lock.is_file() and lock.parent == store.directory
+    assert (
+        clients.config_lock_path(
+            store.directory, config.parent / ".." / config.parent.name / config.name
+        )
+        == lock
+    )
+    result = disconnect_client(store, provider=provider, config=config)
+    assert result["state"] == "disconnected" and result["access"] == "revoked"
+    assert result["client"]["file"] == "removed_empty_owned_file"
+    assert authenticate(store, token) is None
+    assert {
+        p.relative_to(home): p.read_bytes() if p.is_file() else None for p in home.rglob("*")
+    } == before
+    assert lock.is_file()
 
 
 @pytest.mark.parametrize("preexisting", [False, True])
