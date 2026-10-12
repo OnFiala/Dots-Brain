@@ -58,12 +58,27 @@ detect missed reviews; a running helper does not prove full provider capture.
 This source does not update an installed reviewer, private target or automation.
 Keep operator reports private: sanitized metadata can still contain personal text.
 
-`capture` remains an explicitly configured bounded JSONL snapshot import. It is
-not continuous provider history or a new-session memory guarantee. CORTEX is
-also an existing optional surface. Neither is activated or certified by batch 1;
-their separation and disabled core default belong to a later batch. Preserve
-existing module state and obtain specific authorization before import, upstream
-publication or changing a running collector.
+## Disabled modules
+
+Snapshot capture and the CORTEX connector are disabled in this candidate. Their
+existing source and characterization tests are retained under `modules/`, which
+is excluded from both the core wheel and source distribution. The core requires
+no module installation or module-specific dependency. Existing `capture` and
+`cortex` CLI names return `capability_unavailable` before opening the store,
+locks, source snapshots, credentials or a network connection. Supplying the old
+flags or retaining a valid `cortex.json` cannot activate them.
+
+Core startup leaves old CORTEX configuration, capture cursors, collection locks,
+coverage receipts and delivery locks alone. Existing CORTEX ledger tables remain;
+clean core setup and v1 migration do not create them. An explicit restore retains
+its existing safety treatment of historical in-flight ledger entries, as described
+in [architecture](architecture.md).
+
+There is no activation command or installer for these modules in this candidate.
+Internal repairs, import, upstream publication and changing a running collector
+require a separately approved activation plan. The preserved module tests exercise
+legacy code with explicit test-only wiring; their success does not certify those
+deferred repairs, complete provider history or a new-session memory guarantee.
 
 See [using memory](using-memory.md) for source identity and deletion semantics,
 and [verification](verification.md) for the acceptance boundaries.

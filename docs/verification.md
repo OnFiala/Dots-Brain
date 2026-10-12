@@ -4,7 +4,33 @@ Source, installed artifact, live protocol and assistant behavior are separate
 results. This branch is an unreleased schema-v2 candidate. Tests use disposable
 synthetic stores and isolate client configuration from the operator's home.
 
-## Local batch-2 evidence
+## Local batch-3 evidence
+
+The complete repository run on Python 3.11/macOS has **481 passed, 0 failed,
+9 skipped** from 490 cases, including the prepared real CPU model and preserved
+source-only module characterizations. The skips require Linux process control.
+Twelve new disabled-module cases fail against the preceding source and pass with
+the separation. They trap optional imports, file/resource access and network
+attempts, verify real in-process MCP, and check both fresh and historical state.
+The transport in their `serve` tests is stubbed; this is labeled separately from
+the installed wheel's real stdio MCP smoke below.
+
+The core wheel and sdist exclude both module packages and their tests. A fresh
+offline environment installs the wheel with only locked core dependencies;
+released-v1 migration, revisions, grants, deletion, restore and real stdio MCP
+pass there. Module SQL and implementation bodies are preserved outside core;
+old module state is not migrated or deleted. Two recovery cases also reject
+cutover when an optional ledger exists on only one side.
+The installed core also exposes exactly nine core/audit MCP tools, rejects both
+disabled CLI commands before creating state, preserves historical module files,
+and runs without either module package or the optional embedding dependency.
+
+The preceding lock-location fix has **86 passed / 6 Linux skips** in the client
+matrix, including all four adapters with and without old adjacent lock files.
+The new config lock is inside the Dots Brain data directory; an untouched created
+client configuration leaves no new home-directory residue after disconnect.
+
+## Batch-2 evidence
 
 The final Python 3.11/macOS integration run has **459 passed, 0 failed, 9 skipped**
 from 468 cases. The real prepared CPU model test ran. All skips require Linux
@@ -17,9 +43,13 @@ remain in place after updating two expected error outcomes.
 Operator tests simulate bootstrap children; they do not prove an installation.
 CI now uses locked dependencies, a 20-minute timeout and actual nginx/systemd
 syntax tools on temporary template copies. Those Linux commands and remote CI
-have not run on this macOS host. The supervisor must repeat the crash-recovery
-case, full suite and disconnect matrix on the exact batch-2 checkpoint. Actual
-systemd operation, public ingress and production restoration remain separate.
+have not run on this macOS host. A separate Linux supervisor reported **468
+passed / 0 skipped twice**, **30/30** crash-recovery runs and **84 passed** in the
+client matrix on `68be851`, with Python 3.12.3 and SQLite 3.45.1. It found the CI
+placeholder bind defect and verified nginx/systemd syntax after changing only
+the temporary copy to loopback, as CI now does. That evidence identifies batch 2;
+subsequent lock and module changes need their own Linux check. Actual systemd
+operation, public ingress and production restoration remain separate.
 
 ## Earlier batch-1 evidence
 
@@ -31,8 +61,8 @@ project/links validation and an offline source/wheel build also passed.
 
 ```sh
 uv sync --locked --all-extras
-uv run ruff check src tests scripts
-uv run ruff format --check src tests scripts
+uv run ruff check src tests scripts modules
+uv run ruff format --check src tests scripts modules
 uv run pytest -q
 uv run python scripts/validate_project.py
 uv build --offline
@@ -70,13 +100,16 @@ judgment remains required; the corpus and helper are not repository content.
 - The 30-day grant boundary uses controlled fixture time, not 30 observed days.
 - Real-store copies, their backup/restore and the installed production artifact
   need explicit owner authorization and a target-bound recovery plan.
-- A Linux supervisor separately reported batch-1 coexistence on its exact commit.
-  Batch-2 changes require a new Linux run; macOS skips remain unverified here.
+- A Linux supervisor separately reported batch-1 and batch-2 coexistence on their exact commits.
+  Subsequent lock and batch-3 changes require a new Linux run; macOS skips remain unverified here.
   Actual systemd-unit acceptance belongs to a later approved production step.
-- Optional module separation belongs to batch 3 and has not started.
+- Optional modules remain disabled; their internal repairs and live activation
+  require a separate target-specific plan.
 
-The independent AI reviewer read the lifecycle patch and its repairs; its
-read-only role was procedural, not enforced OS isolation. Runtime checks above
-were run by the main operator. Keep the checkpoint's exact commit, artifact
-hashes, commands and reports together outside the public repository. A code
-revert cannot restore erased data, invalidated access or old FTS compatibility.
+Independent AI review covered the batch-2 lifecycle repairs and the frozen
+batch-3 patch. Batch 3 had no supported code finding and 95 independently passing
+targeted cases. Read-only roles were procedural, not enforced OS isolation; the
+main operator owns integrated acceptance and final artifact verification. Keep
+the checkpoint's exact commit, artifact hashes, commands and reports together
+outside the public repository. A code revert cannot restore erased data,
+invalidated access or old FTS compatibility.

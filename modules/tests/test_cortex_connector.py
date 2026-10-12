@@ -7,8 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
-
-from dots_brain.cortex_connector import (
+from dots_brain_cortex.connector import (
     SCHEMA_SQL,
     CortexConnectionConfig,
     CortexConnector,
@@ -18,6 +17,7 @@ from dots_brain.cortex_connector import (
     _read_token,
     setup_cortex_operations,
 )
+
 from dots_brain.errors import InputError, NotFoundError
 from dots_brain.privacy import guard_content
 from dots_brain.store import Store
@@ -242,6 +242,8 @@ def test_parent_schema_helper_installs_only_the_distinct_ledger_table():
 def test_concurrent_sqlite_claim_sends_once_and_survives_reconstruction(tmp_path):
     store = Store(tmp_path / "brain")
     store.initialize()
+    with store.connection(write=True) as db:
+        setup_cortex_operations(db)
     barrier = threading.Barrier(2)
     local = threading.local()
 
@@ -285,6 +287,8 @@ def test_concurrent_sqlite_claim_sends_once_and_survives_reconstruction(tmp_path
 def test_read_and_receipt_boundaries_remove_upstream_secrets(tmp_path):
     store = Store(tmp_path / "brain")
     store.initialize()
+    with store.connection(write=True) as db:
+        setup_cortex_operations(db)
     transport = Transport(
         {
             "cortex_brief": {
@@ -365,7 +369,7 @@ def test_reconciliation_requires_actor_project_and_exact_origin():
         ]
         == "indeterminate"
     )
-    from dots_brain.cortex_connector import _origin
+    from dots_brain_cortex.connector import _origin
 
     transport.replies["cortex_fetch"]["stored_object"]["content_text"] = _origin(
         caller.principal, "dots://memory/1@1", operation_id
@@ -414,6 +418,8 @@ def test_project_mapping_cannot_collapse_caller_boundaries(mapping):
 def test_receipt_storage_failure_reports_uncertain_without_resending(tmp_path, failure):
     store = Store(tmp_path / "brain")
     store.initialize()
+    with store.connection(write=True) as db:
+        setup_cortex_operations(db)
 
     class FailedLedger(SqliteCortexLedger):
         fail_readback = False
@@ -458,6 +464,8 @@ def test_receipt_storage_failure_reports_uncertain_without_resending(tmp_path, f
 def test_reconciliation_preserves_original_acknowledgement(tmp_path):
     store = Store(tmp_path / "brain")
     store.initialize()
+    with store.connection(write=True) as db:
+        setup_cortex_operations(db)
     transport = Transport({"cortex_record_note": {"event_id": "event-ack-1"}})
     service = connector(transport, SqliteCortexLedger(store))
     caller = policy("cortex:write")

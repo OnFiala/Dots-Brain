@@ -14,10 +14,9 @@ from .store import Store
 
 
 class MemoryService:
-    def __init__(self, store: Store, semantic=None, cortex=None):
-        self.store, self.semantic, self.cortex = store, semantic, cortex
+    def __init__(self, store: Store, semantic=None):
+        self.store, self.semantic = store, semantic
         self.audit = AuditLog(store)
-        self.cortex_error = None
 
     def mutate(self, function, *, policy: Policy, audit_project: str, action: str, **arguments):
         """Record an intent before mutation and a receipt after its transaction.
@@ -170,6 +169,5 @@ class MemoryService:
                 "coverage": "memory_mutations_and_submitted_events",
                 "provider_wide_capture": "unverified",
             },
-            "cortex": "configured_not_verified" if self.cortex else "not_configured",
-            "cortex_error": self.cortex_error,
+            "cortex": "disabled",
         }

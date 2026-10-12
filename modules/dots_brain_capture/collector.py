@@ -12,9 +12,9 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from .errors import InputError
-from .local import locked, write_json
-from .privacy import sanitize
+from dots_brain.errors import InputError
+from dots_brain.local import locked, write_json
+from dots_brain.privacy import sanitize
 
 _AUDIT_TYPES = frozenset(
     {"shell_command", "mcp_tool_call", "browser_navigation", "computer_use_session"}

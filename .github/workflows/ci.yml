@@ -61,8 +61,8 @@ jobs:
                   check=True,
               )
           PY
-      - run: uv run ruff check src tests scripts
-      - run: uv run ruff format --check src tests scripts
+      - run: uv run ruff check src tests scripts modules
+      - run: uv run ruff format --check src tests scripts modules
       - run: uv run pytest -q
       - run: uv run python scripts/validate_project.py
       - run: uv build

@@ -17,9 +17,12 @@ continuous capture, CORTEX endpoint, host reboot, or host-loss recovery works
 without direct evidence. A missing device path is a concrete boundary, not a reason
 to create another database or weaken account controls.
 
-CORTEX operation ownership follows the authenticated principal. OAuth token
+CORTEX and snapshot capture are disabled in this core candidate; there is no
+activation or publication path. The retained connector source has the following
+known constraint for any future activation plan: operation ownership follows the
+authenticated principal. OAuth token
 refresh retains that principal; a replacement grant creates a new operation
 namespace. Republishing under a new grant can create another upstream object.
-Use the local owner's operation inspection and reconcile the old publication
+Any future publication plan must inspect and reconcile the old publication
 before republishing. Stable bot identity across separate grants needs an explicit
 identity migration design; client registration alone does not establish it.

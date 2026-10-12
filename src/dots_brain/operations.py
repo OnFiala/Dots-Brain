@@ -87,7 +87,8 @@ def restore_store(backup: Path, target: Store, *, latest_deletions: Store) -> di
         with target.connection(write=True) as db:
             forgotten = _apply_deletions(db, legacy, scoped)
             db.execute("UPDATE clients SET revoked=1")
-            db.execute("UPDATE cortex_operations SET state='uncertain' WHERE state='sending'")
+            if _has_cortex_ledger(db):
+                db.execute("UPDATE cortex_operations SET state='uncertain' WHERE state='sending'")
             validate_snapshot(db, SCHEMA_VERSION)
         sync_file_and_parent(target.path)
     return {
@@ -124,6 +125,15 @@ def _revoke_credentials(store, db, recovery_id) -> None:
     revoke_all(store, db, reason="restore_reset", event_id="restore_reset:" + recovery_id)
 
 
+def _has_cortex_ledger(db) -> bool:
+    return (
+        db.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='cortex_operations'"
+        ).fetchone()
+        is not None
+    )
+
+
 def _validate_cutover_state(source, target) -> None:
     # Backups may lag new facts, audit events, or outbound receipts. Deletion
     # reconciliation alone does not make that rollback lossless. Compare canonical
@@ -142,6 +152,12 @@ def _validate_cutover_state(source, target) -> None:
     if _oauth_history(source) != _oauth_history(target):
         divergent.append("oauth_history")
     for name, query in queries.items():
+        if name == "cortex_operations":
+            present = [_has_cortex_ledger(db) for db in (source, target)]
+            if not all(present):
+                if any(present):
+                    divergent.append("cortex_operations=table_presence")
+                continue
         count = sum(
             tuple(left or ()) != tuple(right or ())
             for left, right in zip_longest(source.execute(query), target.execute(query))
@@ -353,32 +369,4 @@ def activate_restore(source: Store, target: Store, *, writers_stopped: bool) -> 
         "credentials": "revoked",
         "removed_at_cutover": len(forgotten),
         "service": "not_started",
-    }
-
-
-def configure_cortex(store: Store, *, endpoint: str, token_file: Path, projects: list[str]) -> dict:
-    from .cortex_connector import CortexConnectionConfig
-
-    mapping = {}
-    for item in projects:
-        local, separator, remote = item.partition("=")
-        if not separator or local in mapping:
-            raise InputError("Use one unique LOCAL_PROJECT=CORTEX_PROJECT mapping per option.")
-        mapping[local] = remote
-    config = CortexConnectionConfig(
-        endpoint, token_file.expanduser().absolute(), tuple(mapping.items())
-    )
-    store.status()
-    write_json(
-        store.directory / "cortex.json",
-        {
-            "endpoint": config.endpoint,
-            "token_file": str(config.token_file),
-            "project_mapping": mapping,
-        },
-    )
-    return {
-        "state": "configured_pending_verification",
-        "projects": list(mapping),
-        "restart_required": True,
     }

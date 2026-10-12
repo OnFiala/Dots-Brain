@@ -62,6 +62,7 @@ ID; the host log reports the missing receipt, and the v2 audit retains an unmatc
 intent. An audit intent failure prevents the mutation. A failed mutation keeps
 its original error even if recording the failure also fails.
 
-Configured optional CORTEX tools retain their existing implementation during
-batch 1. Their separation and activation are later work; this core verification
-does not prove an upstream receipt, publication or provider-wide capture.
+CORTEX tools are absent from the core server, including when old configuration
+or grants containing CORTEX scopes exist. Capture is also disabled. Preserved
+module code is outside the core wheel and source distribution; verification of
+its inactivity does not prove upstream publication or provider-wide capture.

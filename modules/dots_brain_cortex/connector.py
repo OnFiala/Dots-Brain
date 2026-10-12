@@ -24,7 +24,7 @@ from urllib.parse import urlsplit
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 
-from .errors import CapabilityError, ConflictError, InputError, NotFoundError
+from dots_brain.errors import CapabilityError, ConflictError, InputError, NotFoundError
 
 # This is intentionally separate from Store.SCHEMA.  The schema worker owns when
 # it is installed or migrated; connector calls never create tables implicitly.
@@ -142,7 +142,7 @@ class SqliteCortexLedger:
             )
 
     def claim_sending(self, operation_id: str, request_digest: str) -> bool:
-        from .store import now
+        from dots_brain.store import now
 
         with self.store.connection(write=True) as db:
             self.store.ensure_writable()
@@ -167,7 +167,7 @@ class SqliteCortexLedger:
         )
 
     def mark_uncertain(self, operation_id: str, *, error_code: str) -> None:
-        from .store import now
+        from dots_brain.store import now
 
         with self.store.connection(write=True) as db:
             self.store.ensure_writable()
@@ -178,7 +178,7 @@ class SqliteCortexLedger:
             )
 
     def _update(self, operation_id: str, **changes: object) -> None:
-        from .store import now
+        from dots_brain.store import now
 
         columns = list(changes)
         values = [changes[column] for column in columns]
@@ -321,7 +321,7 @@ class CortexConnector:
         brief = await self._transport.call_tool("cortex_brief", arguments)
         search = await self._transport.call_tool("cortex_search", {**arguments, "limit": limit})
         raw = {"project_id": cortex_project, "brief": brief, "search": search}
-        from .privacy import sanitize
+        from dots_brain.privacy import sanitize
 
         minimized = sanitize(raw, max_text=max_chars)
         context = _bounded_json(minimized.value, max_chars)
@@ -450,7 +450,7 @@ class CortexConnector:
             if state != "planned":
                 raise CortexConnectorError("CORTEX operation receipt is invalid.")
         else:
-            from .store import now
+            from dots_brain.store import now
 
             self._ledger.create_planned(
                 {
@@ -684,7 +684,7 @@ def _safe_receipt(receipt: Mapping[str, object]) -> dict:
     clean = {key: receipt[key] for key in ("event_id", "object_id") if _safe_id(receipt.get(key))}
     if not clean:
         raise CortexConnectorError("CORTEX returned no valid acknowledgement identifier.")
-    from .privacy import guard_content
+    from dots_brain.privacy import guard_content
 
     guard_content(clean)
     return clean

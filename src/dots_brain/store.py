@@ -71,11 +71,9 @@ PRAGMA user_version=2;
 def extension_statements() -> Iterator[str]:
     """Load feature schemas only at setup/migration, avoiding import-time cycles."""
     from .activity import SCHEMA_SQL as audit_sql
-    from .cortex_connector import SCHEMA_SQL as cortex_sql
     from .semantic import SCHEMA_SQL as semantic_sql
 
     yield from audit_sql
-    yield from (statement for statement in cortex_sql.split(";") if statement.strip())
     yield from semantic_sql
 
 
@@ -498,7 +496,7 @@ class Store:
         return {
             **dict(counts),
             "sources": [dict(r) for r in sources],
-            "capture": "explicit_writes_and_opt_in_snapshots",
+            "capture": "disabled",
             "continuous_capture": "unverified",
             "history_import": "bounded_user_text_snapshots",
         }

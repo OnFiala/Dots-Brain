@@ -1,12 +1,10 @@
 import json
-from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 
 import pytest
 
 from dots_brain.activity import AuditLog
 from dots_brain.auth import Policy
-from dots_brain.capture import JSONLCollector, normalize_transcript_record
 from dots_brain.errors import ConflictError, InputError, NotFoundError
 from dots_brain.privacy import guard_content, sanitize
 from dots_brain.store import Store
@@ -72,31 +70,6 @@ def test_audit_chain_rejects_tampering_and_receipt_requires_actor_intent(tmp_pat
             db.execute("UPDATE audit_events SET kind='gap'")
 
 
-def test_collector_waits_for_ack_partial_line_and_rotation(tmp_path):
-    export, cursor, delivered = tmp_path / "audit.jsonl", tmp_path / "cursor.json", []
-    export.write_text(
-        json.dumps({"ts": "2026-01-01T00:00:00Z", "type": "shell_command", "command": "echo hi"})
-        + "\n"
-        + "{"
-    )
-    collector = JSONLCollector([export], cursor, lambda item: delivered.append(item))
-    assert collector.collect() == 1 and len(delivered) == 1
-    assert collector.collect() == 0
-    export.write_text(json.dumps({"type": "shell_command", "command": "x"}) + "\n")
-    assert collector.collect() == 2 and delivered[-1]["kind"] == "action"
-    assert "ABCDEFGHIJKLMNOPQRSTUVWXYZ" not in json.dumps(delivered[-1])
-
-
-def test_transcript_excludes_system_and_marks_unknown_shape():
-    system = normalize_transcript_record({"role": "system", "message": "secret"})
-    unknown = normalize_transcript_record({"role": "assistant", "message": {"reasoning": "hidden"}})
-    visible = normalize_transcript_record(
-        {"role": "user", "message": {"content": [{"type": "text", "text": "hello"}]}}
-    )
-    assert system["kind"] == unknown["kind"] == "gap"
-    assert visible["details"]["content"] == "hello"
-
-
 @pytest.mark.parametrize(
     "text",
     [
@@ -118,45 +91,6 @@ def test_strict_guard_preserves_long_valid_content_and_rejects_truncation():
     assert guard_content(value) == value
     with pytest.raises(InputError, match="size or structure"):
         guard_content({"content": "x" * 32001})
-
-
-def test_rotation_checkpoint_survives_without_a_complete_next_line(tmp_path):
-    export, cursor, delivered = tmp_path / "audit.jsonl", tmp_path / "cursor.json", []
-    export.write_text('{"type":"shell_command","command":"echo hello"}\n')
-    collector = JSONLCollector([export], cursor, lambda item: delivered.append(item))
-    assert collector.collect() == 1
-    export.write_text("{")
-    assert collector.collect() == 1
-    assert delivered[-1]["kind"] == "gap"
-    assert collector.collect() == 0
-    assert len(delivered) == 2
-
-
-def test_collector_overlap_serializes_delivery_and_checkpoints(tmp_path):
-    export, cursor, delivered = tmp_path / "audit.jsonl", tmp_path / "cursor.json", []
-    export.write_text('{"type":"shell_command","command":"echo hello"}\n')
-
-    def run(_):
-        return JSONLCollector([export], cursor, lambda event: delivered.append(event)).collect()
-
-    with ThreadPoolExecutor(max_workers=2) as pool:
-        assert sorted(pool.map(run, range(2))) == [0, 1]
-    assert len(delivered) == 1
-
-
-def test_collector_missing_source_and_oversized_lines_are_acknowledged_gaps(tmp_path):
-    from dots_brain.capture import MAX_LINE_BYTES
-
-    export, cursor, delivered = tmp_path / "audit.jsonl", tmp_path / "cursor.json", []
-    collector = JSONLCollector([export], cursor, lambda event: delivered.append(event))
-    assert collector.collect() == 1
-    assert collector.collect() == 0
-    assert delivered[0]["action"]["reason"] == "source_unavailable"
-    export.write_text("x" * (MAX_LINE_BYTES * 2) + '\n{"type":"shell_command"}\n')
-    collector.collect()
-    assert sum(event["action"].get("reason") == "oversized_line" for event in delivered) == 1
-    assert delivered[-1]["kind"] == "action"
-    assert collector.collect() == 0
 
 
 def test_report_cannot_hide_unmatched_actor_or_unscanned_tail(tmp_path):
@@ -261,33 +195,3 @@ def test_operational_report_windows_use_recorded_time(tmp_path, monkeypatch, unt
     assert report["window"]["has_more"] is has_more
     assert report["window"]["complete"] is not has_more
     assert report["status"] == ("partial" if has_more else "observed")
-
-
-def test_snapshot_excludes_ambiguous_assistant_text_and_tool_payloads():
-    canary = "PRIVATE_CONTENT_CANARY"
-    inputs = [
-        {"role": "assistant", "message": {"content": [{"type": "text", "text": canary}]}},
-        {
-            "role": "assistant",
-            "message": {
-                "content": [{"type": "tool_use", "name": "example", "input": {"payload": canary}}]
-            },
-        },
-        {
-            "role": "tool",
-            "message": {
-                "content": [
-                    {
-                        "type": "tool_result",
-                        "name": "example",
-                        "result": {"success": True, "text": canary},
-                    }
-                ]
-            },
-        },
-        {"role": "tool", "message": {"unexpected": "shape"}},
-    ]
-    results = [normalize_transcript_record(item) for item in inputs]
-    assert canary not in json.dumps(results)
-    assert [item["kind"] for item in results] == ["gap", "action", "action", "gap"]
-    assert results[2]["action"][0]["success"] is True

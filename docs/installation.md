@@ -91,7 +91,8 @@ negative queries, needs a corpus check and owner judgment; see [using memory](us
 ## Installation boundaries
 
 The plugin manifest describes metadata and the setup skill. It does not install
-a service or grant memory access. Capture and CORTEX remain optional existing
-surfaces; they require their own authorization and proof. Boot startup, public
+a service or grant memory access. Capture and CORTEX are disabled and excluded
+from the core distribution; their old configuration does not activate them.
+See [activity](activity.md) for preserved state and activation boundaries. Boot startup, public
 TLS, real-assistant behavior and recovery of real data need separate acceptance.
 The deployment templates are examples, not an observed installation.

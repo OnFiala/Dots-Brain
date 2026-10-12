@@ -32,7 +32,7 @@ Current typed codes include `invalid_input`, `not_found`, `revision_conflict`,
 | `verify --credential-file PATH [--write --project PROJECT]` | Read by default; explicit write mode uses a synthetic write/delete probe. |
 | `oauth configure`, `disable`, `status`, `pending`, `approve`, `deny`, `grants`, `revoke` | [OAuth](../oauth.md) configuration and approval lifecycle. |
 | `audit report`, `audit events` | Existing v2 operation metadata with bounded pages. |
-| `capture`, `cortex` | Existing optional integration surfaces, not activated or accepted by this batch. |
+| `capture`, `cortex` | Reserved optional command names. Always fail with `capability_unavailable` before module imports, file access or locks. |
 
 For supervisor diagnosis:
 

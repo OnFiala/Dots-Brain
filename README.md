@@ -10,10 +10,11 @@ product term, not a separate database or a grant of access.
 
 **Version: 0.4.0-alpha.5, unreleased v2 candidate.** Batch 1 implements storage,
 access control, MCP boundaries, retrieval and lifecycle diagnostics. Batch 2 adds
-ownership-aware client cleanup, v2 audit review and operator diagnostics. Local
-source checks, installed artifacts and real deployment have separate evidence.
+ownership-aware client cleanup, v2 audit review and operator diagnostics. Batch 3
+excludes the disabled CORTEX and capture modules from the core distribution.
+Source checks, installed artifacts and real deployment have separate evidence.
 Both intended assistants, real-data recovery and each candidate's Linux behavior
-need their designated checks. Optional module separation remains a later batch.
+need their designated checks.
 
 ## Quick start on Linux
 
@@ -64,13 +65,13 @@ conversation. See the [tool reference](docs/reference/mcp-tools.md).
 ## Boundaries
 
 - Data remains in the selected private directory. A checkout is not a data store.
-- An MCP connection gives access only to explicitly saved memory. Capture is an
-  opt-in bounded JSONL import, not continuous provider capture.
+- An MCP connection gives access only to explicitly saved memory. Snapshot capture
+  is disabled and excluded from the core package.
 - Remote OAuth needs an existing HTTPS route and an explicit owner approval flow.
   Dots Brain does not provision public ingress or configure web accounts.
 - CORTEX is a separate service for project context, decisions and outcomes.
-  Its optional connector needs its own credential, project mapping, and
-  live verification. It is not enabled by installation.
+  Its connector is disabled and excluded from the core package. Existing module
+  configuration and state are preserved; [activation needs a separate plan](docs/activity.md).
 - Backups on the same disk do not recover a lost host. Restore requires a current
   store for deletion reconciliation; full host-loss recovery is not yet supported.
 
@@ -81,8 +82,8 @@ Read [security](SECURITY.md), [upgrading and recovery](docs/upgrading.md), and t
 
 ```sh
 uv sync --locked --all-extras
-uv run ruff check src tests scripts
-uv run ruff format --check src tests scripts
+uv run ruff check src tests scripts modules
+uv run ruff format --check src tests scripts modules
 uv run pytest -q
 uv run python scripts/validate_project.py
 uv build
@@ -90,7 +91,8 @@ uv build
 
 Tests use disposable stores. The retained CI matrix covers Python 3.11 and 3.12. See
 [verification](docs/verification.md) for the distinction between source checks
-and deployment acceptance.
+and deployment acceptance. Repository tests include preserved module characterizations
+under `modules/tests`; the core source distribution contains only core tests.
 
 ## How this project is developed
 

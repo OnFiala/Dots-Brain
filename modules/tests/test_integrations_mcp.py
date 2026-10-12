@@ -4,12 +4,17 @@ from contextlib import asynccontextmanager
 
 import httpx
 import pytest
+from dots_brain_capture import delivery as capture_delivery
+from dots_brain_cortex.connector import (
+    CortexConnectionConfig,
+    CortexConnector,
+    SqliteCortexLedger,
+    setup_cortex_operations,
+)
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 
-from dots_brain import capture_delivery
 from dots_brain.auth import BearerAuth, issue_client
-from dots_brain.cortex_connector import CortexConnectionConfig, CortexConnector, SqliteCortexLedger
 from dots_brain.privacy import guard_content
 from dots_brain.server import create_server
 from dots_brain.service import MemoryService
@@ -19,6 +24,8 @@ from dots_brain.store import Store
 def test_scoped_mcp_audit_capture_and_selected_cortex_publication(tmp_path, monkeypatch):
     store = Store(tmp_path / "brain")
     store.initialize()
+    with store.connection(write=True) as db:
+        setup_cortex_operations(db)
     outside = store.remember(
         content="Outside source",
         source="synthetic",
@@ -64,7 +71,8 @@ def test_scoped_mcp_audit_capture_and_selected_cortex_publication(tmp_path, monk
         ledger=SqliteCortexLedger(store),
         content_guard=guard_content,
     )
-    service = MemoryService(store, cortex=connector)
+    service = MemoryService(store)
+    service.cortex = connector
     server = create_server(service, http=True)
     app = BearerAuth(server.streamable_http_app(), store)
     transcript, cursor = tmp_path / "transcript.jsonl", tmp_path / "cursor.json"
@@ -278,6 +286,8 @@ def test_scoped_mcp_audit_capture_and_selected_cortex_publication(tmp_path, monk
 def test_cortex_read_and_write_scopes_are_independent_over_mcp(tmp_path):
     store = Store(tmp_path / "brain")
     store.initialize()
+    with store.connection(write=True) as db:
+        setup_cortex_operations(db)
     clients = {}
     for scope in ("read", "write"):
         credential = tmp_path / f"{scope}.json"
@@ -327,7 +337,9 @@ def test_cortex_read_and_write_scopes_are_independent_over_mcp(tmp_path):
         ledger=SqliteCortexLedger(store),
         content_guard=guard_content,
     )
-    server = create_server(MemoryService(store, cortex=connector), http=True)
+    service = MemoryService(store)
+    service.cortex = connector
+    server = create_server(service, http=True)
     app = BearerAuth(server.streamable_http_app(), store)
 
     async def exercise():

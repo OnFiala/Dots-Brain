@@ -1,4 +1,5 @@
 import sqlite3
+from pathlib import Path
 
 import pytest
 
@@ -108,6 +109,11 @@ def test_restore_revokes_pending_oauth_and_marks_inflight_connector_uncertain(tm
     source.initialize()
     configure(source, "http://127.0.0.1:8765")
     with source.connection(write=True) as db:
+        # A historical installed module is explicit fixture state, not core setup.
+        schema = Path(__file__).parent / "fixtures/historical/v2-cortex/schema.sql"
+        for statement in schema.read_text().split(";"):
+            if statement.strip():
+                db.execute(statement)
         db.execute("INSERT INTO oauth_clients VALUES ('client','{}',1)")
         db.execute(
             "INSERT INTO oauth_requests VALUES ('request','client','{}','pending',NULL,9999999999)"
@@ -161,6 +167,48 @@ def test_restore_revokes_pending_oauth_and_marks_inflight_connector_uncertain(tm
             ("sending", "uncertain"),
         ]
         assert "receipt" in rows[0][2]
+
+
+@pytest.mark.parametrize("side", ["source", "target"])
+def test_cutover_preserves_optional_ledger_present_on_only_one_side(tmp_path, side):
+    source = Store(tmp_path / "source")
+    source.initialize()
+    backup = tmp_path / "snapshot.sqlite3"
+    backup_store(source, backup)
+    target = Store(tmp_path / "target")
+    restore_store(backup, target, latest_deletions=source)
+    with (source if side == "source" else target).connection(write=True) as db:
+        schema = Path(__file__).parent / "fixtures/historical/v2-cortex/schema.sql"
+        for statement in schema.read_text().split(";"):
+            if statement.strip():
+                db.execute(statement)
+        db.execute(
+            "INSERT INTO cortex_operations VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                "legacy",
+                "digest",
+                "owner",
+                "work",
+                "work",
+                "note",
+                "source",
+                "uncertain",
+                '{"event_id":"receipt"}',
+                None,
+                None,
+                "now",
+                "now",
+            ),
+        )
+    marker = target.directory / "disabled.json"
+    before = marker.read_bytes()
+    with pytest.raises(InputError, match="cortex_operations=table_presence"):
+        activate_restore(source, target, writers_stopped=True)
+    assert not (source.directory / "disabled.json").exists()
+    assert marker.read_bytes() == before
+    with (source if side == "source" else target).connection() as db:
+        row = db.execute("SELECT state,receipt_json FROM cortex_operations").fetchone()
+        assert tuple(row) == ("uncertain", '{"event_id":"receipt"}')
 
 
 def test_cutover_refuses_to_lose_new_revisions_or_audit_history(tmp_path):

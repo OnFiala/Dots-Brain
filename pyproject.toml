@@ -32,7 +32,7 @@ Issues = "https://github.com/OnFiala/dots-brain/issues"
 dev = ["pytest>=8,<9", "ruff>=0.11,<1", "build>=1.2,<2"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["tests", "modules/tests"]
 
 [tool.ruff]
 target-version = "py311"
@@ -43,6 +43,9 @@ select = ["E", "F", "I", "UP", "B"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/dots_brain"]
+
+[tool.hatch.build.targets.sdist]
+exclude = ["/modules"]
 
 [tool.hatch.build.targets.sdist.force-include]
 "tests/fixtures/historical/v1-263c386/brain.sqlite3" = "tests/fixtures/historical/v1-263c386/brain.sqlite3"

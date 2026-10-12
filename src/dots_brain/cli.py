@@ -15,7 +15,7 @@ from pathlib import Path
 from . import __version__
 from .auth import SCOPES
 from .clients import PROVIDERS
-from .errors import BrainError, InputError
+from .errors import BrainError, CapabilityError, InputError
 from .local import locked, writer_lock
 from .store import Store
 
@@ -61,7 +61,7 @@ def parser() -> argparse.ArgumentParser:
     )
     activate.add_argument("--target", type=Path, required=True)
     activate.add_argument("--writers-stopped", action="store_true")
-    cortex = commands.add_parser("cortex", help="Configure a dedicated CORTEX MCP connection.")
+    cortex = commands.add_parser("cortex", help="Reserved CORTEX module command (disabled).")
     cortex.add_argument("--endpoint", required=True)
     cortex.add_argument("--token-file", type=Path, required=True)
     cortex.add_argument("--project-map", action="append", required=True)
@@ -72,9 +72,7 @@ def parser() -> argparse.ArgumentParser:
     audit.add_argument("--until")
     audit.add_argument("--after-id", type=int)
     audit.add_argument("--limit", type=int, default=100)
-    capture = commands.add_parser(
-        "capture", help="Collect one bounded pass from provider JSONL snapshots."
-    )
+    capture = commands.add_parser("capture", help="Reserved snapshot capture command (disabled).")
     capture.add_argument("--kind", choices=["audit", "transcript"], required=True)
     capture.add_argument("--path", type=Path, action="append", required=True)
     capture.add_argument("--cursor", type=Path, required=True)
@@ -196,6 +194,11 @@ def parser() -> argparse.ArgumentParser:
 
 def run(args) -> dict | None:
     # Reject incompatible options before creating locks or opening the store.
+    if args.command in {"cortex", "capture"}:
+        raise CapabilityError(
+            f"The {args.command} module is disabled and excluded from the core distribution. "
+            "Existing module state was preserved. Activation requires a separate reviewed plan."
+        )
     if args.command in {"connect", "disconnect"}:
         if args.provider == "mcp-json" and args.config is None:
             raise InputError("mcp-json requires --config PATH.")
@@ -219,7 +222,7 @@ def run(args) -> dict | None:
         ):
             raise InputError("Choose distinct private/public ports in 1..65535.")
     # One lease for an entire local command, including the lifetime of HTTP/stdio.
-    writes = args.command in {"setup", "serve", "up", "index", "model", "client", "cortex"}
+    writes = args.command in {"setup", "serve", "up", "index", "model", "client"}
     writes |= args.command == "connect" and args.credential_file is None
     writes |= args.command == "oauth" and args.oauth_action not in {"configure", "disable"}
     with ExitStack() as leases:
@@ -232,11 +235,10 @@ def run(args) -> dict | None:
 
 def _run(args) -> dict | None:
     store = Store(args.data_dir)
-    if args.command in {"migrate", "backup", "restore", "activate-restore", "cortex"}:
+    if args.command in {"migrate", "backup", "restore", "activate-restore"}:
         from .operations import (
             activate_restore,
             backup_store,
-            configure_cortex,
             migrate,
             restore_store,
         )
@@ -251,22 +253,6 @@ def _run(args) -> dict | None:
             return restore_store(args.backup, Store(args.target), latest_deletions=store)
         if args.command == "activate-restore":
             return activate_restore(store, Store(args.target), writers_stopped=args.writers_stopped)
-        return configure_cortex(
-            store, endpoint=args.endpoint, token_file=args.token_file, projects=args.project_map
-        )
-    if args.command == "capture":
-        from .capture_delivery import collect_remote
-
-        return asyncio.run(
-            collect_remote(
-                paths=args.path,
-                cursor=args.cursor,
-                credential=args.credential_file,
-                project=args.project,
-                account=args.account,
-                kind=args.kind,
-            )
-        )
     if args.command == "audit":
         from .activity import AuditLog
         from .auth import Policy
@@ -366,7 +352,7 @@ def _run(args) -> dict | None:
             "write": "disabled" if disabled else "available",
             "semantic": "not_enabled",
             "remote_connection": "not_verified",
-            "capture": "opt_in_snapshot_collector",
+            "capture": "disabled",
         }
     if args.command == "doctor":
         from .diagnostics import diagnose
@@ -392,7 +378,6 @@ def _run(args) -> dict | None:
             verify_connection(args.credential_file, write=args.write, project=args.project)
         )
     if args.command == "serve":
-        from .integration_tools import load_cortex
         from .runtime import ensure_enabled
         from .server import create_server, run_http
         from .service import MemoryService
@@ -405,10 +390,6 @@ def _run(args) -> dict | None:
 
             semantic = SemanticIndex(store)
         service = MemoryService(store, semantic)
-        try:
-            service.cortex = load_cortex(store)
-        except BrainError:
-            service.cortex_error = "invalid_configuration"
         server = create_server(service, http=args.transport == "http", port=args.port)
         if args.transport == "http":
             run_http(

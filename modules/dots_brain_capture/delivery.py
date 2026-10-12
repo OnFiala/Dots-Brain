@@ -7,10 +7,11 @@ import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
-from .bridge import connect
-from .capture import JSONLCollector
-from .errors import InputError
-from .local import locked, read_json, write_json
+from dots_brain.bridge import connect
+from dots_brain.errors import InputError
+from dots_brain.local import locked, read_json, write_json
+
+from .collector import JSONLCollector
 
 
 async def collect_remote(
