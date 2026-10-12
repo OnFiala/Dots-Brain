@@ -132,11 +132,11 @@ def state_path(store: Store) -> Path:
     return store.directory / "service.json"
 
 
-def http_running(store: Store) -> bool:
+def http_running(store: Store, *, timeout: float = 0) -> bool:
     if not store.directory.is_dir():
         return False
     try:
-        with locked(store.directory / "http.lock", timeout=0):
+        with locked(store.directory / "http.lock", timeout=timeout):
             return False
     except InputError:
         return True
@@ -212,11 +212,6 @@ def up(
         ensure_enabled(store)
         store.initialize()
         state = read_json(state_path(store)) if state_path(store).exists() else {}
-        if http_running(store) and (not bound_state(store, state) or not active(state)):
-            raise InputError(
-                "HTTP is externally managed for this data directory. Use connect --mcp-url "
-                "with its explicit private endpoint; up will not start another server."
-            )
         if state and not bound_state(store, state):
             raise InputError("Service state is not bound to this data directory; it was preserved.")
         process = None
@@ -230,6 +225,12 @@ def up(
             if port not in (None, 0, state["port"]) or (semantic and not state["semantic"]):
                 raise InputError("Stop the existing service before changing its runtime options.")
         else:
+            # A dead leader can leave worker threads holding the HTTP lease briefly.
+            if http_running(store, timeout=1 if state else 0):
+                raise InputError(
+                    "HTTP is externally managed for this data directory. Use connect --mcp-url "
+                    "with its explicit private endpoint; up will not start another server."
+                )
             selected_port = port if port is not None else state.get("port", 8765)
             with socket.socket() as reservation:
                 reservation.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -347,12 +348,16 @@ def up(
 
 def down(store: Store) -> dict:
     with locked(store.directory / "service.lock"):
+        release_timeout = 0
         if state_path(store).exists():
             state = read_json(state_path(store))
             if not bound_state(store, state):
                 return {"state": "not_managed", "data_preserved": True}
             stop_process(state)
+            release_timeout = 1
         return {
-            "state": "externally_managed" if http_running(store) else "stopped",
+            "state": "externally_managed"
+            if http_running(store, timeout=release_timeout)
+            else "stopped",
             "data_preserved": True,
         }
