@@ -42,7 +42,7 @@ jobs:
               config.write_text(
                   Path("deploy/nginx/dots-brain.conf").read_text().replace(
                       "/run/dots-brain-ingress", str(root / "nginx")
-                  )
+                  ).replace("192.0.2.1:", "127.0.0.1:")
               )
               subprocess.run([nginx, "-t", "-q", "-e", "stderr", "-c", str(config)], check=True)
               units = []
