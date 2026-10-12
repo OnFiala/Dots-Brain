@@ -117,6 +117,8 @@ def run_http(server, service, *, port, public_port=None, public_gateway=False):
         sockets = [
             stack.enter_context(socket.create_server(("127.0.0.1", value))) for value in ports
         ]
+        for listener in sockets:
+            listener.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
         app = create_http_app(server, service, listener_policies=policies)
         uvicorn.Server(uvicorn.Config(app, access_log=False, log_level="warning")).run(
             sockets=sockets
