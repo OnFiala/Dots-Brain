@@ -14,6 +14,7 @@ from pathlib import Path
 
 from . import __version__
 from .auth import SCOPES
+from .clients import PROVIDERS
 from .errors import BrainError, InputError
 from .local import locked, writer_lock
 from .store import Store
@@ -24,8 +25,24 @@ def default_directory() -> Path:
     return base / "dots-brain"
 
 
+class Parser(argparse.ArgumentParser):
+    def error(self, message):
+        self.exit(
+            2,
+            json.dumps(
+                {
+                    "state": "error",
+                    "code": "invalid_arguments",
+                    "message": "Invalid command arguments.",
+                    "hint": f"Run {self.prog} --help for valid options.",
+                }
+            )
+            + "\n",
+        )
+
+
 def parser() -> argparse.ArgumentParser:
-    root = argparse.ArgumentParser(description="One source-aware memory for your AI tools.")
+    root = Parser(prog="dots-brain", description="One source-aware memory for your AI tools.")
     root.add_argument("--version", action="version", version=__version__)
     root.add_argument("--data-dir", type=Path, default=default_directory())
     commands = root.add_subparsers(dest="command", required=True)
@@ -64,9 +81,6 @@ def parser() -> argparse.ArgumentParser:
     capture.add_argument("--credential-file", type=Path, required=True)
     capture.add_argument("--project", required=True)
     capture.add_argument("--account", required=True)
-    commands.add_parser(
-        "preflight", help="Inspect host capabilities without changing configuration."
-    )
     start = commands.add_parser("up", help="Start or reuse and verify the local HTTP service.")
     start.add_argument("--port", type=int)
     start.add_argument("--semantic", action="store_true")
@@ -76,7 +90,7 @@ def parser() -> argparse.ArgumentParser:
     commands.add_parser("down", help="Stop the managed local service and preserve its data.")
     commands.add_parser("providers", help="List implemented client adapters and their limits.")
     connect = commands.add_parser("connect", help="Configure and verify a supported MCP client.")
-    connect.add_argument("provider")
+    connect.add_argument("provider", choices=sorted(PROVIDERS))
     connect.add_argument("--config", type=Path)
     connect.add_argument("--credential-file", type=Path)
     connect.add_argument("--project", action="append")
@@ -84,7 +98,7 @@ def parser() -> argparse.ArgumentParser:
         "--mcp-url", help="Explicit loopback private endpoint of this host's supervisor."
     )
     disconnect = commands.add_parser("disconnect", help="Remove one managed client connection.")
-    disconnect.add_argument("provider")
+    disconnect.add_argument("provider", choices=sorted(PROVIDERS))
     disconnect.add_argument("--config", type=Path)
     disconnect.add_argument("--dry-run", action="store_true")
     uninstall = commands.add_parser(
@@ -181,6 +195,29 @@ def parser() -> argparse.ArgumentParser:
 
 
 def run(args) -> dict | None:
+    # Reject incompatible options before creating locks or opening the store.
+    if args.command in {"connect", "disconnect"}:
+        if args.provider == "mcp-json" and args.config is None:
+            raise InputError("mcp-json requires --config PATH.")
+        if args.command == "connect" and args.mcp_url and args.credential_file:
+            raise InputError("Choose --mcp-url or --credential-file.")
+        if args.command == "connect" and args.mcp_url:
+            from .runtime import private_endpoint
+
+            private_endpoint(args.mcp_url)
+    if args.command in {"serve", "up"}:
+        minimum = 1 if args.command == "serve" else 0
+        if args.port is not None and not minimum <= args.port <= 65535:
+            raise InputError(f"Port must be between {minimum} and 65535.")
+    if args.command == "serve":
+        if args.transport != "http" and (args.public_port is not None or args.public_gateway):
+            raise InputError("Public listener options require --transport http.")
+        if args.public_port is not None and (
+            not 1 <= args.public_port <= 65535
+            or args.public_port == args.port
+            or args.public_gateway
+        ):
+            raise InputError("Choose distinct private/public ports in 1..65535.")
     # One lease for an entire local command, including the lifetime of HTTP/stdio.
     writes = args.command in {"setup", "serve", "up", "index", "model", "client", "cortex"}
     writes |= args.command == "connect" and args.credential_file is None
@@ -310,11 +347,9 @@ def _run(args) -> dict | None:
                 mcp_url=args.mcp_url,
             )
         )
-    if args.command in ("up", "down", "preflight"):
-        from .runtime import down, preflight, up
+    if args.command in ("up", "down"):
+        from .runtime import down, up
 
-        if args.command == "preflight":
-            return preflight()
         return (
             up(store, port=args.port, semantic=args.semantic, resume=args.resume)
             if args.command == "up"
@@ -384,8 +419,6 @@ def _run(args) -> dict | None:
                 public_gateway=args.public_gateway,
             )
         else:
-            if args.public_port is not None or args.public_gateway:
-                raise InputError("Public listener options require --transport http.")
             server.run(transport="stdio")
         return None
     if args.command == "model":
@@ -453,15 +486,28 @@ def main() -> None:
             json.dumps({"state": "error", "code": exc.code, "message": str(exc)}), file=sys.stderr
         )
         raise SystemExit(1) from None
-    except (OSError, ValueError, sqlite3.Error, ExceptionGroup):
+    except (OSError, ValueError, sqlite3.Error, ExceptionGroup) as exc:
         # Connection and OS errors can contain secret URLs or local paths. Keep them out
         # of machine output; diagnose credentials and permissions without dumping inputs.
+        code, hint = "operation_failed", "Check permissions, connectivity, and command arguments."
+        for kind, name, advice in (
+            (TimeoutError, "timeout", "Check endpoint availability before retrying."),
+            (ConnectionError, "connection_failed", "Check the endpoint and network connection."),
+            (PermissionError, "permission_denied", "Check access rights on the selected path."),
+            (FileNotFoundError, "not_found", "Check that the required file or executable exists."),
+            (BlockingIOError, "busy", "Wait for the running operation and retry."),
+            (sqlite3.Error, "database_error", "Run doctor; preserve the database and backups."),
+        ):
+            if isinstance(exc, kind):
+                code, hint = name, advice
+                break
         print(
             json.dumps(
                 {
                     "state": "error",
-                    "code": "operation_failed",
-                    "message": "Check local permissions, connectivity, and command arguments.",
+                    "code": code,
+                    "message": "The command could not complete.",
+                    "hint": hint,
                 }
             ),
             file=sys.stderr,

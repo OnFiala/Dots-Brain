@@ -9,10 +9,11 @@ A **Dot** means an AI assistant or client using this shared service. It is a
 product term, not a separate database or a grant of access.
 
 **Version: 0.4.0-alpha.5, unreleased v2 candidate.** Batch 1 implements storage,
-access control, MCP boundaries, retrieval and lifecycle diagnostics. Local source
-checks are separate from installed-artifact evidence and real deployment. Both
-intended assistants, real-data recovery and Linux supervisor acceptance still
-need their designated checks. The next batch has not started.
+access control, MCP boundaries, retrieval and lifecycle diagnostics. Batch 2 adds
+ownership-aware client cleanup, v2 audit review and operator diagnostics. Local
+source checks, installed artifacts and real deployment have separate evidence.
+Both intended assistants, real-data recovery and each candidate's Linux behavior
+need their designated checks. Optional module separation remains a later batch.
 
 ## Quick start on Linux
 

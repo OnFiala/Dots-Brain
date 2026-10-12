@@ -1,10 +1,27 @@
 # Verification boundaries
 
 Source, installed artifact, live protocol and assistant behavior are separate
-results. Batch 1 is an unreleased schema-v2 candidate. Tests use disposable
+results. This branch is an unreleased schema-v2 candidate. Tests use disposable
 synthetic stores and isolate client configuration from the operator's home.
 
-## Local batch-1 evidence
+## Local batch-2 evidence
+
+The final Python 3.11/macOS integration run has **459 passed, 0 failed, 9 skipped**
+from 468 cases. The real prepared CPU model test ran. All skips require Linux
+managed process control. The cleanup matrix covers 29 cases, including foreign
+backup creation, replaced credentials and a failed rollback whose retained
+configuration still references access. Independent review reproduced those three
+data-loss paths and verified their repairs. Existing data-preservation assertions
+remain in place after updating two expected error outcomes.
+
+Operator tests simulate bootstrap children; they do not prove an installation.
+CI now uses locked dependencies, a 20-minute timeout and actual nginx/systemd
+syntax tools on temporary template copies. Those Linux commands and remote CI
+have not run on this macOS host. The supervisor must repeat the crash-recovery
+case, full suite and disconnect matrix on the exact batch-2 checkpoint. Actual
+systemd operation, public ingress and production restoration remain separate.
+
+## Earlier batch-1 evidence
 
 The integrated Python 3.11/macOS run has **323 passed, 0 failed, 9 skipped** from
 332 static cases. All nine skips require actual Linux managed process control;
@@ -13,7 +30,7 @@ ran against previously prepared, verified model files. Ruff, formatting,
 project/links validation and an offline source/wheel build also passed.
 
 ```sh
-uv sync --frozen --all-extras
+uv sync --locked --all-extras
 uv run ruff check src tests scripts
 uv run ruff format --check src tests scripts
 uv run pytest -q
@@ -53,10 +70,10 @@ judgment remains required; the corpus and helper are not repository content.
 - The 30-day grant boundary uses controlled fixture time, not 30 observed days.
 - Real-store copies, their backup/restore and the installed production artifact
   need explicit owner authorization and a target-bound recovery plan.
-- Linux coexistence with a service outside managed `up` awaits supervisor evidence.
+- A Linux supervisor separately reported batch-1 coexistence on its exact commit.
+  Batch-2 changes require a new Linux run; macOS skips remain unverified here.
   Actual systemd-unit acceptance belongs to a later approved production step.
-- The broader disconnect/reviewer matrix belongs to batch 2; optional module
-  separation belongs to batch 3. Neither batch started with this checkpoint.
+- Optional module separation belongs to batch 3 and has not started.
 
 The independent AI reviewer read the lifecycle patch and its repairs; its
 read-only role was procedural, not enforced OS isolation. Runtime checks above

@@ -35,7 +35,7 @@ Omit `--semantic` or `--connect` when those capabilities are not requested. The
 bootstrap uses the lockfile, initializes or reuses the selected store, optionally
 prepares the pinned local CPU model, starts a loopback service, and verifies the
 configured local bridge. The model download is optional and sizable. Run
-`preflight` and `doctor`; then reload the real client and make an actual MCP read.
+`doctor`; then reload the real client and make an actual MCP read.
 Report that evidence separately from remote access, capture, or host persistence.
 
 `up` starts or reuses one managed loopback HTTP service. A manually supervised

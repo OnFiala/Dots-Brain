@@ -13,7 +13,7 @@ process identity and pidfd support. Windows is unsupported.
 Choose the canonical private data directory outside the checkout:
 
 ```sh
-uv sync --frozen
+uv sync --locked
 uv run dots-brain --data-dir /absolute/private/memory setup
 uv run dots-brain --data-dir /absolute/private/memory doctor
 ```
@@ -33,6 +33,14 @@ has read scope only. `connect` verifies a read through the generated bridge and
 returns `write: "not_tested"`; it creates no synthetic memory. Reload the actual
 client, then verify intended read/write calls separately. Client activation and
 conversation behavior are not established by configuration.
+
+`python scripts/bootstrap.py --data-dir /absolute/private/memory` runs the same
+locked setup on Linux. Optional `--semantic` prepares the model; optional
+`--connect PROVIDER --config PATH` configures a selected adapter. `mcp-json`
+requires its explicit path. Failures return one sanitized JSON result naming
+the failed phase (`prerequisites`, `arguments`, `dependencies`, `setup`, `model`,
+`service` or `client`). Completed earlier phases are not rolled back; inspect the
+named phase before retrying. Child output is not copied into that result.
 
 ## An existing supervisor
 
@@ -56,7 +64,11 @@ dots-brain --data-dir /absolute/private/memory connect codex --project work --mc
 
 This bridge has no automatic `up`. Unreachable or mismatched endpoints fail
 before successful client configuration. A failed connect restores its owned
-changes where safe and preserves concurrent edits. `doctor` reports database,
+changes where safe and preserves concurrent edits. If rollback cannot safely
+remove a published configuration, it reports incomplete cleanup and retains
+its recorded credential, integration and any newly started service. Inspect
+that configuration before reconnecting or disconnecting; the error does not
+mean that all earlier changes were reversed. `doctor` reports database,
 OAuth and MCP checks separately; a remote issuer without a verified public
 listener produces a warning. It does not scan or signal supervisor processes.
 `up` refuses an already held HTTP lease; `down` leaves external services running.
@@ -64,7 +76,7 @@ listener produces a warning. It does not scan or signal supervisor processes.
 ## Optional local embeddings
 
 ```sh
-uv sync --frozen --extra semantic
+uv sync --locked --extra semantic
 uv run dots-brain --data-dir /absolute/private/memory model prepare
 uv run dots-brain --data-dir /absolute/private/memory index
 ```

@@ -8,11 +8,12 @@ individual checks and warnings even when a command returns zero.
 
 Current typed codes include `invalid_input`, `not_found`, `revision_conflict`,
 `source_suppressed`, `capability_unavailable`, `migration_required`,
-`store_disabled` and the safe boundary fallback `operation_failed`.
+`store_disabled`, `invalid_arguments`, `timeout`, `connection_failed`, `permission_denied`, `busy`,
+`database_error` and the safe boundary fallback `operation_failed`.
 
 | Command | Current purpose |
 | --- | --- |
-| `setup`, `doctor`, `preflight` | Initialize/reuse the store, inspect independent checks, inspect host capabilities. |
+| `setup`, `doctor` | Initialize/reuse the store and inspect independent checks. |
 | `serve [--transport http --port 8765 --public-port 8787]` | Owner stdio or one process with private and OAuth-only HTTP listeners. |
 | `up [--port PORT] [--semantic] [--resume]`, `down` | Linux managed lifecycle; explicit resume only after ordinary uninstall. |
 | `providers` | Adapter capabilities and remaining client activation boundary. |
@@ -47,5 +48,6 @@ explicit URL, local `connect` uses managed `up` on Linux. `--mcp-url` and a supp
 Bulk OAuth changes, uninstall, migration and recovery require stopped supported
 writers. Offline flags do not terminate supervisors and cannot protect against
 uncooperative direct SQLite writers. Preserve recovery state and follow
-[upgrading](../upgrading.md). The broader disconnect ownership matrix and unified
-operator/reviewer improvements are scheduled for the next batch.
+[upgrading](../upgrading.md). See [disconnect and uninstall](../uninstall.md) for
+ownership, retained-file and remote-revocation outcomes, and [activity](../activity.md)
+for review paging.

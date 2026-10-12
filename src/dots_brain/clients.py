@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 import json
 import os
+import shlex
 import sys
 from contextlib import ExitStack
 from pathlib import Path
@@ -76,12 +77,46 @@ def target_path(provider: str, config: Path | None) -> Path:
     return Path.home() / default
 
 
-def configure(path: Path, *, provider: str, entry: dict, dry_run=False, rollback=None) -> bool:
+def legacy_notice(provider, path, entry):
+    args = entry.get("args", []) if isinstance(entry, dict) else []
+    if (
+        isinstance(args, list)
+        and len(args) == 7
+        and all(isinstance(arg, str) for arg in args)
+        and args[:4] == ["-m", "dots_brain.cli", "bridge", "--credential-file"]
+        and args[5] == "--local-data-dir"
+        and Path(args[4]).name == f"{provider}.json"
+    ):
+        section = "mcp_servers" if provider == "codex" else "mcpServers"
+        command = shlex.join(
+            ["dots-brain", "--data-dir", args[6], "connect", provider, "--config", str(path)]
+        )
+        return (
+            f"Unsupported 0.2 client: manually remove only {section}.dots-brain from {path}, "
+            f"preserving other settings and credentials; then run {command}."
+        )
+    return None
+
+
+def file_hash(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def configure(
+    path: Path,
+    *,
+    provider: str,
+    entry: dict,
+    dry_run=False,
+    rollback=None,
+    ownership=None,
+    publish=None,
+) -> bool:
     with locked(path.with_name(path.name + ".dots-brain.lock")):
         if path.is_symlink():
             raise InputError("Client configuration must not be a symbolic link.")
         existed = path.exists()
-        original = path.read_text() if path.exists() else ""
+        original = path.read_text(encoding="utf-8") if existed else ""
         document = (
             tomlkit.parse(original)
             if PROVIDERS[provider]["format"] == "toml"
@@ -98,9 +133,14 @@ def configure(path: Path, *, provider: str, entry: dict, dry_run=False, rollback
             raise InputError("The client's MCP server section is not an object.")
         existing = servers.get("dots-brain")
         if existing == entry:
+            if not dry_run and publish is not None:
+                publish()
             return False
         if existing is not None:
-            raise InputError("A different dots-brain connection already exists; it was preserved.")
+            raise InputError(
+                legacy_notice(provider, path, existing)
+                or "A different dots-brain connection already exists; it was preserved."
+            )
         servers["dots-brain"] = entry
         content = (
             tomlkit.dumps(document)
@@ -110,46 +150,75 @@ def configure(path: Path, *, provider: str, entry: dict, dry_run=False, rollback
         if dry_run:
             return True
         # Detect an application write that occurred while this installer held its own lock.
-        if (path.read_text() if path.exists() else "") != original:
+        if (path.read_text(encoding="utf-8") if path.exists() else "") != original:
             raise InputError("The application changed its configuration; retry the connection.")
-        if original:
-            backup = path.with_name(path.name + ".before-dots-brain")
-            if not backup.exists():
-                if rollback is not None:
-                    rollback.callback(_undo_configuration, path, original, content, existed, backup)
-                atomic_write(backup, original)
+        backup = path.with_name(path.name + ".before-dots-brain")
+        new_backup = bool(original) and not (backup.exists() or backup.is_symlink())
+        if ownership is not None:
+            ownership.update(
+                entry_created=True,
+                config_created=not existed,
+                config_hash=hashlib.sha256(content.encode("utf-8")).hexdigest(),
+                backup_hash=hashlib.sha256(original.encode("utf-8")).hexdigest()
+                if new_backup
+                else None,
+            )
+        if publish is not None:
+            publish()  # Ownership intent precedes the configuration and backup writes.
+        if new_backup:
+            atomic_write(backup, original, expected=(False, b""))
+            if rollback is not None:
+                rollback.callback(
+                    _undo_configuration, path, original, content, existed, backup, rollback
+                )
         if rollback is not None:
-            rollback.callback(_undo_configuration, path, original, content, existed, None)
-        atomic_write(path, content)
+            rollback.callback(_undo_configuration, path, original, content, existed, None, rollback)
+        atomic_write(path, content, preserve=True, expected=(existed, original.encode("utf-8")))
         return True
 
 
-def _undo_configuration(path, original, written, existed, new_backup):
-    with locked(path.with_name(path.name + ".dots-brain.lock")):
-        current = path.read_text() if path.exists() else ""
-        if current not in (original, written):
-            return  # Preserve a concurrent application edit and its recovery backup.
-        if current == written:
-            if existed:
-                atomic_write(path, original)
-            else:
-                path.unlink(missing_ok=True)
-        if (
-            new_backup is not None
-            and not new_backup.is_symlink()
-            and new_backup.is_file()
-            and new_backup.read_text() == original
-        ):
-            new_backup.unlink()
+def _undo_configuration(path, original, written, existed, new_backup, rollback):
+    try:
+        with locked(path.with_name(path.name + ".dots-brain.lock")):
+            if path.is_symlink():
+                raise InputError("Concurrent configuration change.")
+            current = path.read_text(encoding="utf-8") if path.exists() else ""
+            if current not in (original, written):
+                raise InputError("Concurrent configuration change.")
+            if current == written:
+                if existed:
+                    atomic_write(
+                        path, original, preserve=True, expected=(True, current.encode("utf-8"))
+                    )
+                else:
+                    path.unlink(missing_ok=True)
+            if (
+                new_backup is not None
+                and not new_backup.is_symlink()
+                and new_backup.is_file()
+                and new_backup.read_text(encoding="utf-8") == original
+            ):
+                new_backup.unlink()
+    except (OSError, ValueError, InputError):
+        # Retained configuration may still reference the credential, registry and service.
+        # Discard their dependent compensations rather than creating a dangling connection.
+        rollback.pop_all()
+        raise InputError(
+            "Connection cleanup is incomplete. Configuration and recorded access were "
+            "preserved, along with any service started for them. Close the client/editor "
+            "and inspect the recorded integration before retrying."
+        ) from None
 
 
-def _undo_credential(store, path, previous, client_id):
+def _undo_credential(store, path, previous, client_id, written):
     if previous is None or json.loads(previous)["client_id"] != client_id:
         revoke_client(store, client_id)
+    if path.is_symlink() or not path.exists() or path.read_bytes() != written:
+        return  # Keep a credential replaced or edited after our write.
     if previous is None:
-        path.unlink(missing_ok=True)
+        path.unlink()
     else:
-        atomic_write(path, previous)
+        atomic_write(path, previous, expected=(True, written))
 
 
 def _undo_existing_credential(path, previous, url):
@@ -220,12 +289,16 @@ def _connect_client(store, *, provider, config, connection, projects, mcp_url, r
     target = target_path(provider, config)
     registry = registrations(store.directory)
     key = integration_key(provider, target)
+    ownership = dict(registry["items"].get(key, {}).get("ownership", {}))
+    created_dirs = [str(parent) for parent in target.parents if not parent.exists()]
     local = connection is None
     managed = local and mcp_url is None
     if local:
         private = store.directory / "connections"
         if private.is_symlink():
             raise InputError("Managed connection storage must not be a symbolic link.")
+        if not private.exists():
+            created_dirs.append(str(private))
         private.mkdir(mode=0o700, exist_ok=True)
         connection = private / f"{provider}-{key}.json"
         if key in registry["items"]:
@@ -237,16 +310,6 @@ def _connect_client(store, *, provider, config, connection, projects, mcp_url, r
                         "Unexpected managed credential path; existing state was preserved."
                     )
                 connection = previous_path
-        elif (private / f"{provider}.json").is_file() and target.is_file():
-            # Preserve alpha.1 connections when their generated entry is unchanged.
-            legacy = private / f"{provider}.json"
-            text = target.read_text()
-            document = tomlkit.parse(text) if provider == "codex" else json.loads(text)
-            section = "mcp_servers" if provider == "codex" else "mcpServers"
-            if document.get(section, {}).get("dots-brain") == bridge_entry(
-                legacy, store.directory, provider
-            ):
-                connection = legacy
         with locked(private / f"{provider}.lock"):
             configure(
                 target,
@@ -254,6 +317,12 @@ def _connect_client(store, *, provider, config, connection, projects, mcp_url, r
                 entry=bridge_entry(connection, store.directory if managed else None, provider),
                 dry_run=True,
             )
+            if connection.exists() and (
+                connection.is_symlink() or ownership.get("credential_hash") != file_hash(connection)
+            ):
+                raise InputError(
+                    "Unowned or changed credential was preserved; disconnect manually."
+                )
             previous_service = read_json(state_path(store)) if state_path(store).exists() else {}
             runtime = {"url": mcp_url} if mcp_url else up(store)
             if managed and runtime["pid"] != previous_service.get("pid"):
@@ -267,7 +336,9 @@ def _connect_client(store, *, provider, config, connection, projects, mcp_url, r
             client_id = credential(
                 store, name=provider, path=connection, url=runtime["url"], projects=projects
             )
-            rollback.callback(_undo_credential, store, connection, previous, client_id)
+            written = connection.read_bytes()
+            rollback.callback(_undo_credential, store, connection, previous, client_id, written)
+            ownership["credential_hash"] = hashlib.sha256(written).hexdigest()
     else:
         connection = connection.expanduser().absolute()
         client_id = read_connection(connection)["client_id"]
@@ -295,14 +366,22 @@ def _connect_client(store, *, provider, config, connection, projects, mcp_url, r
         "connection_file": str(connection),
         "client_id": client_id,
         "local": local,
+        "ownership": ownership,
     }
+    ownership["directories"] = list(dict.fromkeys(ownership.get("directories", []) + created_dirs))
     # Record intent first so an interruption after configuration can be cleaned up.
     registry_path = store.directory / "integrations.json"
     rollback.callback(
         _undo_registry, registry_path, registry_path.read_text() if registry_path.exists() else None
     )
-    write_json(store.directory / "integrations.json", registry)
-    changed = configure(target, provider=provider, entry=entry, rollback=rollback)
+    changed = configure(
+        target,
+        provider=provider,
+        entry=entry,
+        rollback=rollback,
+        ownership=ownership,
+        publish=lambda: write_json(registry_path, registry),
+    )
     return {
         "state": "configured_verified_bridge",
         "provider": provider,

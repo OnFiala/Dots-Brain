@@ -10,7 +10,7 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
 from dots_brain.auth import authenticate, issue_client, read_connection
-from dots_brain.clients import bridge_entry, configure, connect_client, integration_key
+from dots_brain.clients import bridge_entry, configure, connect_client, file_hash, integration_key
 from dots_brain.errors import InputError, SuppressedError
 from dots_brain.local import read_json, write_json
 from dots_brain.removal import disconnect_client, remove_entry, uninstall
@@ -40,7 +40,8 @@ def record_connection(store, config, provider="cursor", *, legacy=False):
         url="http://localhost:8765/mcp",
     )
     entry = bridge_entry(connection, store.directory, provider)
-    configure(config, provider=provider, entry=entry)
+    ownership = {"credential_hash": file_hash(connection)}
+    configure(config, provider=provider, entry=entry, ownership=ownership)
     record = {
         "provider": provider,
         "config_file": str(config),
@@ -48,6 +49,7 @@ def record_connection(store, config, provider="cursor", *, legacy=False):
         "connection_file": str(connection),
         "client_id": issued["client_id"],
         "local": True,
+        "ownership": ownership,
     }
     if not legacy:
         write_json(store.directory / "integrations.json", {"version": 1, "items": {key: record}})
@@ -197,9 +199,13 @@ def test_legacy_custom_path_requires_inventory_and_shared_token_is_not_silently_
     _, token = record_connection(store, config, legacy=True)
     assert uninstall(store, dry_run=True)["clients"] == []
     preview = uninstall(store, dry_run=True, extra_configs=[f"cursor={config}"])
-    assert preview["clients"][0]["state"] == "would_remove"
+    assert preview["clients"] == []
+    assert preview["issues"][0]["state"] == "unsupported_legacy_client"
+    before = config.read_bytes()
     result = disconnect_client(store, provider="cursor", config=config)
-    assert result["state"] == "partial" and result["access"] == "shared_credential_retained"
+    assert result["state"] == "partial"
+    assert "manually remove only mcpServers.dots-brain" in result["issues"][0]["action"]
+    assert config.read_bytes() == before
     assert authenticate(store, token) is not None
     assert uninstall(store)["state"] == "uninstalled"
     assert authenticate(store, token) is None
@@ -225,6 +231,30 @@ def test_corrupt_registry_is_preserved_and_reported_while_service_is_disabled(tm
     assert authenticate(store, token) is None
 
 
+def test_uninstall_revokes_probe_access_and_reports_retained_unowned_file(tmp_path):
+    store = Store(tmp_path / "memory")
+    store.initialize()
+    probe = store.directory / "probe.connection.json"
+    issue_client(
+        store,
+        name="diagnostic",
+        scopes=["memory:read"],
+        projects=None,
+        days=1,
+        output=probe,
+        url="http://localhost:8765/mcp",
+    )
+    token = read_connection(probe)["token"]
+    original = probe.read_bytes()
+    assert authenticate(store, token) is not None
+    result = uninstall(store)
+    assert result["access"] == "revoked"
+    assert result["probe_credential"] == {"path": str(probe), "state": "preserved_unowned"}
+    assert probe.read_bytes() == original
+    assert authenticate(store, token) is None
+    assert token not in json.dumps(result)
+
+
 @pytest.mark.skipif(sys.platform != "linux", reason="Requires actual Linux managed process control")
 def test_remote_disconnect_preserves_supplied_credential_and_never_creates_database(tmp_path):
     host, client = Store(tmp_path / "host"), Store(tmp_path / "device")
@@ -240,7 +270,7 @@ def test_remote_disconnect_preserves_supplied_credential_and_never_creates_datab
         assert result["state"] == "partial"
         assert supplied.exists() and authenticate(host, token) is not None
         assert not client.path.exists()
-        assert read_json(config) == {"mcpServers": {}}
+        assert not config.exists()
     finally:
         down(host)
 

@@ -1,5 +1,6 @@
 import json
 from concurrent.futures import ThreadPoolExecutor
+from datetime import UTC, datetime
 
 import pytest
 
@@ -197,6 +198,69 @@ def test_audit_redacts_persisted_payloads_and_filters_unqualified_reads(tmp_path
             "SYNTHETIC_CREDENTIAL"
             not in db.execute("SELECT action FROM audit_events WHERE project='alpha'").fetchone()[0]
         )
+
+
+@pytest.mark.parametrize(
+    "since,until,expected",
+    [
+        ("2026-01-01T00:00:00.000000Z", None, [1, 2, 3]),
+        (None, "2026-01-01T00:00:00.000000Z", [1]),
+        (None, "2026-01-01T00:00:00.000001Z", [1, 2]),
+        ("2026-01-01T00:00:00.000001Z", None, [2, 3]),
+        ("2026-01-01T01:00:00.000001+01:00", None, [2, 3]),
+    ],
+)
+def test_audit_time_windows_preserve_legacy_and_fractional_hashes(tmp_path, since, until, expected):
+    log = AuditLog(audit_store(tmp_path))
+    caller = policy("audit:read", "audit:write")
+    times = ["2026-01-01T00:00:00Z", "2026-01-01T00:00:00.000001Z", "2026-01-01T00:00:00.000002Z"]
+    for index, timestamp in enumerate(times):
+        log.record(
+            caller,
+            project="alpha",
+            kind="action",
+            client_event_id=str(index),
+            occurred_at=timestamp,
+        )
+    before = log.events(caller)
+    assert [row["id"] for row in log.events(caller, since=since, until=until)] == expected
+    assert log.events(caller) == before
+    assert before[0]["occurred_at"] == "2026-01-01T00:00:00+00:00"
+    assert log.record(
+        caller, project="alpha", kind="action", client_event_id="0", occurred_at=times[0]
+    )["replayed"]
+
+
+@pytest.mark.parametrize("until,has_more", [("2026-10-12T10:00:00Z", False), (None, True)])
+def test_operational_report_windows_use_recorded_time(tmp_path, monkeypatch, until, has_more):
+    from dots_brain import activity
+
+    class Clock(datetime):
+        instant = "2026-10-12T10:00:00+00:00"
+
+        @classmethod
+        def now(cls, tz=UTC):
+            return datetime.fromisoformat(cls.instant).astimezone(tz)
+
+    monkeypatch.setattr(activity, "datetime", Clock)
+    log = AuditLog(audit_store(tmp_path))
+    caller = policy("audit:read", "audit:write")
+    for index in range(2):
+        log.record(
+            caller,
+            project="alpha",
+            kind="action",
+            client_event_id=str(index),
+            occurred_at="2026-01-01T00:00:00Z",
+        )
+        Clock.instant = "2026-10-12T10:00:00.000001+00:00"
+    since = "2026-10-12T10:00:00.000000Z"
+    assert log.events(caller, since=since, until=until) == []
+    report = log.report(caller, since=since, until=until, limit=1)
+    assert report["window"]["returned"] == 1
+    assert report["window"]["has_more"] is has_more
+    assert report["window"]["complete"] is not has_more
+    assert report["status"] == ("partial" if has_more else "observed")
 
 
 def test_snapshot_excludes_ambiguous_assistant_text_and_tool_payloads():

@@ -280,7 +280,7 @@ def test_failed_configuration_preserves_concurrent_edit_and_new_backup(tmp_path)
     target = tmp_path / "client.json"
     target.write_text('{"theme":"original"}')
     changed = '{"theme":"concurrently-changed"}'
-    with pytest.raises(RuntimeError), ExitStack() as rollback:
+    with pytest.raises(InputError, match="cleanup is incomplete"), ExitStack() as rollback:
         configure(target, provider="cursor", entry={"command": "synthetic"}, rollback=rollback)
         target.write_text(changed)
         raise RuntimeError("Synthetic failure")

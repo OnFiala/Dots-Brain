@@ -9,46 +9,91 @@ import sys
 from pathlib import Path
 
 
+class Parser(argparse.ArgumentParser):
+    def error(self, message):
+        self.exit(
+            2,
+            json.dumps(
+                {
+                    "state": "blocked",
+                    "phase": "arguments",
+                    "reason": "Invalid bootstrap arguments.",
+                    "hint": "Run bootstrap.py --help for valid options.",
+                }
+            )
+            + "\n",
+        )
+
+
+def step(phase, command, *, states=(), **kwargs):
+    try:
+        result = subprocess.run(command, check=True, capture_output=True, text=True, **kwargs)
+        if states:
+            document = json.loads(result.stdout)
+            if (
+                not isinstance(document, dict)
+                or not isinstance(document.get("state"), str)
+                or document["state"] not in states
+            ):
+                raise ValueError("Unexpected command result.")
+            return document
+        return None
+    except (OSError, subprocess.SubprocessError, ValueError):
+        print(
+            json.dumps({"state": "blocked", "phase": phase, "reason": "Installation step failed."})
+        )
+        raise SystemExit(1) from None
+
+
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = Parser(prog="bootstrap.py", description=__doc__)
     parser.add_argument("--data-dir", type=Path, required=True)
     parser.add_argument("--semantic", action="store_true")
-    parser.add_argument("--connect", metavar="PROVIDER")
+    parser.add_argument("--connect", choices=["claude-code", "cursor", "codex", "mcp-json"])
     parser.add_argument("--config", type=Path)
     args = parser.parse_args()
+    if (args.config and not args.connect) or (args.connect == "mcp-json" and not args.config):
+        parser.error("--config requires --connect; mcp-json requires --config.")
     root = Path(__file__).resolve().parents[1]
     uv = shutil.which("uv")
-    if sys.version_info < (3, 11) or uv is None:
-        print(json.dumps({"state": "blocked", "reason": "Python 3.11+ and uv are required."}))
+    if sys.platform != "linux" or sys.version_info < (3, 11) or uv is None:
+        print(
+            json.dumps(
+                {
+                    "state": "blocked",
+                    "phase": "prerequisites",
+                    "reason": "Bootstrap requires Linux, Python 3.11+ and uv.",
+                }
+            )
+        )
         return 1
     environment = dict(os.environ)
     environment.setdefault("UV_CACHE_DIR", str(root / ".cache" / "uv"))
-    sync = [uv, "sync", "--frozen", "--no-dev"]
+    sync = [uv, "sync", "--locked", "--no-dev"]
     if args.semantic:
         sync += ["--extra", "semantic"]
-    subprocess.run(sync, cwd=root, env=environment, check=True, stdout=sys.stderr)
-    executable = root / ".venv" / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+    step("dependencies", sync, cwd=root, env=environment)
+    executable = root / ".venv" / "bin/python"
     base = [str(executable), "-m", "dots_brain.cli", "--data-dir", str(args.data_dir)]
-    setup = subprocess.run(base + ["setup"], check=True, capture_output=True, text=True)
+    setup = step("setup", base + ["setup"], states={"local_ready", "disabled"})
     if args.semantic:
-        subprocess.run(base + ["model", "prepare"], check=True, stdout=sys.stderr)
+        step("model", base + ["model", "prepare"])
     start = base + ["up", "--resume"] + (["--semantic"] if args.semantic else [])
-    service = subprocess.run(start, check=True, capture_output=True, text=True)
+    service = step("service", start, states={"verified_local_service"})
     connected = None
     if args.connect:
         command = base + ["connect", args.connect]
         if args.config:
             command += ["--config", str(args.config)]
-        result = subprocess.run(command, check=True, capture_output=True, text=True)
-        connected = json.loads(result.stdout)
+        connected = step("client", command, states={"configured_verified_bridge"})
     print(
         json.dumps(
             {
                 "state": "configured_verified_bridge" if connected else "verified_local_service",
-                "setup": json.loads(setup.stdout),
+                "setup": setup,
                 "python": str(executable),
                 "semantic_model_prepared": args.semantic,
-                "service": json.loads(service.stdout),
+                "service": service,
                 "connection": connected,
                 "remote_connection": "not_verified",
             }
@@ -58,8 +103,4 @@ def main():
 
 
 if __name__ == "__main__":
-    try:
-        raise SystemExit(main())
-    except (OSError, subprocess.CalledProcessError):
-        print(json.dumps({"state": "blocked", "reason": "Installation command failed."}))
-        raise SystemExit(1) from None
+    raise SystemExit(main())

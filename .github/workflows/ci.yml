@@ -10,6 +10,7 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -20,7 +21,46 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
           enable-cache: true
-      - run: uv sync --frozen --all-extras
+      - run: uv sync --locked --all-extras
+      - name: Validate Linux service and ingress templates
+        if: matrix.python == '3.11'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends nginx-core systemd
+          python - <<'PY'
+          from pathlib import Path
+          import shutil
+          import subprocess
+          import tempfile
+
+          with tempfile.TemporaryDirectory(prefix="dots-brain-templates-") as temporary:
+              root = Path(temporary)
+              (root / "nginx").mkdir()
+              (root / "data").mkdir()
+              nginx = shutil.which("nginx")
+              config = root / "ingress.conf"
+              config.write_text(
+                  Path("deploy/nginx/dots-brain.conf").read_text().replace(
+                      "/run/dots-brain-ingress", str(root / "nginx")
+                  )
+              )
+              subprocess.run([nginx, "-t", "-q", "-e", "stderr", "-c", str(config)], check=True)
+              units = []
+              for source in sorted(Path("deploy/systemd").glob("*.service")):
+                  unit = root / source.name
+                  unit.write_text(
+                      source.read_text()
+                      .replace("/opt/dots-brain/current/.venv/bin/dots-brain", "/usr/bin/true")
+                      .replace("/var/lib/dots-brain", str(root / "data"))
+                      .replace("/usr/sbin/nginx", nginx)
+                      .replace("/etc/dots-brain/ingress.conf", str(config))
+                  )
+                  units.append(str(unit))
+              subprocess.run(
+                  ["systemd-analyze", "verify", "--man=no", "--recursive-errors=no", *units],
+                  check=True,
+              )
+          PY
       - run: uv run ruff check src tests scripts
       - run: uv run ruff format --check src tests scripts
       - run: uv run pytest -q

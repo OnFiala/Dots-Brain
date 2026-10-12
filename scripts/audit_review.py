@@ -11,6 +11,7 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import stat
 import subprocess
 import tempfile
@@ -19,7 +20,6 @@ from pathlib import Path
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
-ORIGIN = "memory-host.example.invalid:/var/lib/dots-brain"
 DEFAULT_STATE = Path.home() / ".local/state/dots-brain-audit"
 PAGE_SIZE = 100
 MAX_PAGES = 20
@@ -50,20 +50,39 @@ def utc_now():
     return datetime.now(UTC).isoformat()
 
 
-def scheduled_slot():
-    now = datetime.now(ZoneInfo("Europe/Prague"))
+def load_target(path):
+    target = read_json(path)
+    if not isinstance(target, dict):
+        raise ValueError("Invalid audit target configuration")
+    for key in ("origin", "host", "user", "executable", "data_dir", "timezone"):
+        value = target.get(key)
+        if not isinstance(value, str) or not value or any(c in value for c in "\r\n\x00"):
+            raise ValueError("Invalid audit target configuration")
+    if (
+        not target["executable"].startswith("/")
+        or not target["data_dir"].startswith("/")
+        or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,253}", target["host"])
+        or not re.fullmatch(r"[a-z_][a-z0-9_-]{0,31}", target["user"])
+    ):
+        raise ValueError("Invalid audit target configuration")
+    ZoneInfo(target["timezone"])
+    return target
+
+
+def scheduled_slot(timezone):
+    now = datetime.now(ZoneInfo(timezone))
     if now.hour < 9:
         return f"{(now - timedelta(days=1)).date()}:21"
     return f"{now.date()}:{21 if now.hour >= 21 else 9:02}"
 
 
-def fetch_page(after_id, limit):
-    # Only validated integers enter this fixed remote command, never audit text.
-    if type(after_id) is not int or after_id < 0 or type(limit) is not int:
+def fetch_page(after_id, limit, target):
+    # Quote private configuration for the remote shell; audit text never enters it.
+    if type(after_id) is not int or after_id < 0 or type(limit) is not int or not 1 <= limit <= 500:
         raise ValueError("Invalid audit cursor")
     command = (
-        "sudo -n -u dots-brain -H /opt/dots-brain/current/.venv/bin/dots-brain "
-        "--data-dir /var/lib/dots-brain audit events "
+        f"sudo -n -u {shlex.quote(target['user'])} -H {shlex.quote(target['executable'])} "
+        f"--data-dir {shlex.quote(target['data_dir'])} audit events "
         f"--after-id {after_id} --limit {limit}"
     )
     result = subprocess.run(
@@ -73,7 +92,7 @@ def fetch_page(after_id, limit):
             "BatchMode=yes",
             "-o",
             "ConnectTimeout=10",
-            "memory-host.example.invalid",
+            target["host"],
             command,
         ],
         capture_output=True,
@@ -124,9 +143,12 @@ def validate_row(row, previous_hash):
     return payload
 
 
-def collect(checkpoint, fetch=fetch_page, max_pages=MAX_PAGES):
+def collect(checkpoint, fetch, max_pages=None, origin="synthetic"):
     """Bounded scan; failures return no candidate and never change a checkpoint."""
-    if checkpoint and checkpoint["origin"] != ORIGIN:
+    max_pages = MAX_PAGES if max_pages is None else max_pages
+    if type(max_pages) is not int or max_pages < 1:
+        raise ValueError("Invalid audit page budget")
+    if checkpoint and checkpoint["origin"] != origin:
         raise ValueError("Audit origin changed")
     after = checkpoint.get("last_id", 0)
     previous_hash = checkpoint.get("event_hash", "")
@@ -162,10 +184,9 @@ def collect(checkpoint, fetch=fetch_page, max_pages=MAX_PAGES):
             after = row["id"]
         if not page["has_more"]:
             break
-    else:
-        raise ValueError("Audit page budget exhausted; incomplete review")
     return events, {
-        "origin": ORIGIN,
+        "origin": origin,
+        "has_more": page["has_more"],
         "last_id": after,
         "event_hash": previous_hash,
         "unresolved": list(unresolved.values()),
@@ -204,11 +225,13 @@ def atomic_json(path, value):
             os.unlink(name)
 
 
-def stage(root, run_key, fetch=fetch_page):
+def stage(root, run_key, fetch, origin="synthetic"):
     checkpoint = read_json(root / "checkpoint.json")
-    if checkpoint.get("run_key") == run_key:
+    if checkpoint and checkpoint["origin"] != origin:
+        raise ValueError("Audit origin changed")
+    if checkpoint.get("run_key") == run_key and not checkpoint.get("has_more"):
         return {"state": "already_completed", "run_key": run_key}
-    events, candidate = collect(checkpoint, fetch)
+    events, candidate = collect(checkpoint, fetch, origin=origin)
     previous = read_json(root / "pending.json")
     token = str(uuid4())
     pending = {
@@ -277,7 +300,10 @@ def complete(root, review):
     if checkpoint.get("review_id") == review_id:
         if checkpoint.get("review_digest") != digest(review):
             raise ValueError("Completed review content digest mismatch")
-        return {"state": "already_completed", "last_id": checkpoint["last_id"]}
+        return {
+            "state": "completed_chunk" if checkpoint.get("has_more") else "already_completed",
+            "last_id": checkpoint["last_id"],
+        }
     pending = read_json(root / "pending.json")
     if pending.get("review_id") != review_id or pending["base_digest"] != digest(checkpoint):
         raise ValueError("Stale or missing review; scan and analyze again")
@@ -315,7 +341,10 @@ def complete(root, review):
     }
     # Report metadata and cursor have one atomic commit point.
     atomic_json(root / "checkpoint.json", record)
-    return {"state": "completed", "last_id": record["last_id"]}
+    return {
+        "state": "completed_chunk" if record.get("has_more") else "completed",
+        "last_id": record["last_id"],
+    }
 
 
 def main():
@@ -324,6 +353,9 @@ def main():
     commands = parser.add_subparsers(dest="command", required=True)
     scan = commands.add_parser("scan")
     scan.add_argument("--run-key", default=None)
+    scan.add_argument(
+        "--target-config", type=Path, help="Private target JSON; default: state-dir/target.json"
+    )
     done = commands.add_parser("complete")
     done.add_argument("--review-file", required=True, type=Path)
     args = parser.parse_args()
@@ -335,7 +367,13 @@ def main():
     with os.fdopen(lock_fd, "w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         if args.command == "scan":
-            result = stage(root, args.run_key or scheduled_slot())
+            target = load_target(args.target_config or root / "target.json")
+            result = stage(
+                root,
+                args.run_key or scheduled_slot(target["timezone"]),
+                lambda after, limit: fetch_page(after, limit, target),
+                origin=target["origin"],
+            )
         else:
             result = complete(root, read_json(args.review_file))
         print(canonical(result))

@@ -250,12 +250,19 @@ def test_revocation_and_audit_failure_roll_back_in_the_same_transaction(
         elif operation == "disable":
             disable(store)
         elif operation == "uninstall":
-            uninstall(store)
+            return uninstall(store)
         else:
             activate_restore(source, store, writers_stopped=True)
 
-    with pytest.raises(sqlite3.IntegrityError, match="synthetic audit failure"):
-        perform()
+    if operation == "uninstall":
+        result = perform()
+        assert result["state"] == "partial"
+        assert result["access"] == "revocation_failed"
+        assert result["local_credentials_revoked"] is False
+        assert result["service_disabled"] is True
+    else:
+        with pytest.raises(sqlite3.IntegrityError, match="synthetic audit failure"):
+            perform()
     assert authorization_rows(store) == before
     if operation in {"issuer", "disable"}:
         assert oauth.configuration(store)["issuer"] == ISSUER

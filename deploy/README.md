@@ -3,7 +3,11 @@
 These templates are examples for one Linux host, not an observed installation.
 Replace all domain, address, user, interpreter and data-directory placeholders.
 Deployment, TLS routing and restarts need their own approved target and rollback.
-Template validation and full operational hardening are next-batch work.
+CI validates temporary copies with `nginx -t` and `systemd-analyze verify` on
+Linux. It substitutes scratch paths and an available executable; it does not
+start units, bind production listeners or verify a host's TLS routing. The
+20-minute job also uses locked dependencies. Local macOS checks cannot run these
+Linux tools; inspect the exact CI or supervisor result before relying on them.
 
 `systemd/dots-brain.service` runs one HTTP process with private port 8765 and
 OAuth-only port 8787. The ingress unit and nginx example route public traffic to
@@ -31,7 +35,7 @@ application has no CLI onboarding-window command. When that gateway gate is used
 its operator must open it for the initiated pairing flow and then close it;
 application approval still targets the exact request on the memory host.
 
-This checkpoint's Linux coexistence case is awaiting supervisor verification.
+Each changed candidate still needs its exact Linux coexistence evidence.
 An external process test does not prove a real systemd unit, boot startup, TLS,
 public reachability or restoration of real data. Those are separate acceptance
 steps. A binary rollback cannot undo revocation, FTS changes or data mutations.

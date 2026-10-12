@@ -51,6 +51,11 @@ def _time(value: str | None) -> str:
         raise InputError("occurred_at must be an ISO-8601 timestamp with a timezone.") from exc
 
 
+def _time_key(value: str) -> str:
+    """Compare legacy and fractional timestamps without changing hashed payloads."""
+    return datetime.fromisoformat(_time(value)).isoformat(timespec="microseconds")
+
+
 class AuditLog:
     def __init__(self, store):
         self.store = store
@@ -237,6 +242,7 @@ class AuditLog:
         until: str | None = None,
         limit: int = 100,
         after_id: int | None = None,
+        _recorded: bool = False,
     ) -> list[dict]:
         policy.require("audit:read")
         if not isinstance(limit, int) or not 1 <= limit <= 500:
@@ -251,16 +257,18 @@ class AuditLog:
                 return []
             clauses.append(f"project IN ({','.join('?' for _ in policy.projects)})")
             values.extend(policy.projects)
+        clock = "recorded_at" if _recorded else "occurred_at"
         if since:
-            clauses.append("occurred_at>=?")
-            values.append(_time(since))
+            clauses.append(f"audit_time({clock})>=?")
+            values.append(_time_key(since))
         if until:
-            clauses.append("occurred_at<=?")
-            values.append(_time(until))
+            clauses.append(f"audit_time({clock})<=?")
+            values.append(_time_key(until))
         if after_id is not None:
             clauses.append("id>?")
             values.append(after_id)
         with self.store.connection() as db:
+            db.create_function("audit_time", 1, _time_key, deterministic=True)
             rows = db.execute(
                 f"SELECT * FROM audit_events WHERE {' AND '.join(clauses)} ORDER BY id LIMIT ?",
                 (*values, limit),
@@ -276,7 +284,9 @@ class AuditLog:
         until: str | None = None,
         limit: int = 100,
     ) -> dict:
-        rows = self.events(policy, project=project, since=since, until=until, limit=limit)
+        rows = self.events(
+            policy, project=project, since=since, until=until, limit=limit, _recorded=True
+        )
         intents = [row for row in rows if row["kind"] == "intent"]
         receipts = {
             (row["project"], row["principal"], row["intent_event_id"])
@@ -291,7 +301,13 @@ class AuditLog:
         has_more = bool(
             rows
             and self.events(
-                policy, project=project, since=since, until=until, after_id=rows[-1]["id"], limit=1
+                policy,
+                project=project,
+                since=since,
+                until=until,
+                after_id=rows[-1]["id"],
+                limit=1,
+                _recorded=True,
             )
         )
         severity = "warning" if missing or gaps or has_more else "info"

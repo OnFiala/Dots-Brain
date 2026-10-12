@@ -62,17 +62,30 @@ def writer_lock(directory: Path, *, exclusive: bool = False):
             _writer_leases.reset(token)
 
 
-def atomic_write(path: Path, content: str, *, mode: int = 0o600) -> None:
+def atomic_write(
+    path: Path, content: str, *, mode: int = 0o600, preserve=False, expected=None
+) -> None:
     if path.is_symlink():
         raise InputError("Refusing to replace a symbolic link.")
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     fd, temporary = tempfile.mkstemp(prefix=".brain-", dir=path.parent)
     try:
-        os.fchmod(fd, mode)
-        with os.fdopen(fd, "w") as stream:
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            if preserve and path.exists():
+                info = path.stat()
+                os.fchown(stream.fileno(), info.st_uid, info.st_gid)
+                mode = info.st_mode & 0o7777
+            os.fchmod(stream.fileno(), mode)
             stream.write(content)
             stream.flush()
             os.fsync(stream.fileno())
+        if expected is not None and (
+            path.is_symlink()
+            or (path.exists(), path.read_bytes() if path.exists() else b"") != expected
+        ):
+            raise InputError(
+                "Configuration changed concurrently; close the client/editor and retry."
+            )
         os.replace(temporary, path)
         directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
         try:

@@ -1,6 +1,10 @@
 import copy
 import importlib.util
+import json
+import shlex
+from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -74,7 +78,7 @@ def test_multiple_pages_and_cross_run_receipt(source):
     assert updated["unresolved"] == []
 
 
-@pytest.mark.parametrize("failure", ["network", "cap", "duplicate", "hash", "schema"])
+@pytest.mark.parametrize("failure", ["network", "budget", "duplicate", "hash", "schema"])
 def test_incomplete_scan_preserves_checkpoint(tmp_path, source, failure):
     append, fetch = source
     for index in range(103):
@@ -98,8 +102,8 @@ def test_incomplete_scan_preserves_checkpoint(tmp_path, source, failure):
         return page
 
     with pytest.raises((ValueError, OSError, KeyError)):
-        if failure == "cap":
-            review.collect({}, fetch, max_pages=1)
+        if failure == "budget":
+            review.collect({}, fetch, max_pages=0)
         else:
             review.stage(root, "test", broken)
     assert (root / "checkpoint.json").read_bytes() == before
@@ -126,7 +130,8 @@ def test_rollback_replacement_requires_review(source, change):
         review.collect(checkpoint, replaced)
 
 
-def test_scan_crash_retry_and_atomic_ack(tmp_path, source, monkeypatch):
+@pytest.mark.parametrize("legacy_pending", [False, True])
+def test_scan_crash_retry_and_atomic_ack(tmp_path, source, monkeypatch, legacy_pending):
     append, fetch = source
     append("gap", "gap", details={"reason": "source_unavailable"})
     root = tmp_path / "review"
@@ -137,6 +142,10 @@ def test_scan_crash_retry_and_atomic_ack(tmp_path, source, monkeypatch):
     assert first["events_digest"] == second["events_digest"]
     with pytest.raises(ValueError, match="Stale"):
         review.complete(root, envelope(first))
+    if legacy_pending:
+        pending = review.read_json(root / "pending.json")
+        del pending["candidate"]["has_more"]
+        review.atomic_json(root / "pending.json", pending)
     original_replace = review.os.replace
     monkeypatch.setattr(review.os, "replace", lambda *_: (_ for _ in ()).throw(OSError("crash")))
     with pytest.raises(OSError):
@@ -262,3 +271,156 @@ def test_receipt_from_another_actor_or_project_is_not_a_match(source, field):
     with pytest.raises(ValueError, match="actor/project"):
         review.collect(checkpoint, mismatched)
     assert checkpoint == before
+
+
+def test_reviewed_chunks_continue_the_same_run_and_errors_preserve_ack(
+    tmp_path, source, monkeypatch
+):
+    append, fetch = source
+    monkeypatch.setattr(review, "PAGE_SIZE", 2)
+    monkeypatch.setattr(review, "MAX_PAGES", 1)
+    append("intent", "i")
+    append(event_id="one")
+    append("receipt", "r", intent_event_id="i")
+    append(event_id="two")
+    append(event_id="three")
+    first = review.stage(tmp_path, "slot", fetch)
+    assert first["candidate"]["has_more"] and len(first["events"]) == 2
+    assert not (tmp_path / "checkpoint.json").exists()
+    assert review.complete(tmp_path, envelope(first))["state"] == "completed_chunk"
+    assert review.complete(tmp_path, envelope(first))["state"] == "completed_chunk"
+    before = (tmp_path / "checkpoint.json").read_bytes()
+    pending_before = (tmp_path / "pending.json").read_bytes()
+
+    def offline(after, limit):
+        if after >= 2:
+            raise OSError("offline after a reviewed chunk")
+        return fetch(after, limit)
+
+    with pytest.raises(OSError):
+        review.stage(tmp_path, "slot", offline)
+    assert (tmp_path / "checkpoint.json").read_bytes() == before
+    assert (tmp_path / "pending.json").read_bytes() == pending_before
+    second = review.stage(tmp_path, "slot", fetch)
+    assert [row["id"] for row in second["events"]] == [3, 4]
+    assert second["candidate"]["unresolved"] == []
+    with pytest.raises(ValueError, match="digest"):
+        review.complete(tmp_path, envelope(first) | {"review_id": second["review_id"]})
+    assert review.complete(tmp_path, envelope(second))["state"] == "completed_chunk"
+    third = review.stage(tmp_path, "slot", fetch)
+    assert [row["id"] for row in third["events"]] == [5]
+    assert not third["candidate"]["has_more"]
+    assert review.complete(tmp_path, envelope(third))["state"] == "completed"
+    assert review.stage(tmp_path, "slot", fetch)["state"] == "already_completed"
+    with pytest.raises(ValueError, match="origin"):
+        review.stage(tmp_path, "slot", fetch, origin="different")
+
+
+@pytest.mark.parametrize("value", ["metadata", False, ["one", 2]])
+def test_raw_v2_scalar_metadata_retains_original_payload_hash(source, value):
+    append, fetch = source
+    append(event_id="one", action=value, target=value, details=value)
+    raw = fetch(0, 1)["events"][0]
+    assert isinstance(raw["action"], str) and json.loads(raw["action"]) == value
+    rows, candidate = review.collect({}, fetch)
+    assert rows[0]["action"] == rows[0]["target"] == value
+    assert rows[0]["details"]["value"] == value
+    assert review.digest(review.validate_row(raw, "")) == raw["payload_hash"]
+    assert candidate["event_hash"] == raw["event_hash"]
+
+
+def target_config():
+    return {
+        "origin": "synthetic-instance",
+        "host": "example.invalid",
+        "user": "audit-user",
+        "executable": "/opt/test's tools/brain; printf bad",
+        "data_dir": "/srv/test data/$(touch bad)",
+        "timezone": "Europe/Prague",
+    }
+
+
+def test_private_target_command_quotes_paths_and_keeps_raw_v2(tmp_path, monkeypatch):
+    path = tmp_path / "target.json"
+    review.atomic_json(path, target_config() | {"operator_note": "extra private metadata"})
+    target = review.load_target(path)
+    calls = []
+
+    def run(argv, **kwargs):
+        calls.append((argv, kwargs))
+        return SimpleNamespace(stdout=b'{"events":[],"next_after_id":7,"has_more":false}')
+
+    monkeypatch.setattr(review.subprocess, "run", run)
+    assert review.fetch_page(7, 100, target)["next_after_id"] == 7
+    argv, kwargs = calls[0]
+    assert argv[:-2] == ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10"]
+    assert argv[-2] == target["host"]
+    assert shlex.split(argv[-1]) == [
+        "sudo",
+        "-n",
+        "-u",
+        target["user"],
+        "-H",
+        target["executable"],
+        "--data-dir",
+        target["data_dir"],
+        "audit",
+        "events",
+        "--after-id",
+        "7",
+        "--limit",
+        "100",
+    ]
+    assert kwargs == {"capture_output": True, "timeout": 30, "check": True}
+    assert "review-projection" not in argv[-1]
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"host": "-oProxyCommand=bad"},
+        {"user": "root; bad"},
+        {"executable": "relative/brain"},
+        {"data_dir": "/srv/test\ncommand"},
+        {"origin": False},
+        {"timezone": "Invalid/Timezone"},
+        {"timezone": None},
+    ],
+)
+def test_invalid_private_target_fails_before_transport(tmp_path, monkeypatch, change):
+    path = tmp_path / "target.json"
+    review.atomic_json(path, target_config() | change)
+    monkeypatch.setattr(review.subprocess, "run", lambda *_a, **_kw: pytest.fail("SSH called"))
+    monkeypatch.setattr(
+        review.argparse.ArgumentParser,
+        "parse_args",
+        lambda _self: SimpleNamespace(
+            command="scan", state_dir=tmp_path, target_config=None, run_key="slot"
+        ),
+    )
+    with pytest.raises((ValueError, KeyError)):
+        review.main()
+    assert not (tmp_path / "pending.json").exists()
+    path.chmod(0o644)
+    with pytest.raises(ValueError, match="owner-only"):
+        review.load_target(path)
+
+
+@pytest.mark.parametrize(
+    "instant,timezone,slot",
+    [
+        ("2026-10-12T06:59:00+00:00", "Europe/Prague", "2026-10-11:21"),
+        ("2026-10-12T07:00:00+00:00", "Europe/Prague", "2026-10-12:09"),
+        ("2026-10-12T18:59:00+00:00", "Europe/Prague", "2026-10-12:09"),
+        ("2026-10-12T19:00:00+00:00", "Europe/Prague", "2026-10-12:21"),
+        ("2026-10-12T19:00:00+00:00", "UTC", "2026-10-12:09"),
+    ],
+)
+def test_scheduled_slot_uses_target_timezone(monkeypatch, instant, timezone, slot):
+    class Clock(datetime):
+        @classmethod
+        def now(cls, tz=UTC):
+            return datetime.fromisoformat(instant).astimezone(tz)
+
+    monkeypatch.setattr(review, "datetime", Clock)
+    assert review.scheduled_slot(timezone) == slot

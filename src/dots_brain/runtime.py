@@ -6,7 +6,6 @@ import asyncio
 import contextlib
 import errno
 import os
-import shutil
 import signal
 import socket
 import subprocess
@@ -21,29 +20,6 @@ from .bridge import verify_connection
 from .errors import InputError
 from .local import atomic_write, locked, read_json, write_json
 from .store import Store
-
-
-def preflight() -> dict:
-    policy_path = Path("/etc/codex/network-policy.json")
-    policy = read_json(policy_path) if policy_path.is_file() else {}
-    managed = policy.get("version") == 1
-    tcp = policy.get("tcp_network_access", {})
-    systemd = Path("/run/systemd/system").is_dir() and shutil.which("systemctl") is not None
-    return {
-        "platform": sys.platform,
-        "background_process": sys.platform == "linux",
-        "systemd_detected": bool(systemd),
-        "managed_network": managed,
-        "tcp_destinations_configured": bool(tcp.get("domains") or tcp.get("ip_ranges"))
-        if managed
-        else "unknown",
-        "public_ingress": "not_configured",
-        "tunnel_reason": "The managed host has no configured TCP destinations."
-        if managed and not tcp.get("domains") and not tcp.get("ip_ranges")
-        else "A supported ingress must be configured and verified on this host.",
-        "vm_persistence": "not_verified",
-        "secret_isolation": False,
-    }
 
 
 def process_identity(pid: int) -> str | None:

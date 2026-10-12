@@ -51,6 +51,15 @@ migration plan. This branch does not relabel v3/v4 or migrate unreleased formats
 Read-only WAL access can create SQLite coordination files; rejected version
 preflight must not change the main file or checkpoint its committed WAL.
 
+## Older 0.2 client configurations
+
+The old provider-only credential layout is not adopted or rewritten automatically.
+Connect reports the exact client configuration and a reconnect command. Close its
+client/editor, manually remove only the named `dots-brain` MCP entry, preserve
+other settings and credential files, then run that command. Inspect the new bridge
+read verification and reload the client. Database migration and this manual client
+step are separate; see [disconnect and uninstall](uninstall.md) for ownership rules.
+
 ## Backup and staged restore
 
 Use a private directory with no concurrent actor replacing backup files. `backup`
