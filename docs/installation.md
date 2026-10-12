@@ -1,6 +1,6 @@
 # Installation and operation
 
-This branch is an unreleased v2 candidate. Use an identified reviewed commit or
+This version uses schema v2. Use an identified reviewed commit or
 its verified wheel. Linux is the managed deployment target. Python 3.11 or newer
 must provide SQLite 3.42 or newer with FTS5. The retained CI matrix names Python
 3.11 and 3.12; a local check does not establish both jobs ran. Data, backups and

@@ -8,19 +8,18 @@ assistant conversations.
 A **Dot** means an AI assistant or client using this shared service. It is a
 product term, not a separate database or a grant of access.
 
-**Version: 0.4.0-alpha.5, unreleased v2 candidate.** Batch 1 implements storage,
-access control, MCP boundaries, retrieval and lifecycle diagnostics. Batch 2 adds
-ownership-aware client cleanup, v2 audit review and operator diagnostics. Batch 3
-excludes the disabled CORTEX and capture modules from the core distribution.
-Source checks, installed artifacts and real deployment have separate evidence.
-Both intended assistants, real-data recovery and each candidate's Linux behavior
-need their designated checks.
+**Version: 0.4.0.** Includes schema-v2 storage, access control, MCP boundaries,
+retrieval and lifecycle diagnostics, ownership-aware client cleanup, v2 audit
+review and operator diagnostics. Disabled CORTEX and capture modules are excluded
+from the core distribution. Source checks, installed artifacts and each deployment
+have separate evidence; verify client behavior, data recovery and Linux lifecycle
+for the deployed artifact.
 
 ## Quick start on Linux
 
 Use a writable checkout, Python 3.11 or newer, and [uv](https://docs.astral.sh/uv/).
-The documented installation uses the locked source checkout. This implementation
-branch is not a published package. Use the checkpoint report for the exact commit and executed checks.
+The documented installation uses the locked source checkout at a reviewed commit
+or release tag.
 
 ```sh
 git clone https://github.com/OnFiala/Dots-Brain.git

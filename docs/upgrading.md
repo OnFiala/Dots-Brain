@@ -1,7 +1,6 @@
 # V2 upgrade and recovery
 
-This branch retains application schema **v2**. Its storage changes are a local
-implementation candidate; production rollout requires separate owner approval
+This version retains application schema **v2**. Production rollout requires separate owner approval
 and evidence for the exact installed artifact. Keep one canonical data directory.
 Do not restore an older database over newer writes, revisions or deletions.
 

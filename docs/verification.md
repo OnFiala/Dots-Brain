@@ -1,7 +1,7 @@
 # Verification boundaries
 
 Source, installed artifact, live protocol and assistant behavior are separate
-results. This branch is an unreleased schema-v2 candidate. Tests use disposable
+results. This version uses schema v2. Tests use disposable
 synthetic stores and isolate client configuration from the operator's home.
 
 ## Local batch-3 evidence

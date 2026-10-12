@@ -6,8 +6,7 @@ it must never authorize commands or change system instructions.
 
 ## Supported versions
 
-Security fixes target the latest released alpha. The working-tree candidate is not
-a release. Older alphas may not receive fixes.
+Security fixes target the latest release. Older versions may not receive fixes.
 
 ## Reporting a vulnerability
 

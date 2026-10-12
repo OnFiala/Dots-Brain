@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.4.0-alpha.5 — Unreleased v2 batch-1 candidate
+## 0.4.0
 
 - Retain schema v2 and the explicit released v1 migration. Add read-only version
   checks, FTS secure deletion, snapshot/recovery validation and writer/HTTP leases.
@@ -13,12 +13,16 @@
 - Publish managed state after readiness; bind process control to its data path.
   Add read-only connect with failure rollback and explicit supervisor endpoints,
   independent doctor checks, timestamps and one startup log rotation.
+- Add ownership-aware disconnect and uninstall that preserve unrelated client
+  settings, changed credentials and retained memory data.
+- Add schema-v2 audit review with checkpoint continuity and operator diagnostics.
+- Exclude disabled CORTEX and capture modules and their tests from the core
+  distribution while preserving their source-only characterizations.
 - Add installed-wheel verification using a released synthetic v1 fixture and
-  real stdio MCP. This is not a published package or production acceptance.
+  real stdio MCP.
 
-The candidate uses selected changes from the later experimental branch; its
+This version uses selected changes from the later experimental branch; its
 v3/v4 schemas and additional command surfaces are not part of this v2 result.
-Disconnect/reviewer work and optional-module separation remain later batches.
 
 ## 0.4.0-alpha.1 — 2026-10-09
 
