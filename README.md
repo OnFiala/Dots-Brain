@@ -5,6 +5,9 @@ stores source metadata and revisions in one SQLite database, supports full-text
 search, and can add local CPU embeddings. It does not automatically collect
 assistant conversations.
 
+You can try it on Linux, but it's still a work in progress. Don't expect a
+finished product.
+
 A **Dot** means an AI assistant or client using this shared service. It is a
 product term, not a separate database or a grant of access.
 
