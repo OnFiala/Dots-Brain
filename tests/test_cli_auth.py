@@ -1,4 +1,7 @@
+import contextlib
 import json
+import os
+import sqlite3
 import subprocess
 import sys
 from pathlib import Path
@@ -6,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from dots_brain.auth import Policy, authenticate, issue_client, validate_endpoint
+from dots_brain.cli import parser, run
 from dots_brain.errors import InputError
 from dots_brain.service import MemoryService
 from dots_brain.store import Store
@@ -62,6 +66,103 @@ def test_expired_credential_is_rejected_and_only_hash_is_stored(tmp_path):
     with store.connection(write=True) as db:
         db.execute("UPDATE clients SET expires_at=0 WHERE id=?", (client["client_id"],))
     assert authenticate(store, token) is None
+
+
+@pytest.mark.parametrize("output_state", ["owned", "replacement", "cleanup-denied"])
+def test_failed_issuance_cleans_only_owned_output(tmp_path, monkeypatch, output_state):
+    store = Store(tmp_path / "memory")
+    store.initialize()
+    with store.connection(write=True) as db:
+        db.execute(
+            "CREATE TRIGGER fail_issue BEFORE INSERT ON clients "
+            "BEGIN SELECT RAISE(ABORT, 'synthetic client insert failure'); END"
+        )
+    output = tmp_path / "client.json"
+    replacement = b"Unrelated replacement must survive.\n"
+    actual_connection = store.connection
+    published = {}
+
+    @contextlib.contextmanager
+    def fail_after_publication(*, write=False):
+        with actual_connection(write=write) as db:
+            if write:
+                published.update(json.loads(output.read_text()))
+                assert output.stat().st_mode & 0o777 == 0o600
+                if output_state == "replacement":
+                    staging = tmp_path / "replacement"
+                    staging.write_bytes(replacement)
+                    os.replace(staging, output)
+            yield db
+
+    monkeypatch.setattr(store, "connection", fail_after_publication)
+    if output_state == "cleanup-denied":
+        actual_unlink = Path.unlink
+
+        def deny_cleanup(path, *args, **kwargs):
+            if path == output:
+                raise PermissionError("synthetic cleanup failure")
+            return actual_unlink(path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "unlink", deny_cleanup)
+    with pytest.raises(sqlite3.IntegrityError, match="synthetic client insert failure"):
+        issue_client(
+            store,
+            name="reader",
+            scopes=["memory:read"],
+            projects=None,
+            days=1,
+            output=output,
+            url="http://localhost:8765/mcp",
+        )
+    if output_state == "replacement":
+        assert output.read_bytes() == replacement
+    elif output_state == "owned":
+        assert not output.exists()
+    else:
+        assert json.loads(output.read_text()) == published
+    with actual_connection() as db:
+        assert db.execute("SELECT COUNT(*) FROM clients").fetchone()[0] == 0
+    assert authenticate(store, published["token"]) is None
+
+
+@pytest.mark.parametrize("output_state", ["owned", "replacement", "cleanup-denied"])
+def test_failed_export_cleans_only_owned_output(tmp_path, monkeypatch, output_state):
+    store = Store(tmp_path / "memory")
+    store.initialize()
+    output = tmp_path / "export.jsonl"
+    replacement = b"Unrelated replacement must survive.\n"
+    failure = RuntimeError("synthetic export failure")
+
+    def interrupted_export(self):
+        yield {"content": "synthetic partial export"}
+        if output_state == "replacement":
+            staging = tmp_path / "replacement"
+            staging.write_bytes(replacement)
+            os.replace(staging, output)
+        raise failure
+
+    monkeypatch.setattr(Store, "export", interrupted_export)
+    if output_state == "cleanup-denied":
+        actual_unlink = Path.unlink
+
+        def deny_cleanup(path, *args, **kwargs):
+            if path == output:
+                raise PermissionError("synthetic cleanup failure")
+            return actual_unlink(path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "unlink", deny_cleanup)
+    args = parser().parse_args(
+        ["--data-dir", str(store.directory), "export", "--output", str(output)]
+    )
+    with pytest.raises(RuntimeError) as caught:
+        run(args)
+    assert caught.value is failure
+    if output_state == "replacement":
+        assert output.read_bytes() == replacement
+    elif output_state == "owned":
+        assert not output.exists()
+    else:
+        assert output.exists()
 
 
 @pytest.mark.parametrize(

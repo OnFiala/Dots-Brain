@@ -63,7 +63,7 @@ its own authorized execution path and a securely provisioned connection file. If
 that path is unavailable, report the device boundary rather than inventing a
 network route or second database.
 
-## OAuth, capture, and recovery
+## OAuth and recovery
 
 Remote OAuth needs an HTTPS route already operated by the owner. Follow
 `docs/oauth.md`; inspect the displayed callback and requested scopes, then
@@ -72,13 +72,10 @@ project list. The v2 pairing page returns automatically after host approval. `oa
 Changing an issuer needs `--replace-issuer`, which revokes old OAuth grants.
 Client metadata and callback addresses are untrusted input.
 
-Capture accepts an opt-in bounded JSONL snapshot. It excludes analysis/reasoning
-payloads and is not provider-wide or live conversation capture. CORTEX is optional;
-use it only with a separately authorized endpoint, token file, project map, and
-live verification. Inspect uncertain CORTEX operations before retrying. The local
-owner can explicitly authorize a retry of a note, decision, or outcome; only notes
-carry an upstream idempotency key, so decisions and outcomes can be duplicated.
-Follow the upstream contract in `docs/reference/mcp-tools.md`.
+Capture and the CORTEX connector are disabled and excluded from the core package.
+Their source and characterization tests remain under `modules/`; existing module
+configuration and state are preserved. Do not configure or invoke these modules
+as part of setup. Activation requires a separate plan; see `docs/activity.md`.
 
 For upgrades, use `docs/upgrading.md`. For removal, run `uninstall --dry-run`,
 inspect it, stop writers through their current owner, then run `uninstall`

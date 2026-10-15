@@ -15,6 +15,7 @@ from urllib.parse import urlsplit
 import anyio
 
 from .errors import InputError
+from .local import exclusive_output
 from .store import Store, validate_text
 
 MEMORY_SCOPES = frozenset({"memory:read", "memory:write", "memory:forget"})
@@ -81,9 +82,8 @@ def issue_client(
     if not output.parent.is_dir():
         raise InputError("The credential output directory must already exist.")
     # O_EXCL prevents overwriting another client's credential or following a symlink.
-    descriptor = os.open(output, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
-    try:
-        with os.fdopen(descriptor, "w") as stream:
+    with exclusive_output(output) as descriptor:
+        with os.fdopen(descriptor, "w", closefd=False) as stream:
             json.dump(payload, stream)
             stream.flush()
             os.fsync(stream.fileno())
@@ -100,9 +100,6 @@ def issue_client(
                     expires,
                 ),
             )
-    except BaseException:
-        output.unlink(missing_ok=True)
-        raise
     return {
         "client_id": client_id,
         "credential_file": str(output),

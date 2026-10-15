@@ -16,7 +16,7 @@ from . import __version__
 from .auth import SCOPES
 from .clients import PROVIDERS
 from .errors import BrainError, CapabilityError, InputError
-from .local import locked, writer_lock
+from .local import exclusive_output, locked, writer_lock
 from .store import Store
 
 
@@ -418,18 +418,14 @@ def _run(args) -> dict | None:
                 return {"indexed_this_run": indexed, **semantic.status()}
     if args.command == "export":
         output = args.output.expanduser().absolute()
-        fd = os.open(output, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
         count = 0
-        try:
-            with os.fdopen(fd, "w") as stream:
+        with exclusive_output(output) as descriptor:
+            with os.fdopen(descriptor, "w", closefd=False) as stream:
                 for record in store.export():
                     stream.write(json.dumps(record, ensure_ascii=False) + "\n")
                     count += 1
                 stream.flush()
                 os.fsync(stream.fileno())
-        except BaseException:
-            output.unlink(missing_ok=True)
-            raise
         return {"output": str(output), "revisions": count}
     if args.command == "client":
         from .auth import issue_client, list_clients, revoke_client

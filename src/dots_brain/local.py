@@ -100,6 +100,29 @@ def write_json(path: Path, value: dict) -> None:
     atomic_write(path, json.dumps(value, indent=2) + "\n")
 
 
+@contextlib.contextmanager
+def exclusive_output(path: Path):
+    """Create private output and retain its inode through success or cleanup.
+
+    Preserve replacements and the original error. This check assumes a cooperative
+    directory; it cannot make the stat/unlink pair atomic against hostile writers.
+    Callers must keep the descriptor open, using fdopen with closefd=False.
+    """
+    descriptor = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+    try:
+        created = os.fstat(descriptor)
+        try:
+            yield descriptor
+        except BaseException:
+            with contextlib.suppress(OSError):
+                current = path.lstat()
+                if (current.st_dev, current.st_ino) == (created.st_dev, created.st_ino):
+                    path.unlink()
+            raise
+    finally:
+        os.close(descriptor)
+
+
 def sync_file_and_parent(path: Path) -> None:
     with path.open("rb") as stream:
         os.fsync(stream.fileno())

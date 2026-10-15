@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.1
+
+- Preserve a concurrently replaced credential or export file when creation fails.
+- Keep semantic chunks in deterministic memory order so candidate pruning retains
+  the best body passage for a title match.
+- Correct setup guidance: capture and the CORTEX connector remain disabled and
+  excluded from the core package. Schema v2 and dependencies are unchanged.
+
 ## 0.4.0
 
 - Retain schema v2 and the explicit released v1 migration. Add read-only version

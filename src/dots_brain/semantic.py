@@ -245,10 +245,14 @@ class SemanticIndex:
         clause, args = self.store._filter(projects, project)
         best, bodies = {}, {}
         with self.store.connection() as db:
+            # Index order keeps each memory's title before its body, so pruning
+            # cannot discard a body passage needed by a later title match.
             cursor = db.execute(
                 "SELECT m.id,m.current_revision AS revision,v.dimension,v.vector,"
                 "v.start_char,v.end_char,v.field FROM memories m JOIN semantic_chunks v "
-                "ON v.memory_id=m.id AND v.revision=m.current_revision WHERE v.model=?" + clause,
+                "ON v.memory_id=m.id AND v.revision=m.current_revision WHERE v.model=?"
+                + clause
+                + " ORDER BY v.memory_id,v.chunk_index",
                 [MODEL_ID, *args],
             )
             for row in cursor:

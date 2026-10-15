@@ -1,4 +1,6 @@
+import contextlib
 import hashlib
+import math
 import os
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -83,6 +85,64 @@ def test_search_returns_the_matching_tail_passage(index):
     hit = index.search("peanuts")[0]
     assert hit["id"] == memory["id"] and "peanuts" in hit["excerpt"]
     assert hit["passage"]["start_char"] == 700
+
+
+@pytest.mark.parametrize("reverse_scan", [False, True])
+def test_title_winner_keeps_best_body_passage_after_pruning(index, monkeypatch, reverse_scan):
+    memories = sorted(
+        (save(index, event_id=str(number)) for number in range(3)),
+        key=lambda memory: memory["id"],
+    )
+    tail = "Best matching body."
+    target_body = "P" * 700 + tail
+    scores = {
+        "Target title": 1.0,
+        "P" * 700: 0.1,
+        tail: 0.2,
+        "First distractor": 0.8,
+        "Second distractor": 0.7,
+    }
+    for memory, title, content in zip(
+        memories,
+        ("Target title", "First distractor", "Second distractor"),
+        (target_body, "First distractor", "Second distractor"),
+        strict=True,
+    ):
+        save(
+            index,
+            event_id=index.store.get(memory["id"])["event_id"],
+            title=title,
+            content=content,
+            expected_revision=1,
+        )
+    index._chunks = lambda text: (
+        [(0, 700), (700, len(text))] if text == target_body else [(0, len(text))]
+    )
+
+    def embed(text):
+        score = 1.0 if text == "query" else scores[text]
+        return index.np.array([score, math.sqrt(1 - score * score)], dtype="<f4")
+
+    index._embed = embed
+    assert index.index()["indexed_now"] == 3
+    connection = index.store.connection
+
+    @contextlib.contextmanager
+    def configured_connection(*, write=False):
+        with connection(write=write) as db:
+            db.execute(f"PRAGMA reverse_unordered_selects={int(reverse_scan)}")
+            yield db
+
+    monkeypatch.setattr(index.store, "connection", configured_connection)
+    hit = index.search("query", limit=1)[0]
+    assert hit["id"] == memories[0]["id"]
+    assert hit["semantic_score"] == 1.0 and hit["match_field"] == "title"
+    assert hit["passage"] == {
+        "field": "content",
+        "start_char": 700,
+        "end_char": len(target_body),
+    }
+    assert hit["excerpt"] == tail
 
 
 def test_title_passage_revision_and_forget_remove_derived_chunks(index):
