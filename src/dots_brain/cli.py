@@ -16,7 +16,7 @@ from . import __version__
 from .auth import SCOPES
 from .clients import PROVIDERS
 from .errors import BrainError, CapabilityError, InputError
-from .local import exclusive_output, locked, writer_lock
+from .local import OUTPUT_CLEANUP_WARNING, exclusive_output, locked, writer_lock
 from .store import Store
 
 
@@ -446,6 +446,13 @@ def _run(args) -> dict | None:
     return None
 
 
+def _print_error(exc: BaseException, report: dict) -> None:
+    # Forward only our fixed warning; notes may otherwise contain private inputs.
+    if any(note.startswith(OUTPUT_CLEANUP_WARNING) for note in getattr(exc, "__notes__", [])):
+        report["warning"] = OUTPUT_CLEANUP_WARNING
+    print(json.dumps(report), file=sys.stderr)
+
+
 def main() -> None:
     logging.basicConfig(
         level=logging.WARNING,
@@ -459,9 +466,7 @@ def main() -> None:
             if result.get("state") in {"verification_failed", "blocked", "partial"}:
                 raise SystemExit(1)
     except BrainError as exc:
-        print(
-            json.dumps({"state": "error", "code": exc.code, "message": str(exc)}), file=sys.stderr
-        )
+        _print_error(exc, {"state": "error", "code": exc.code, "message": str(exc)})
         raise SystemExit(1) from None
     except (OSError, ValueError, sqlite3.Error, ExceptionGroup) as exc:
         # Connection and OS errors can contain secret URLs or local paths. Keep them out
@@ -478,16 +483,14 @@ def main() -> None:
             if isinstance(exc, kind):
                 code, hint = name, advice
                 break
-        print(
-            json.dumps(
-                {
-                    "state": "error",
-                    "code": code,
-                    "message": "The command could not complete.",
-                    "hint": hint,
-                }
-            ),
-            file=sys.stderr,
+        _print_error(
+            exc,
+            {
+                "state": "error",
+                "code": code,
+                "message": "The command could not complete.",
+                "hint": hint,
+            },
         )
         raise SystemExit(1) from None
 
