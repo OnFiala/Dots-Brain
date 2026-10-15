@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Exercise large request buffering through nginx in Linux CI and document safe
+  gateway validation and temporary-directory ownership checks.
+
 ## 0.4.2
 
 - Replace obsolete verification history with reproducible source, installed-wheel,

@@ -61,6 +61,12 @@ jobs:
                   check=True,
               )
           PY
+      - name: Exercise nginx request-body buffering as an unprivileged user
+        if: matrix.python == '3.11'
+        run: |
+          test "$(id -u)" -ne 0
+          command -v nginx
+          uv run pytest -q tests/test_nginx_ingress.py
       - run: uv run ruff check src tests scripts modules
       - run: uv run ruff format --check src tests scripts modules
       - run: uv run pytest -q
