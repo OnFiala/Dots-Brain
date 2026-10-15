@@ -13,6 +13,11 @@ from pathlib import Path
 
 from .errors import InputError
 
+OUTPUT_CLEANUP_WARNING = (
+    "Output cleanup incomplete. The requested private output file may remain; "
+    "check it before retrying."
+)
+
 
 @contextlib.contextmanager
 def locked(path: Path, *, timeout: float = 40, shared: bool = False):
@@ -98,6 +103,37 @@ def atomic_write(
 
 def write_json(path: Path, value: dict) -> None:
     atomic_write(path, json.dumps(value, indent=2) + "\n")
+
+
+@contextlib.contextmanager
+def exclusive_output(path: Path):
+    """Create private output and retain its inode through success or cleanup.
+
+    Preserve replacements and report incomplete cleanup on the original error.
+    This assumes a cooperative directory; the stat/unlink pair is not atomic
+    against hostile writers.
+    Callers must keep the descriptor open, using fdopen with closefd=False.
+    """
+    descriptor = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+    try:
+        created = os.fstat(descriptor)
+        try:
+            yield descriptor
+        except BaseException as exc:
+            try:
+                current = path.lstat()
+                if (current.st_dev, current.st_ino) == (created.st_dev, created.st_ino):
+                    path.unlink()
+            except FileNotFoundError:
+                pass
+            except OSError as cleanup_error:
+                exc.add_note(
+                    f"{OUTPUT_CLEANUP_WARNING} Path: {path}. "
+                    f"Cleanup error: {type(cleanup_error).__name__}."
+                )
+            raise
+    finally:
+        os.close(descriptor)
 
 
 def sync_file_and_parent(path: Path) -> None:
