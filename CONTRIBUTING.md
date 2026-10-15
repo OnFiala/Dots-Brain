@@ -5,11 +5,11 @@ Small, focused changes are easier to review and maintain. Focused external PRs
 with synthetic regression evidence are welcome; discuss interface changes first.
 
 Install development dependencies with `uv sync --locked --all-extras`. Before
-committing, run `uv run ruff check src tests scripts`,
-`uv run ruff format --check src tests scripts`, `uv run pytest -q`,
+committing, run `uv run ruff check src tests scripts modules`,
+`uv run ruff format --check src tests scripts modules`, `uv run pytest -q`,
 `uv run python scripts/validate_project.py`, and `uv build`. Model downloads are
 not required for the default test suite. Enable the real model smoke test only
-with an explicitly prepared artifact directory as described in the verification docs.
+with an explicitly prepared artifact directory as described in [verification](docs/verification.md).
 
 Use Conventional Commits, such as `feat(memory): preserve source revisions` or
 `fix(auth): reject expired credentials`. Commit each coherent milestone and

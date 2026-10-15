@@ -11,7 +11,7 @@ finished product.
 A **Dot** means an AI assistant or client using this shared service. It is a
 product term, not a separate database or a grant of access.
 
-**Version: 0.4.1.** Includes schema-v2 storage, access control, MCP boundaries,
+**Version: 0.4.2.** Includes schema-v2 storage, access control, MCP boundaries,
 retrieval and lifecycle diagnostics, ownership-aware client cleanup, v2 audit
 review and operator diagnostics. Disabled CORTEX and capture modules are excluded
 from the core distribution. Source checks, installed artifacts and each deployment

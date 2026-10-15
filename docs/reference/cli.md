@@ -6,6 +6,12 @@ traffic. Argument errors exit 2. Runtime errors exit 1 with `state: "error"` and
 a safe `code`. `partial`, `blocked` and `verification_failed` also exit 1. Inspect
 individual checks and warnings even when a command returns zero.
 
+If failed credential creation or export cannot remove its output, the JSON error
+adds `warning: "Output cleanup incomplete. The requested private output file may
+remain; check it before retrying."` The original error code is retained. Inspect
+the requested path privately; the warning does not contain its contents or the
+underlying cleanup exception text.
+
 Current typed codes include `invalid_input`, `not_found`, `revision_conflict`,
 `source_suppressed`, `capability_unavailable`, `migration_required`,
 `store_disabled`, `invalid_arguments`, `timeout`, `connection_failed`, `permission_denied`, `busy`,

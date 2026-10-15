@@ -17,7 +17,9 @@ at 128 KiB and OAuth at 16 KiB. The backend remains the final limit.
 
 ## Minimal sequence for an authorized deployment
 
-1. Record the exact artifact, service owner, canonical directory and recovery plan.
+1. Privately record the exact artifact, interpreter, service owner, canonical
+   directory, active clients and recovery plan. Keep the previous executable
+   available; use the selected environment's executable for every command.
 2. Initialize a new store or validate an authorized copy through [upgrade](../docs/upgrading.md).
 3. With writers stopped, configure the intended HTTPS issuer using [OAuth](../docs/oauth.md).
 4. Edit and validate the unit/gateway with the host's actual systemd/nginx tools.
@@ -35,7 +37,7 @@ application has no CLI onboarding-window command. When that gateway gate is used
 its operator must open it for the initiated pairing flow and then close it;
 application approval still targets the exact request on the memory host.
 
-Each changed candidate still needs its exact Linux coexistence evidence.
+Each changed artifact needs runtime evidence on its intended Linux host.
 An external process test does not prove a real systemd unit, boot startup, TLS,
 public reachability or restoration of real data. Those are separate acceptance
 steps. A binary rollback cannot undo revocation, FTS changes or data mutations.

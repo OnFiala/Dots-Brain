@@ -34,7 +34,8 @@ as submitted. The response includes
 `warnings: [{"code": "possible_secret", "category": "assignment"}]`, also on
 an idempotent replay. Warnings contain no submitted text. They do not change the
 memory digest or source identity. Review uncertain content before sharing it.
-Audit and capture minimization continue to redact uncertain matches.
+Audit minimization continues to redact uncertain matches. Snapshot capture is
+disabled; its retained source is described in [activity](activity.md).
 
 If a memory transaction commits but its audit receipt fails, the successful
 response carries `audit_warning` with the missing receipt's intent ID. Inspect
@@ -57,11 +58,11 @@ omits deleted records; a concurrent update does not mix a new body into an old
 revision. A bounded title in the context header helps identify the source.
 
 Semantic search is optional and uses the pinned local CPU model. Model preparation
-is explicit. The v2 derived index has no new relevance threshold, repair state
-machine or schema migration in this branch. Known short-word retrieval weaknesses
-remain. The batch-1 acceptance comparison must use the same frozen neutral corpus
-and environment for c963700 and the candidate; owner usefulness assessment remains
-separate. No earlier branch's score or performance measurement proves this candidate.
+is explicit. There is no relevance threshold that guarantees unrelated queries
+return no results. Known short-word retrieval weaknesses remain. Compare versions
+using the same frozen neutral corpus, pinned model and environment. Check exact
+source, revision and body passage as well as result rank; the owner's usefulness
+assessment is a separate requirement. See [performance checks](stress-tests.md).
 
 If semantic search fails, search returns full-text results with
 `semantic: degraded`; it does not expose the underlying exception. Indexing reports

@@ -8,6 +8,12 @@ exports need a local POSIX filesystem with SQLite and advisory lock support.
 macOS supports local development and stdio checks; managed `up` requires Linux
 process identity and pidfd support. Windows is unsupported.
 
+One host owns the canonical store. Before changing it, record the exact artifact,
+interpreter, data directory, supervisor, active clients and rollback source in a
+private operator record. Use that installation's executable for shell commands;
+a checkout or a second device's client configuration does not establish access
+to the canonical data. Keep host paths and credentials out of public reports.
+
 ## Initialize and connect
 
 Choose the canonical private data directory outside the checkout:
@@ -34,13 +40,19 @@ returns `write: "not_tested"`; it creates no synthetic memory. Reload the actual
 client, then verify intended read/write calls separately. Client activation and
 conversation behavior are not established by configuration.
 
-`python scripts/bootstrap.py --data-dir /absolute/private/memory` runs the same
+`python3 scripts/bootstrap.py --data-dir /absolute/private/memory` runs the same
 locked setup on Linux. Optional `--semantic` prepares the model; optional
 `--connect PROVIDER --config PATH` configures a selected adapter. `mcp-json`
 requires its explicit path. Failures return one sanitized JSON result naming
 the failed phase (`prerequisites`, `arguments`, `dependencies`, `setup`, `model`,
 `service` or `client`). Completed earlier phases are not rolled back; inspect the
 named phase before retrying. Child output is not copied into that result.
+
+Bootstrap invokes `up --resume`. Before running it on an existing store, establish
+why the store is disabled and confirm that resuming is authorized. Resume accepts
+only ordinary uninstall state, including its recognized legacy form; it never
+bypasses restore or unknown recovery barriers. Follow [recovery](upgrading.md)
+for those barriers. Bootstrap is not a generic recovery command.
 
 ## An existing supervisor
 

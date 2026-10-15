@@ -352,6 +352,8 @@ def test_real_core_mcp_registers_only_core_tools_even_with_legacy_cortex_attribu
                         assert loaded.structuredContent["content"] == "Core-only synthetic fact"
                         status = await session.call_tool("memory_status", {})
                         assert not status.isError and status.structuredContent["memories"] == 1
+                        for capability in ("capture", "continuous_capture", "history_import"):
+                            assert status.structuredContent[capability] == "disabled"
                         audit = await session.call_tool("audit_events", {"project": "alpha"})
                         assert not audit.isError and len(audit.structuredContent["events"]) == 2
                         denied = await session.call_tool(
