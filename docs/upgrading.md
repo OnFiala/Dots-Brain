@@ -24,6 +24,20 @@ and all clients before migration or activation, then pass `--writers-stopped`.
 An occupied maintenance lock refuses the operation. Advisory lock files are not
 PID files; do not delete them while a process might hold them.
 
+## Updating to 0.4.3
+
+Version 0.4.3 gives replacement full-text documents a fresh row ID. This prevents
+the reproduced secure-delete failure after updating and deleting a long record.
+The application schema and canonical memory/revision format remain unchanged.
+
+Installing the fix does not repair an already damaged full-text index. Check
+database integrity before promotion. If it reports a malformed `memory_fts`
+inverted index, preserve a private backup and arrange an approved offline rebuild
+of that derived index. Stop writers and hold the exclusive maintenance lease;
+verify canonical memories, revisions and the complete audit chain are unchanged
+before committing the repair. Keep secure deletion enabled. An index rebuild
+does not require restoring an older database or resetting OAuth access.
+
 ## Released 0.3 / schema v1 to v2
 
 Record the old executable, source version, supervisor and data directory. Preserve

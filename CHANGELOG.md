@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.4.3
+
+- Give replacement FTS documents a fresh row ID before deleting the old entry,
+  preserving secure deletion after updates to long records.
 
 - Exercise large request buffering through nginx in Linux CI and document safe
   gateway validation and temporary-directory ownership checks.

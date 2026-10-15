@@ -80,6 +80,88 @@ def test_forget_removes_revisions_search_and_prevents_reimport(store):
     assert store.status()["memories"] == 0
 
 
+@pytest.mark.parametrize("preserve_other_record", [False, True])
+def test_long_updated_memory_forget_clears_fts_postings(store, preserve_other_record):
+    body = (
+        "Synthetic ingress regression. No personal data. quartz-raven-ingress-20261015.\n"
+        + "This neutral line verifies preservation of a long request through the public gateway.\n"
+        * 280
+    )
+    updated = body + (
+        "\nRevision two confirms an existing-memory update after the gateway ownership repair."
+    )
+    assert (len(body), len(updated)) == (24159, 24243)
+    other = (
+        remember(store, event_id="unaffected", content="Retain obsidian companion")
+        if preserve_other_record
+        else None
+    )
+    before = store.get(other["id"]) if other else None
+    with store.connection() as db:
+        db.execute("CREATE VIRTUAL TABLE temp.terms USING fts5vocab(main,memory_fts,instance)")
+        original_terms = [
+            tuple(row) for row in db.execute("SELECT * FROM terms ORDER BY term,doc,col,offset")
+        ]
+
+    for cycle in range(4):
+        fields = dict(
+            source="synthetic-ingress",
+            account="synthetic",
+            event_id=f"synthetic-ingress-regression-20261015-{cycle}",
+            project="synthetic",
+            title="Synthetic ingress regression",
+        )
+        record = remember(store, content=body, **fields)
+        with store.connection() as db:
+            assert db.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+        assert remember(store, content=updated, expected_revision=1, **fields)["revision"] == 2
+        assert store.get(record["id"])["content"] == updated
+        assert store.get(record["id"], revision=1)["content"] == body
+        with store.connection() as db:
+            assert db.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+        assert store.forget(record["id"], expected_revision=2)["deleted"]
+        with pytest.raises(NotFoundError):
+            store.get(record["id"])
+        assert store.search("neutral public gateway quartz revision") == []
+        with store.connection(write=True) as db:
+            assert db.execute("PRAGMA secure_delete").fetchone()[0] == 1
+            assert (
+                db.execute("SELECT v FROM memory_fts_config WHERE k='secure-delete'").fetchone()[0]
+                == 1
+            )
+            assert db.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+            db.execute("INSERT INTO memory_fts(memory_fts) VALUES ('integrity-check')")
+            db.execute("CREATE VIRTUAL TABLE temp.terms USING fts5vocab(main,memory_fts,instance)")
+            assert [
+                tuple(row) for row in db.execute("SELECT * FROM terms ORDER BY term,doc,col,offset")
+            ] == original_terms
+            assert (
+                db.execute(
+                    "SELECT count(*) FROM memory_fts "
+                    "WHERE memory_fts MATCH 'neutral OR public OR quartz OR revision'"
+                ).fetchone()[0]
+                == 0
+            )
+        if other:
+            assert store.get(other["id"]) == before
+            assert store.search("obsidian")[0]["id"] == other["id"]
+
+
+def test_exhausted_fts_rowids_roll_back_update(store):
+    record = remember(store)
+    before = store.get(record["id"])
+    with store.connection(write=True) as db:
+        db.execute("UPDATE memory_fts SET rowid=?", (2**63 - 1,))
+    with pytest.raises(InputError, match="row IDs are exhausted"):
+        remember(store, content="A replacement must not partially commit.", expected_revision=1)
+    assert store.get(record["id"]) == before
+    assert len(list(store.export())) == 1
+    assert store.search("SQLite")[0]["id"] == record["id"]
+    with store.connection() as db:
+        assert db.execute("SELECT rowid FROM memory_fts").fetchone()[0] == 2**63 - 1
+        assert db.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+
+
 def test_stale_forget_preserves_the_new_revision_and_allows_current_delete(store):
     first = remember(store)
     remember(store, content="A newer decision from another client", expected_revision=1)
