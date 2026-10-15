@@ -60,7 +60,7 @@ Keep operator reports private: sanitized metadata can still contain personal tex
 
 ## Disabled modules
 
-Snapshot capture and the CORTEX connector are disabled in this candidate. Their
+Snapshot capture and the CORTEX connector are disabled. Their
 existing source and characterization tests are retained under `modules/`, which
 is excluded from both the core wheel and source distribution. The core requires
 no module installation or module-specific dependency. Existing `capture` and
@@ -74,7 +74,7 @@ clean core setup and v1 migration do not create them. An explicit restore retain
 its existing safety treatment of historical in-flight ledger entries, as described
 in [architecture](architecture.md).
 
-There is no activation command or installer for these modules in this candidate.
+There is no activation command or installer for these modules.
 Internal repairs, import, upstream publication and changing a running collector
 require a separately approved activation plan. The preserved module tests exercise
 legacy code with explicit test-only wiring; their success does not certify those

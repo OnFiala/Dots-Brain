@@ -1,8 +1,21 @@
 # Changelog
 
+## 0.4.2
+
+- Replace obsolete verification history with reproducible source, installed-wheel,
+  Linux, retrieval, and deployment checks.
+- Correct release workflow and bootstrap resume guidance; consolidate historical
+  deployment pointers into current operating documentation.
+- Align package descriptions, contributor commands, and troubleshooting with the
+  implemented behavior.
+- Report history import, continuous and provider-wide capture as disabled in memory status.
+  Storage, retrieval, schema, and dependencies are unchanged.
+
 ## 0.4.1
 
 - Preserve a concurrently replaced credential or export file when creation fails.
+- Report incomplete output cleanup while retaining the original error and keeping
+  private diagnostic details out of CLI output.
 - Keep semantic chunks in deterministic memory order so candidate pruning retains
   the best body passage for a title match.
 - Correct setup guidance: capture and the CORTEX connector remain disabled and

@@ -4,6 +4,12 @@ OAuth grants scoped access to an existing memory host. Configuration does not
 create an HTTPS route, start a service or pair a provider account. Pairing names
 and callback metadata come from the client and are untrusted.
 
+The ingress operator owns TLS, request size and rate limits, access logs and
+rollback. Keep host names, internal addresses, client identities and gateway
+details in a private operator record. Verify the exact public origin, approval
+flow and real MCP calls through each intended client before accepting remote
+access. A local HTTP test alone cannot establish that path.
+
 ## Configure offline, then start the intended listeners
 
 Stop the HTTP and stdio servers before `oauth configure`, `oauth disable`,
@@ -49,8 +55,7 @@ requested scopes. `--all-projects` is broader than explicit project choices.
 the tool is used. The callback delivers a one-time code bound to the client,
 redirect URI, resource and S256 PKCE verifier. Supported client authentication is
 `none` or `client_secret_post`. The browser returns automatically after approval;
-there is no separate onboarding window or POST continuation command in this v2
-candidate.
+there is no separate onboarding window or POST continuation command.
 
 Verify real memory calls in each intended assistant after pairing. An SDK test
 does not prove that a new provider conversation has loaded or used the tools.

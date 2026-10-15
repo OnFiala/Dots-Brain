@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "dots-brain"
-version = "0.4.1"
-description = "One source-aware memory for your AI tools, hosted on your own machine."
+version = "0.4.2"
+description = "Self-hosted MCP memory for explicitly saved notes and source references."
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"

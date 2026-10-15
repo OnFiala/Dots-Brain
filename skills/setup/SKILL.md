@@ -28,7 +28,7 @@ not proof of a working conversation integration.
 From a writable checkout:
 
 ```text
-python scripts/bootstrap.py --data-dir /absolute/private/memory --semantic --connect codex
+python3 scripts/bootstrap.py --data-dir /absolute/private/memory --semantic --connect codex
 ```
 
 Omit `--semantic` or `--connect` when those capabilities are not requested. The
@@ -37,6 +37,11 @@ prepares the pinned local CPU model, starts a loopback service, and verifies the
 configured local bridge. The model download is optional and sizable. Run
 `doctor`; then reload the real client and make an actual MCP read.
 Report that evidence separately from remote access, capture, or host persistence.
+
+Bootstrap invokes `up --resume`. Establish the disabled reason before running it
+on an existing store, and resume ordinary uninstall only with owner authority.
+Restore and unknown recovery barriers are never bypassed; follow
+`docs/upgrading.md` instead. Do not delete a barrier to make setup succeed.
 
 `up` starts or reuses one managed loopback HTTP service. A manually supervised
 service may already own the store. `oauth configure` and `oauth disable` never

@@ -6,7 +6,7 @@ Do not restore an older database over newer writes, revisions or deletions.
 
 ## Compatibility and offline maintenance
 
-Python must supply SQLite **3.42 or newer with FTS5**. The candidate enables FTS5
+Python must supply SQLite **3.42 or newer with FTS5**. Dots Brain enables FTS5
 secure-delete and compacts old FTS tombstones once, in a transaction. The ordinary
 SQLite secure-delete setting remains enabled. Application schema v2 does not
 mean the FTS file remains readable by older SQLite builds. Existing backups,
@@ -46,7 +46,7 @@ path must also be beside the database. Repeating migration of v2 is a no-op.
 A failed DDL transaction rolls back and retains its completed backup for inspection.
 A process crash may leave an incomplete backup; do not use it until validated.
 Unknown or newer application versions require a compatible release or a separate
-migration plan. This branch does not relabel v3/v4 or migrate unreleased formats.
+migration plan. Migration does not relabel v3/v4 or accept unreleased formats.
 Read-only WAL access can create SQLite coordination files; rejected version
 preflight must not change the main file or checkpoint its committed WAL.
 
@@ -121,6 +121,6 @@ only an ordinary uninstall marker and restores it if startup fails. Recovery use
 Each local source checkpoint can be reverted on disposable test data. A code
 revert cannot restore deleted content, revoked grants or the old FTS format.
 Preserve SQLite 3.42+, deletion suppression and the new authorization state in any
-replacement artifact. Once the candidate accepts real writes, do not roll back
-to an old snapshot or the unmodified v2 baseline. Prepare a compatible replacement
+replacement artifact. Once an installation accepts real writes, do not roll back
+to an old snapshot or an incompatible binary. Prepare a compatible replacement
 or an explicitly approved outage and forward repair before deployment.

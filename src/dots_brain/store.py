@@ -497,8 +497,8 @@ class Store:
             **dict(counts),
             "sources": [dict(r) for r in sources],
             "capture": "disabled",
-            "continuous_capture": "unverified",
-            "history_import": "bounded_user_text_snapshots",
+            "continuous_capture": "disabled",
+            "history_import": "disabled",
         }
 
     def export(self, *, projects: tuple[str, ...] | None = None) -> Iterator[dict]:
