@@ -354,6 +354,9 @@ def test_real_core_mcp_registers_only_core_tools_even_with_legacy_cortex_attribu
                         assert not status.isError and status.structuredContent["memories"] == 1
                         for capability in ("capture", "continuous_capture", "history_import"):
                             assert status.structuredContent[capability] == "disabled"
+                        assert (
+                            status.structuredContent["audit"]["provider_wide_capture"] == "disabled"
+                        )
                         audit = await session.call_tool("audit_events", {"project": "alpha"})
                         assert not audit.isError and len(audit.structuredContent["events"]) == 2
                         denied = await session.call_tool(

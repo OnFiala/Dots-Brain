@@ -167,7 +167,7 @@ class MemoryService:
             "audit": {
                 "state": "available",
                 "coverage": "memory_mutations_and_submitted_events",
-                "provider_wide_capture": "unverified",
+                "provider_wide_capture": "disabled",
             },
             "cortex": "disabled",
         }

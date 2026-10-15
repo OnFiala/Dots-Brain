@@ -8,7 +8,7 @@
   deployment pointers into current operating documentation.
 - Align package descriptions, contributor commands, and troubleshooting with the
   implemented behavior.
-- Report history import and continuous capture as disabled in memory status.
+- Report history import, continuous and provider-wide capture as disabled in memory status.
   Storage, retrieval, schema, and dependencies are unchanged.
 
 ## 0.4.1
