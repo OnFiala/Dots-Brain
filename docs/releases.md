@@ -11,7 +11,7 @@ deployment require explicit maintainer authority.
    tag, its commit and main ancestry in a clean checkout of that commit:
 
    ```sh
-   RELEASE_TAG=v0.4.2
+   RELEASE_TAG=v0.4.3
    git fetch origin main --tags
    test "$(git cat-file -t "refs/tags/$RELEASE_TAG")" = tag
    RELEASE_COMMIT=$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")

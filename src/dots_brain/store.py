@@ -377,9 +377,19 @@ class Store:
                     timestamp,
                 ),
             )
+            # Secure-delete can leave stale postings when a replacement reuses
+            # the deleted rowid in the same transaction. Allocate before DELETE.
+            fts_rowid = (
+                db.execute("SELECT COALESCE(MAX(rowid),0) FROM memory_fts").fetchone()[0] + 1
+            )
+            if fts_rowid > 2**63 - 1:
+                raise InputError("Full-text index row IDs are exhausted.")
             if existing:
                 db.execute("DELETE FROM memory_fts WHERE memory_id=?", (memory_id,))
-            db.execute("INSERT INTO memory_fts VALUES (?,?,?)", (memory_id, title, content))
+            db.execute(
+                "INSERT INTO memory_fts(rowid,memory_id,title,content) VALUES (?,?,?,?)",
+                (fts_rowid, memory_id, title, content),
+            )
         return {"id": memory_id, "revision": revision, "changed": True, **metadata}
 
     def get(
