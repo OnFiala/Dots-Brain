@@ -26,7 +26,12 @@ download a model. Set `BRAIN_TEST_MODEL_DIR` to explicitly prepared, verified
 model files to include the real CPU embedding smoke test.
 
 [CI](../.github/workflows/ci.yml) runs Python 3.11 and 3.12 on Linux. Its service
-and nginx checks validate temporary template copies, not running units or TLS.
+checks validate temporary template copies. The nginx regression uses a real
+disposable gateway and mock backend under the same unprivileged identity for
+syntax validation and runtime. It forwards a 32 KiB JSON body through an 8 KiB
+buffer and checks the backend's 401; an unwritable body directory must instead
+produce a gateway 500 without reaching the backend. This does not verify
+running systemd units, TLS, pairing or an actual memory write.
 Inspect results for the exact commit. A local macOS run can skip Linux lifecycle
 cases; a skipped or simulated check is not evidence of that behavior.
 
@@ -67,7 +72,12 @@ CORTEX module packages; those modules must remain unavailable after installation
   neutral corpus; assess usefulness separately. See [performance checks](stress-tests.md).
 - For remote OAuth, verify private and public listener authentication, the exact
   approval/callback flow, refresh, revocation and project scopes through the
-  intended route. Reload each real assistant and test actual read/write and
+  intended route. Check service writability of nginx body/proxy temporary paths
+  and send a JSON body larger than the configured nginx body buffer through the
+  public route (for example, 32 KiB for the default 8/16 KiB buffer). Validate
+  nginx scratch copies or use the service identity: root `nginx -t` on live paths
+  may change temporary-directory ownership. A 401 only proves rejection, not paired
+  access or memory use. Reload each real assistant and test actual read/write and
   cross-reading within its grants. A configured bridge is not client activation.
 - For recovery, use an owner-authorized copy and a target-bound rollback plan.
   Verify revisions, deletion barriers, access invalidation and the exact staged
