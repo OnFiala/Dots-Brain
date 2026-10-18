@@ -26,6 +26,16 @@ def main():
         )
     )
     assert runtime_version == project["version"], "Runtime version mismatch"
+    locked = tomllib.loads((ROOT / "uv.lock").read_text())
+    locked_version = next(
+        row["version"] for row in locked["package"] if row["name"] == "dots-brain"
+    )
+    assert locked_version == project["version"], "Lockfile version mismatch"
+    assert f"**Source version: {project['version']}.**" in (ROOT / "README.md").read_text(), (
+        "README version mismatch"
+    )
+    latest = re.search(r"^## (\S+)", (ROOT / "CHANGELOG.md").read_text(), re.MULTILINE)
+    assert latest and latest.group(1) == project["version"], "Changelog version mismatch"
     assert plugin["name"] == project["name"] == "dots-brain"
     interface = plugin["extensions"]["com.openai"]["interface"]
     assert len(interface["shortDescription"]) <= 30

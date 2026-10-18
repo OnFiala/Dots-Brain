@@ -30,6 +30,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ inputs.tag }}
+          fetch-depth: 0
           persist-credentials: false
       - name: Resolve immutable source
         id: identity
@@ -37,6 +38,7 @@ jobs:
           RELEASE_TAG: ${{ inputs.tag }}
         run: |
           test "$(git cat-file -t "refs/tags/$RELEASE_TAG")" = tag
+          git merge-base --is-ancestor "refs/tags/$RELEASE_TAG^{commit}" origin/main
           printf 'commit=%s\n' "$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")" >> "$GITHUB_OUTPUT"
           printf 'tag_object=%s\n' "$(git rev-parse "refs/tags/$RELEASE_TAG")" >> "$GITHUB_OUTPUT"
           python - <<'PY'
@@ -49,6 +51,7 @@ jobs:
   build:
     needs: resolve
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -62,12 +65,24 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
           enable-cache: true
-      - run: uv sync --frozen --all-extras
+      - run: uv sync --locked --all-extras
       - run: uv run ruff check src tests scripts modules
       - run: uv run ruff format --check src tests scripts modules
       - run: uv run pytest -q
       - run: uv run python scripts/validate_project.py
       - run: uv build
+      - name: Verify a fresh core-only wheel installation
+        run: |
+          CHECK_ROOT=$(mktemp -d)
+          trap 'rm -rf "$CHECK_ROOT"' EXIT
+          uv export --locked --no-dev --no-emit-project --format requirements.txt --output-file "$CHECK_ROOT/core-requirements.txt" > /dev/null
+          uv venv --python '${{ matrix.python }}' "$CHECK_ROOT/venv"
+          uv pip sync --python "$CHECK_ROOT/venv/bin/python" --require-hashes "$CHECK_ROOT/core-requirements.txt"
+          set -- dist/*.whl
+          test "$#" -eq 1
+          sha256sum -- "$1"
+          uv pip install --python "$CHECK_ROOT/venv/bin/python" --no-deps "$1"
+          env -u PYTHONPATH "$CHECK_ROOT/venv/bin/python" scripts/verify_wheel.py
       - name: Package installer and checksums
         if: matrix.python == '3.12'
         env:

@@ -24,6 +24,19 @@ and all clients before migration or activation, then pass `--writers-stopped`.
 An occupied maintenance lock refuses the operation. Advisory lock files are not
 PID files; do not delete them while a process might hold them.
 
+## Updating to 0.4.4
+
+Version 0.4.4 retains schema v2 and the 0.4.3 storage implementation. Install and
+verify the selected artifact in a separate environment before switching the
+supervisor's executable. Retain the prior environment for binary rollback.
+
+The default systemd example now runs core-only search. If the existing service
+uses embeddings, preserve its explicit `--semantic` option and verify its model,
+semantic dependencies and data-directory permissions before replacing the unit.
+Use the [deployment sequence](../deploy/README.md) for the intended service owner.
+When upgrading from an earlier version, also apply the relevant notes below;
+an existing damaged FTS index still requires its own offline repair.
+
 ## Updating to 0.4.3
 
 Version 0.4.3 gives replacement full-text documents a fresh row ID. This prevents
