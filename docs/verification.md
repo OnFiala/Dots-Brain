@@ -25,8 +25,12 @@ core distribution tests do not require those modules. Ordinary tests do not
 download a model. Set `BRAIN_TEST_MODEL_DIR` to explicitly prepared, verified
 model files to include the real CPU embedding smoke test.
 
-[CI](../.github/workflows/ci.yml) runs Python 3.11 and 3.12 on Linux. Its service
-checks validate temporary template copies. The nginx regression uses a real
+[CI](../.github/workflows/ci.yml) runs Python 3.11 and 3.12 on Linux. Each matrix
+job also installs its built wheel with hash-locked core dependencies into a new
+environment and runs the [installed-wheel helper](../scripts/verify_wheel.py).
+The log includes the wheel's SHA256 and the helper's Python, SQLite and package
+versions. Its service syntax checks validate temporary template copies.
+The nginx regression uses a real
 disposable gateway and mock backend under the same unprivileged identity for
 syntax validation and runtime. It forwards a 32 KiB JSON body through an 8 KiB
 buffer and checks the backend's 401; an unwritable body directory must instead
@@ -54,10 +58,12 @@ env -u PYTHONPATH "$CHECK_ROOT/venv/bin/python" scripts/verify_wheel.py
 
 Repeat for each supported Python version being accepted. Preserve the wheel hash
 and the helper's result, then remove the disposable environment when no longer
-needed. [The helper](../scripts/verify_wheel.py) refuses an import from the source
-checkout. It checks the hashed released-v1 fixture, migration, revisions, static
+needed. [The helper](../scripts/verify_wheel.py) refuses imports from the source
+checkout or outside the selected environment, mismatched source/package/runtime
+versions, the semantic extra, and importable capture/CORTEX module packages.
+It checks the hashed released-v1 fixture, migration, revisions, static
 grants, OAuth history, deletion suppression, staged restore and real installed
-stdio MCP read/write. It also requires the semantic extra to be absent and starts
+stdio MCP read/write. It also starts
 the systemd template's actual `ExecStart` command against a new synthetic store,
 substituting only installation paths and loopback ports and applying the unit's
 environment settings. It checks private HTTP MCP read/write and public rejection
