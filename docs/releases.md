@@ -23,8 +23,9 @@ deployment require explicit maintainer authority.
 
 3. Create a draft prerelease with accurate notes. Run
    [Prepare release](../.github/workflows/release.yml) from `main` with that tag.
-   It resolves the annotated tag to a commit, verifies its ancestry against
-   `origin/main`, compares the plugin version with the tag, and runs the Python
+   It checks out the fully qualified tag, binds HEAD to its resolved commit,
+   verifies its ancestry against `origin/main`, compares the plugin version with
+   the tag, and runs the Python
    3.11/3.12 checks and builds on that commit.
 4. Inspect the fresh installed-wheel result from both release matrix jobs. Each
    job uses hash-locked core dependencies in a new environment and runs

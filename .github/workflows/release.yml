@@ -29,7 +29,7 @@ jobs:
           [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta|rc)\.[0-9]+)?$ ]]
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          ref: ${{ inputs.tag }}
+          ref: refs/tags/${{ inputs.tag }}
           fetch-depth: 0
           persist-credentials: false
       - name: Resolve immutable source
@@ -38,8 +38,10 @@ jobs:
           RELEASE_TAG: ${{ inputs.tag }}
         run: |
           test "$(git cat-file -t "refs/tags/$RELEASE_TAG")" = tag
-          git merge-base --is-ancestor "refs/tags/$RELEASE_TAG^{commit}" origin/main
-          printf 'commit=%s\n' "$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")" >> "$GITHUB_OUTPUT"
+          RELEASE_COMMIT=$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")
+          test "$(git rev-parse HEAD)" = "$RELEASE_COMMIT"
+          git merge-base --is-ancestor "$RELEASE_COMMIT" origin/main
+          printf 'commit=%s\n' "$RELEASE_COMMIT" >> "$GITHUB_OUTPUT"
           printf 'tag_object=%s\n' "$(git rev-parse "refs/tags/$RELEASE_TAG")" >> "$GITHUB_OUTPUT"
           python - <<'PY'
           import json
