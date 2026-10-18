@@ -278,6 +278,44 @@ def test_cutover_validation_finishes_before_disabling_source(store, tmp_path):
     assert (target.directory / "disabled.json").exists()
 
 
+@pytest.mark.parametrize("barrier", ["empty", "unknown", "dangling-symlink"])
+def test_cutover_preserves_unrelated_source_barrier_and_both_stores(store, tmp_path, barrier):
+    put(store)
+    output = tmp_path / "backup.sqlite3"
+    backup_store(store, output)
+    target = Store(tmp_path / "restored")
+    restore_store(output, target, latest_deletions=store)
+    marker = store.directory / "disabled.json"
+    if barrier == "dangling-symlink":
+        marker.symlink_to(tmp_path / "missing-marker")
+    else:
+        write_json(marker, {} if barrier == "empty" else {"reason": "unknown"})
+    marker_before = marker.readlink() if marker.is_symlink() else marker.read_bytes()
+    target_marker = target.directory / "disabled.json"
+    target_before = target_marker.read_bytes()
+
+    def snapshots():
+        results = []
+        for installation in (store, target):
+            with installation.connection() as db:
+                results.append(tuple(db.iterdump()))
+        return results
+
+    before = snapshots()
+    with pytest.raises(InputError, match="disabled"):
+        store.ensure_writable()
+    message = "symbolic link" if barrier == "dangling-symlink" else "unrelated disable barrier"
+    with pytest.raises(InputError, match=message):
+        activate_restore(store, target, writers_stopped=True)
+    after_marker = marker.readlink() if marker.is_symlink() else marker.read_bytes()
+    assert after_marker == marker_before
+    assert target_marker.read_bytes() == target_before
+    assert snapshots() == before
+    for installation in (store, target):
+        with pytest.raises(InputError, match="disabled"):
+            installation.ensure_writable()
+
+
 def test_pending_cutover_can_only_retry_its_exact_target(store, tmp_path, monkeypatch):
     output = tmp_path / "backup.sqlite3"
     backup_store(store, output)

@@ -300,14 +300,15 @@ def activate_restore(source: Store, target: Store, *, writers_stopped: bool) -> 
         with source.connection(write=True) as current:
             validate_snapshot(current, SCHEMA_VERSION)
             source_marker = source.directory / "disabled.json"
-            previous = read_json(source_marker) if source_marker.exists() else {}
-            if previous and (
+            barrier_present = source_marker.exists() or source_marker.is_symlink()
+            previous = read_json(source_marker) if barrier_present else {}
+            if barrier_present and (
                 previous.get("reason") != "restore_cutover"
                 or previous.get("cutover") not in {"pending", "committed"}
                 or previous.get("uninstalled_at")
             ):
                 raise InputError("The surviving store has an unrelated disable barrier.")
-            if previous and (
+            if barrier_present and (
                 previous.get("recovery_id") != recovery_id
                 or Path(previous.get("replacement", "")).resolve() != target.directory.resolve()
             ):
@@ -319,7 +320,7 @@ def activate_restore(source: Store, target: Store, *, writers_stopped: bool) -> 
             with target.connection(write=True) as restored:
                 forgotten = _apply_deletions(restored, legacy, scoped)
                 reset_done = _merge_audit_suffix(
-                    current, restored, recovery_id=recovery_id, retry=bool(previous)
+                    current, restored, recovery_id=recovery_id, retry=barrier_present
                 )
                 validate_snapshot(restored, SCHEMA_VERSION)
                 _validate_cutover_state(current, restored)
