@@ -5,14 +5,18 @@ import hashlib
 import importlib.util
 import json
 import os
+import platform
 import shlex
 import shutil
 import socket
+import sqlite3
 import subprocess
 import sys
 import tempfile
 import time
+import tomllib
 from contextlib import ExitStack
+from importlib.metadata import version
 from pathlib import Path
 
 import httpx
@@ -141,7 +145,18 @@ def main():
     require(
         not Path(dots_brain.__file__).resolve().is_relative_to(root), "Imported source, not wheel"
     )
+    require(
+        Path(dots_brain.__file__).resolve().is_relative_to(Path(sys.prefix).resolve()),
+        "Package is outside the selected environment",
+    )
+    expected = tomllib.loads((root / "pyproject.toml").read_text())["project"]["version"]
+    require(
+        dots_brain.__version__ == version("dots-brain") == expected,
+        "Installed package, runtime and source versions differ",
+    )
     require(importlib.util.find_spec("fastembed") is None, "Expected core-only dependencies")
+    for name in ("dots_brain_capture", "dots_brain_cortex"):
+        require(importlib.util.find_spec(name) is None, "Excluded module is importable: " + name)
     fixture = root / "tests/fixtures/historical/v1-263c386"
     manifest = json.loads((fixture / "manifest.json").read_text())
     for name, digest in manifest["files"].items():
@@ -202,8 +217,11 @@ def main():
             {
                 "state": "passed",
                 "version": dots_brain.__version__,
+                "python": platform.python_version(),
+                "sqlite": sqlite3.sqlite_version,
                 "package": dots_brain.__file__,
                 "checks": [
+                    "distribution_identity",
                     "v1_upgrade",
                     "revision",
                     "grants",
