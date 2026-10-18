@@ -15,6 +15,13 @@ supervisor result before relying on them.
 `systemd/dots-brain.service` runs one HTTP process with private port 8765 and
 OAuth-only port 8787. The ingress unit and nginx example route public traffic to
 8787. Static credentials must never pass on that listener, regardless of Host.
+The default service uses core dependencies and full-text search; embeddings are
+optional. Before adding `--semantic` to `ExecStart`, install the semantic extra
+in the selected environment, prepare and verify the model as the service owner
+in the same data directory, and build its index following
+[optional local embeddings](../docs/installation.md#optional-local-embeddings).
+Model preparation needs download access; the unit sets `HF_HUB_OFFLINE=1` for
+offline model loading during service operation.
 The example gateway allows larger MCP bodies than the backend, which caps MCP
 at 128 KiB and OAuth at 16 KiB. The backend remains the final limit.
 
@@ -23,7 +30,10 @@ at 128 KiB and OAuth at 16 KiB. The backend remains the final limit.
 1. Privately record the exact artifact, interpreter, service owner, canonical
    directory, active clients and recovery plan. Keep the previous executable
    available; use the selected environment's executable for every command.
-2. Initialize a new store or validate an authorized copy through [upgrade](../docs/upgrading.md).
+2. Complete the locked [installation](../docs/installation.md) in the selected
+   environment. Initialize a new store or validate an authorized copy through
+   [upgrade](../docs/upgrading.md). The service owner must be able to access the
+   executable and write the canonical directory.
 3. With writers stopped, configure the intended HTTPS issuer using [OAuth](../docs/oauth.md).
 4. Edit and validate the unit/gateway with the host's actual systemd/nginx tools.
    Validate scratch copies or run `nginx -t` under the gateway's service identity.
