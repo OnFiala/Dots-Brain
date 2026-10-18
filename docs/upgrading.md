@@ -26,9 +26,12 @@ PID files; do not delete them while a process might hold them.
 
 ## Updating to 0.4.4
 
-Version 0.4.4 retains schema v2 and the 0.4.3 storage implementation. Install and
-verify the selected artifact in a separate environment before switching the
-supervisor's executable. Retain the prior environment for binary rollback.
+Version 0.4.4 retains schema v2 and the 0.4.3 memory storage format. Restore
+activation now also refuses an empty source disable marker instead of treating
+it as absent. Inspect unknown barriers with `doctor`; a version upgrade does not
+authorize removing them. Install and verify the selected artifact in a separate
+environment before switching the supervisor's executable. Retain the prior
+environment for binary rollback.
 
 The default systemd example now runs core-only search. If the existing service
 uses embeddings, preserve its explicit `--semantic` option and verify its model,

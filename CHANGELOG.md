@@ -11,8 +11,10 @@
   release preparation before uploading artifacts to an existing draft.
 - Reject incomplete indexing or fulltext fallback in the semantic stress harness,
   including when fallback still returns the expected synthetic records.
+- Preserve an existing empty or unknown source disable barrier during restore
+  activation; only a valid retry of the same recovery may proceed.
 - Validate package, runtime, plugin, lockfile, README and changelog versions
-  together. Schema v2, runtime behavior and dependencies are unchanged.
+  together. Schema v2 and dependencies are unchanged.
 
 ## 0.4.3
 
