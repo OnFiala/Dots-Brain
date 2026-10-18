@@ -9,6 +9,8 @@
   Reject source imports, mismatched versions and excluded module packages.
 - Require current locked metadata, main ancestry and installed-wheel checks in
   release preparation before uploading artifacts to an existing draft.
+- Reject incomplete indexing or fulltext fallback in the semantic stress harness,
+  including when fallback still returns the expected synthetic records.
 - Validate package, runtime, plugin, lockfile, README and changelog versions
   together. Schema v2, runtime behavior and dependencies are unchanged.
 

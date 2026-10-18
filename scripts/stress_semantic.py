@@ -71,7 +71,11 @@ def run(model: Path, records: int, workers: int, queries: int) -> dict:
                     while True:
                         status = await session.call_tool("memory_status", {})
                         assert not status.isError
-                        if status.structuredContent["semantic"]["pending"] == 0:
+                        semantic = status.structuredContent["semantic"]
+                        if semantic["pending"] == 0:
+                            assert (
+                                semantic["state"] == "ready" and semantic["indexed"] == records
+                            ), "Semantic index is not ready with all synthetic records."
                             break
                         if time.monotonic() >= deadline:
                             raise AssertionError("Background indexing exceeded 180 seconds.")
@@ -96,7 +100,11 @@ def run(model: Path, records: int, workers: int, queries: int) -> dict:
                                 "memory_search", {"query": query, "limit": 3}
                             )
                             assert not result.isError
-                            rows = result.structuredContent["results"]
+                            payload = result.structuredContent
+                            assert (
+                                payload["semantic"] == "enabled" and payload["mode"] == "hybrid"
+                            ), "Semantic stress requires enabled hybrid search."
+                            rows = payload["results"]
                             hits.append(any(row["id"] == expected[key] for row in rows))
                             samples.append(time.monotonic() - tick)
 

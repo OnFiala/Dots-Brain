@@ -40,8 +40,11 @@ uv run python scripts/stress_semantic.py --model-dir /absolute/private/prepared-
 ```
 
 The harness copies or hard-links model files into a fresh store. It permits
-3–300 records, 1–8 workers and 6–200 queries. Six repeated synthetic Czech/English
-prompts check recall at three; this is not a representative relevance benchmark.
+3–300 records, 1–8 workers and 6–200 queries. It requires a ready index containing
+every synthetic record, no pending indexing and enabled hybrid search for every
+query. Fulltext fallback fails the run even if it returns the expected records.
+Six repeated synthetic Czech/English prompts check recall at three; this is not
+a representative relevance benchmark.
 
 ## Interpret the reports
 
