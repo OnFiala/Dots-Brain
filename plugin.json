@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "dots-brain",
-  "version": "0.4.3",
+  "version": "0.4.4",
   "description": "Install and operate self-hosted MCP memory for explicitly saved notes.",
   "author": {"name": "Dots Brain contributors"},
   "extensions": {

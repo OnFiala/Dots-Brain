@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.4.4
+
+- Make the default systemd example work with core dependencies. Document the
+  explicit semantic-extra and model preparation path for its service owner.
+- Verify fresh core-only wheel installations in the Linux Python 3.11/3.12
+  matrix, including real stdio/HTTP MCP, template startup, migration and restore.
+  Reject source imports, mismatched versions and excluded module packages.
+- Require current locked metadata, main ancestry and installed-wheel checks in
+  release preparation before uploading artifacts to an existing draft.
+- Validate package, runtime, plugin, lockfile, README and changelog versions
+  together. Schema v2, runtime behavior and dependencies are unchanged.
+
 ## 0.4.3
 
 - Give replacement FTS documents a fresh row ID before deleting the old entry,
