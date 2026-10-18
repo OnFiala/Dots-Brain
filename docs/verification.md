@@ -57,9 +57,14 @@ and the helper's result, then remove the disposable environment when no longer
 needed. [The helper](../scripts/verify_wheel.py) refuses an import from the source
 checkout. It checks the hashed released-v1 fixture, migration, revisions, static
 grants, OAuth history, deletion suppression, staged restore and real installed
-stdio MCP read/write. It does not verify managed Linux startup, public OAuth or
-an assistant's conversation integration. Core artifacts exclude capture and
-CORTEX module packages; those modules must remain unavailable after installation.
+stdio MCP read/write. It also requires the semantic extra to be absent and starts
+the systemd template's actual `ExecStart` command against a new synthetic store,
+substituting only installation paths and loopback ports and applying the unit's
+environment settings. It checks private HTTP MCP read/write and public rejection
+of a static token. This subprocess check does not verify systemd supervision,
+boot startup, public OAuth or an assistant's conversation integration.
+Core artifacts exclude capture and CORTEX module packages; those modules must
+remain unavailable after installation.
 
 ## Runtime acceptance
 
