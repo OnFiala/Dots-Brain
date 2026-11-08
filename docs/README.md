@@ -1,6 +1,6 @@
 # Documentation
 
-Dots Brain 1.0.0 documents the Linux core: explicitly saved notes, source
+Dots Brain 1.0.1 documents the Linux core: explicitly saved notes, source
 references, revisions, full-text search and optional local CPU embeddings.
 Capture and CORTEX remain disabled; individual assistant behavior requires its
 own verification.

@@ -24,6 +24,20 @@ and all clients before migration or activation, then pass `--writers-stopped`.
 An occupied maintenance lock refuses the operation. Advisory lock files are not
 PID files; do not delete them while a process might hold them.
 
+## Updating to 1.0.1
+
+Version 1.0.1 hardens managed Python launches and audit review, repairs owned
+client reconnects across installation environments, validates credential
+identities and keeps status counts consistent during concurrent writes.
+It retains schema v2, the existing dependency lock and canonical note format.
+No data migration, grant reset or model download is required for an existing
+1.0.0 installation.
+
+Use the versioned installation and supervisor-switch procedure below. Retain the
+previous environment for code-only rollback with the current database; never
+restore an older snapshot over newer writes or deletions. Reconnect registered
+clients from the selected environment and verify their actual read/write calls.
+
 ## Updating to 1.0.0
 
 Version 1.0.0 retains application schema v2 and the 0.4.4 canonical note and
