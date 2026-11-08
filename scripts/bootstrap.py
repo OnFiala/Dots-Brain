@@ -1,4 +1,4 @@
-"""Install the locked alpha on a writable, authorized memory host."""
+"""Install the locked release on a writable, authorized memory host."""
 
 import argparse
 import json

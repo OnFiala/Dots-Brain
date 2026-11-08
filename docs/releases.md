@@ -13,7 +13,7 @@ deployment require explicit maintainer authority.
    tag, its commit and main ancestry in a clean checkout of that commit:
 
    ```sh
-   RELEASE_TAG=v0.4.4
+   RELEASE_TAG=v1.0.0
    git fetch origin main --tags
    test "$(git cat-file -t "refs/tags/$RELEASE_TAG")" = tag
    RELEASE_COMMIT=$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")
@@ -21,7 +21,8 @@ deployment require explicit maintainer authority.
    test "$(git rev-parse HEAD)" = "$RELEASE_COMMIT"
    ```
 
-3. Create a draft prerelease with accurate notes. Run
+3. Create a draft release with accurate notes. Mark preview versions as
+   prereleases; keep the stable `1.0.0` release non-prerelease. Run
    [Prepare release](../.github/workflows/release.yml) from `main` with that tag.
    It checks out the fully qualified tag, binds HEAD to its resolved commit,
    verifies its ancestry against `origin/main`, compares the plugin version with
@@ -33,6 +34,14 @@ deployment require explicit maintainer authority.
    wheel SHA256, Python/SQLite versions and result with the candidate's evidence.
    Confirm that the uploaded Python 3.12 wheel has that same hash.
 5. Inspect the draft assets, SHA256SUMS and notes before authorizing publication.
+   Test the [documented source and wheel installation](installation.md) against
+   these exact assets in a fresh Linux environment. Verify the ZIP includes its
+   matching `uv.lock` and the wheel installs with dependencies exported from it.
+   The expected 1.0.0 assets are `dots-brain-1.0.0-plugin.zip`,
+   `dots_brain-1.0.0-py3-none-any.whl`, `dots_brain-1.0.0.tar.gz` and `SHA256SUMS`.
+   Keep release notes limited to explicit-note memory, revisions, FTS, optional
+   local CPU embeddings and documented access/maintenance boundaries. Do not
+   imply capture, CORTEX activation or automatic use in every assistant chat.
    Do not attach databases, credentials, model files, private exports or host records.
 
 The build job starts with `uv sync --locked --all-extras`, which rejects stale

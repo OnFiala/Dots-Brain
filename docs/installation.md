@@ -1,10 +1,8 @@
 # Installation and operation
 
-This version uses schema v2. Use an identified reviewed commit or
-its verified wheel. Linux is the managed deployment target. Python 3.11 or newer
-must provide SQLite 3.42 or newer with FTS5. The retained CI matrix names Python
-3.11 and 3.12; a local check does not establish both jobs ran. Data, backups and
-exports need a local POSIX filesystem with SQLite and advisory lock support.
+Version 1.0.0 uses schema v2. Linux with Python **3.11 or 3.12** is the
+supported deployment target. Python must provide SQLite **3.42 or newer with
+FTS5**. Data, backups and exports need a local POSIX filesystem with SQLite and advisory lock support.
 macOS supports local development and stdio checks; managed `up` requires Linux
 process identity and pidfd support. Windows is unsupported.
 
@@ -14,15 +12,85 @@ private operator record. Use that installation's executable for shell commands;
 a checkout or a second device's client configuration does not establish access
 to the canonical data. Keep host paths and credentials out of public reports.
 
-## Initialize and connect
+## Install an identified release
 
-Choose the canonical private data directory outside the checkout:
+Use a fresh installation directory, outside the private data directory. The
+commands require [uv](https://docs.astral.sh/uv/), `curl`, `unzip` and GNU
+`sha256sum`. They target the published
+[1.0.0 release](https://github.com/OnFiala/Dots-Brain/releases/tag/v1.0.0).
+Download the attached source/plugin ZIP, not a floating `main` checkout:
 
 ```sh
-uv sync --locked
-uv run dots-brain --data-dir /absolute/private/memory setup
-uv run dots-brain --data-dir /absolute/private/memory doctor
+set -eu
+RELEASE_URL=https://github.com/OnFiala/Dots-Brain/releases/download/v1.0.0
+curl --fail --location --output SHA256SUMS "$RELEASE_URL/SHA256SUMS"
+curl --fail --location --output dots-brain-1.0.0-plugin.zip "$RELEASE_URL/dots-brain-1.0.0-plugin.zip"
+sha256sum --check --ignore-missing SHA256SUMS
+unzip dots-brain-1.0.0-plugin.zip
+cd dots-brain
 ```
+
+Stop if downloading or checksum verification fails. `--ignore-missing` skips
+other release assets you have not downloaded; it must still report the ZIP as
+`OK`. Checksums identify the assets served by the release; they are not an
+independent publisher signature. Retain the archive and its checksum manifest
+with the installation record. The ZIP contains `pyproject.toml`, `uv.lock`,
+operator documentation and verification scripts from the same release.
+
+### Locked source installation
+
+From the extracted `dots-brain` directory:
+
+```sh
+uv sync --locked --no-dev --python 3.12
+BRAIN_EXEC="$PWD/.venv/bin/dots-brain"
+"$BRAIN_EXEC" --version
+```
+
+Use `--python 3.11` throughout instead if needed. `--locked` refuses to rewrite
+the release lock. Network access may be needed to obtain the selected Python
+interpreter and locked dependencies. Do not run a bare `pip install` or replace
+the lock with one from another release.
+
+### Verified release wheel alternative
+
+Use this instead of the source installation. The wheel environment is a sibling
+of the extracted source directory so the verifier can reject source-tree imports.
+Keep the extracted source ZIP for its matching lock and installed-wheel verifier. From the extracted directory,
+download the wheel next to that directory and verify it with the same manifest:
+
+```sh
+curl --fail --location --output ../dots_brain-1.0.0-py3-none-any.whl "$RELEASE_URL/dots_brain-1.0.0-py3-none-any.whl"
+(cd .. && sha256sum --check --ignore-missing SHA256SUMS)
+uv export --locked --no-dev --no-emit-project --format requirements.txt --output-file core-requirements.txt
+uv venv --python 3.12 ../dots-brain-venv
+uv pip sync --python ../dots-brain-venv/bin/python --require-hashes core-requirements.txt
+uv pip install --python ../dots-brain-venv/bin/python --no-deps ../dots_brain-1.0.0-py3-none-any.whl
+env -u PYTHONPATH ../dots-brain-venv/bin/python scripts/verify_wheel.py
+BRAIN_EXEC="$PWD/../dots-brain-venv/bin/dots-brain"
+"$BRAIN_EXEC" --version
+```
+
+The checksum check must report both downloaded assets as `OK`. Dependencies
+come from `uv.lock` with required hashes; `--no-deps` prevents the wheel install
+from resolving a different dependency set. The verifier uses disposable stores
+and real local stdio/HTTP MCP calls. It must report `state: "passed"` and version
+`1.0.0`; it does not use your canonical memory directory. This core-only verifier
+expects no semantic extra. See [verification](verification.md#installed-wheel).
+
+## Initialize and connect
+
+Use the selected installation's absolute `BRAIN_EXEC` path. Choose a private
+canonical data directory outside the extracted source and environment:
+
+```sh
+"$BRAIN_EXEC" --data-dir /absolute/private/memory setup
+"$BRAIN_EXEC" --data-dir /absolute/private/memory doctor
+```
+
+`--version` must print `1.0.0`; inspect `doctor` for SQLite, storage and capability
+failures before starting a service. Python's `sqlite3` library is what matters,
+not a separately installed `sqlite3` shell.
 
 An existing v1 store needs the explicit [offline upgrade](upgrading.md). A new
 store uses schema v2. Schema v3/v4 is refused; it is never relabeled or downgraded.
@@ -30,8 +98,8 @@ store uses schema v2. Schema v3/v4 is refused; it is never relabeled or downgrad
 One client can use `serve` for owner stdio MCP. For a managed Linux HTTP service:
 
 ```sh
-uv run dots-brain --data-dir /absolute/private/memory up
-uv run dots-brain --data-dir /absolute/private/memory connect codex --project work
+"$BRAIN_EXEC" --data-dir /absolute/private/memory up
+"$BRAIN_EXEC" --data-dir /absolute/private/memory connect codex --project work
 ```
 
 `up` checks a real read before publishing service metadata. Its probe credential
@@ -40,8 +108,10 @@ returns `write: "not_tested"`; it creates no synthetic memory. Reload the actual
 client, then verify intended read/write calls separately. Client activation and
 conversation behavior are not established by configuration.
 
+From the extracted release source,
 `python3 scripts/bootstrap.py --data-dir /absolute/private/memory` runs the same
-locked setup on Linux. Optional `--semantic` prepares the model; optional
+locked source setup on Linux (it does not use the wheel environment). Optional
+`--semantic` prepares the model; optional
 `--connect PROVIDER --config PATH` configures a selected adapter. `mcp-json`
 requires its explicit path. Failures return one sanitized JSON result naming
 the failed phase (`prerequisites`, `arguments`, `dependencies`, `setup`, `model`,
@@ -56,10 +126,11 @@ for those barriers. Bootstrap is not a generic recovery command.
 
 ## An existing supervisor
 
-Run exactly one HTTP process for a store. A systemd or other supervisor can use:
+Run exactly one HTTP process for a store. Use the chosen executable by its
+absolute path in a supervisor unit. The equivalent shell command is:
 
 ```sh
-dots-brain --data-dir /absolute/private/memory serve --transport http --port 8765 --public-port 8787
+"$BRAIN_EXEC" --data-dir /absolute/private/memory serve --transport http --port 8765 --public-port 8787
 ```
 
 The private port accepts scoped static credentials and OAuth. The second port
@@ -70,8 +141,8 @@ Use an existing private credential for read-only diagnosis. A new local client
 can obtain its own scoped credential through `connect` with the private URL:
 
 ```sh
-dots-brain --data-dir /absolute/private/memory doctor --mcp-url http://127.0.0.1:8765/mcp --credential-file /absolute/private/credential.json
-dots-brain --data-dir /absolute/private/memory connect codex --project work --mcp-url http://127.0.0.1:8765/mcp
+"$BRAIN_EXEC" --data-dir /absolute/private/memory doctor --mcp-url http://127.0.0.1:8765/mcp --credential-file /absolute/private/credential.json
+"$BRAIN_EXEC" --data-dir /absolute/private/memory connect codex --project work --mcp-url http://127.0.0.1:8765/mcp
 ```
 
 This bridge has no automatic `up`. Unreachable or mismatched endpoints fail
@@ -87,10 +158,26 @@ listener produces a warning. It does not scan or signal supervisor processes.
 
 ## Optional local embeddings
 
+For the locked source installation, from the same extracted release:
+
 ```sh
-uv sync --locked --extra semantic
-uv run dots-brain --data-dir /absolute/private/memory model prepare
-uv run dots-brain --data-dir /absolute/private/memory index
+uv sync --locked --no-dev --python 3.12 --extra semantic
+```
+
+For the wheel installation, use its matching release lock and verified wheel:
+
+```sh
+uv export --locked --no-dev --no-emit-project --extra semantic --format requirements.txt --output-file semantic-requirements.txt
+uv pip sync --python ../dots-brain-venv/bin/python --require-hashes semantic-requirements.txt
+uv pip install --python ../dots-brain-venv/bin/python --no-deps ../dots_brain-1.0.0-py3-none-any.whl
+```
+
+Keep `BRAIN_EXEC` pointed at the chosen environment. Do not run the core-only
+wheel verifier in a semantic environment. With either installation:
+
+```sh
+"$BRAIN_EXEC" --data-dir /absolute/private/memory model prepare
+"$BRAIN_EXEC" --data-dir /absolute/private/memory index
 ```
 
 Preparation explicitly downloads the pinned local CPU model and verifies its

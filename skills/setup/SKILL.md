@@ -6,7 +6,7 @@ description: Install, inspect, connect, upgrade, or uninstall Dots Brain on an a
 # Set up Dots Brain
 
 Read `README.md`, `docs/installation.md`, `docs/capabilities.md`, and
-`docs/autonomy.md` before changing an installation. This alpha can initialize a
+`docs/autonomy.md` before changing an installation. The stable Linux core can initialize a
 local store, run a local service, configure supported local clients, and verify
 the generated bridge. It does not create public ingress, configure web accounts,
 collect provider history, or establish a CORTEX connection.
@@ -18,14 +18,16 @@ Reuse an existing directory and connection where possible. Do not create a secon
 store on another device merely to make a client appear connected. Host selection
 does not verify deployment, CORTEX connectivity, or client UI activation.
 
-Use Linux for managed deployment. Python 3.11 or newer, SQLite 3.42 or newer with
+Use Linux for managed deployment. Python 3.11 or 3.12, SQLite 3.42 or newer with
 FTS secure deletion, and `uv` are required for a source checkout. Do not edit
 installed plugin caches or invent administrator access. A configured client is
 not proof of a working conversation integration.
 
 ## Install on an authorized host
 
-From a writable checkout:
+For a new installation, start with the pinned, checksum-verified release in
+[installation](../../docs/installation.md#install-an-identified-release).
+Use its matching lockfile. From the extracted writable release source:
 
 ```text
 python3 scripts/bootstrap.py --data-dir /absolute/private/memory --semantic --connect codex

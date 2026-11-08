@@ -75,6 +75,26 @@ refresh token from its matching client revokes the grant family. Reaching 4,096
 rotations also revokes the grant. Code replay is rejected without revoking the
 original grant. Clients need new pairing after grant expiry or revocation.
 
+### Expiry and re-pairing
+
+The access token is short-lived authentication material. A client that supports
+refresh can obtain a replacement token while its authorization grant is still
+valid; normal access-token expiry alone does not require owner approval again.
+Refresh neither renews nor extends the fixed 30-day grant. After grant expiry or
+revocation, tokens cannot restore access: start a new connection from the
+intended client and approve that exact new pending request on the host.
+
+Inspect `oauth grants` to distinguish expired/revoked authorization from an
+ordinary token refresh. If the client's connection UI requires reconnecting or
+recreating the connector to initiate pairing, follow that client's procedure;
+Dots Brain does not promise automatic re-pairing or a provider-specific UI.
+Verify real read/write calls after approval, with the intended project scopes.
+
+Grant expiry and re-pairing do not delete saved notes or revisions. A new grant
+can access retained memory within the projects and scopes the owner approves.
+Do not reset the store, restore a database or disable all OAuth access to fix
+one expired connection.
+
 ```sh
 dots-brain --data-dir /absolute/private/memory oauth grants
 dots-brain --data-dir /absolute/private/memory oauth revoke GRANT_ID
