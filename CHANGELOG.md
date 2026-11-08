@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.0.1 — 2026-11-08
+
+- Isolate managed Python module launches from caller-controlled import paths and
+  safely reconnect exactly owned bridges across installation environments.
+- Require audit receipts to reference an existing actor/project intent and allow
+  only one distinct receipt, while preserving review progress across historical
+  anomalies and adapting oversized audit pages to the review budget.
+- Reject malformed credential identities with safe JSON errors and keep status
+  counts consistent during concurrent writes and indexing.
+- Strengthen the responsiveness regression to require an acquired SQLite lock
+  and a waiting writer, with cleanup on failed assertions.
+- Retain schema v2, existing dependencies, scoped credentials, OAuth history and
+  model artifacts. Capture and CORTEX modules remain disabled.
+
 ## 1.0.0 — 2026-11-08
 
 - Establish a stable release for the existing Linux memory core: explicit notes,
