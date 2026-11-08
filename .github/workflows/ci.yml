@@ -21,7 +21,7 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
           enable-cache: true
-      - run: uv sync --locked --all-extras
+      - run: uv sync --locked --all-extras --no-editable
       - name: Validate Linux service and ingress templates
         if: matrix.python == '3.11'
         run: |

@@ -23,6 +23,7 @@ from zoneinfo import ZoneInfo
 DEFAULT_STATE = Path.home() / ".local/state/dots-brain-audit"
 PAGE_SIZE = 100
 MAX_PAGES = 20
+MAX_PAGE_BYTES = 8 * 1024 * 1024
 FINDING_CATEGORIES = {
     "coverage_unverified",
     "capture_gap",
@@ -36,6 +37,10 @@ FINDING_CATEGORIES = {
     "sanitization",
     "expected_probe",
 }
+
+
+class PageTooLarge(ValueError):
+    """The transport returned more metadata than one review page may hold."""
 
 
 def canonical(value):
@@ -99,8 +104,8 @@ def fetch_page(after_id, limit, target):
         timeout=30,
         check=True,
     )
-    if len(result.stdout) > 8 * 1024 * 1024:
-        raise ValueError("Audit page exceeds review budget")
+    if len(result.stdout) > MAX_PAGE_BYTES:
+        raise PageTooLarge("Audit page exceeds review budget")
     return json.loads(result.stdout)
 
 
@@ -160,9 +165,17 @@ def collect(checkpoint, fetch, max_pages=None, origin="synthetic"):
 
     unresolved = {item["key"]: dict(item) for item in checkpoint.get("unresolved", [])}
     events = []
+    page_size = PAGE_SIZE
     for _ in range(max_pages):
-        page = fetch(after, PAGE_SIZE)
-        rows = validate_page(page, after, PAGE_SIZE)
+        while True:
+            try:
+                page = fetch(after, page_size)
+                break
+            except PageTooLarge:
+                if page_size == 1:
+                    raise
+                page_size = max(1, page_size // 2)
+        rows = validate_page(page, after, page_size)
         for row in rows:
             payload = validate_row(row, previous_hash)
             previous_hash = row["event_hash"]
@@ -177,9 +190,10 @@ def collect(checkpoint, fetch, max_pages=None, origin="synthetic"):
                         row["intent_event_id"],
                     ]
                 )
-                if reference not in unresolved:
-                    raise ValueError("Receipt does not match an unresolved actor/project intent")
-                del unresolved[reference]
+                if reference in unresolved:
+                    del unresolved[reference]
+                else:
+                    payload["review_anomaly"] = "unmatched_receipt"
             events.append({"id": row["id"], "recorded_at": row["recorded_at"], **payload})
             after = row["id"]
         if not page["has_more"]:

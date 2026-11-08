@@ -22,6 +22,11 @@ from .local import atomic_write, locked, read_json, write_json
 from .store import Store
 
 
+def isolated_cli_command(*args: str) -> list[str]:
+    """Run the installed CLI without importing packages from caller-controlled paths."""
+    return [sys.executable, "-I", "-m", "dots_brain.cli", *args]
+
+
 def process_identity(pid: int) -> str | None:
     try:
         # PID plus start time prevents accidentally stopping a reused PID.
@@ -235,10 +240,7 @@ def up(
                 from .semantic import verify_model_artifacts
 
                 verify_model_artifacts(store)  # Validate without loading a second model instance.
-            command = [
-                sys.executable,
-                "-m",
-                "dots_brain.cli",
+            command = isolated_cli_command(
                 "--data-dir",
                 str(store.directory),
                 "serve",
@@ -246,7 +248,7 @@ def up(
                 "http",
                 "--port",
                 str(selected_port),
-            ]
+            )
             if semantic:
                 command.append("--semantic")
             log_path = store.directory / "service.log"

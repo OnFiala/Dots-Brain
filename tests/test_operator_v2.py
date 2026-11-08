@@ -243,11 +243,16 @@ def test_bootstrap_keeps_lock_freshness_and_supported_provider_combinations(
     if provider:
         bootstrap.sys.argv += ["--connect", provider, "--config", "/synthetic/config"]
     assert bootstrap.main() == 0
-    assert commands[0] == ["/synthetic/uv", "sync", "--locked", "--no-dev"] + (
-        ["--extra", "semantic"] if semantic else []
-    )
+    assert commands[0] == [
+        "/synthetic/uv",
+        "sync",
+        "--locked",
+        "--no-dev",
+        "--no-editable",
+    ] + (["--extra", "semantic"] if semantic else [])
     assert len(commands) == 3 + int(semantic) + int(provider is not None)
     assert any(command[-2:] == ["model", "prepare"] for command in commands) is semantic
+    assert all(command[1:4] == ["-I", "-m", "dots_brain.cli"] for command in commands[1:])
     start = next(command for command in commands if "up" in command)
     assert "--resume" in start and ("--semantic" in start) is semantic
     if provider:

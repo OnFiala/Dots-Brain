@@ -10,7 +10,14 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
 from dots_brain.auth import authenticate, issue_client, read_connection
-from dots_brain.clients import bridge_entry, configure, connect_client, file_hash, integration_key
+from dots_brain.clients import (
+    bridge_entry,
+    configure,
+    connect_client,
+    file_hash,
+    integration_key,
+    previous_bridge_entry,
+)
 from dots_brain.errors import InputError, SuppressedError
 from dots_brain.local import read_json, write_json
 from dots_brain.removal import disconnect_client, remove_entry, uninstall
@@ -39,7 +46,11 @@ def record_connection(store, config, provider="cursor", *, legacy=False):
         output=connection,
         url="http://localhost:8765/mcp",
     )
-    entry = bridge_entry(connection, store.directory, provider)
+    entry = (
+        previous_bridge_entry(connection, store.directory, provider)
+        if legacy
+        else bridge_entry(connection, store.directory, provider)
+    )
     ownership = {"credential_hash": file_hash(connection)}
     configure(
         config, directory=store.directory, provider=provider, entry=entry, ownership=ownership
@@ -72,7 +83,7 @@ def test_complete_lifecycle_keeps_memories_and_blocks_restart_until_explicit_res
         store.forget(deleted["id"], expected_revision=deleted["revision"])
         config_doc = read_json(config)
         entry = config_doc["mcpServers"]["dots-brain"]
-        token = read_connection(Path(entry["args"][4]))["token"]
+        token = read_connection(Path(entry["args"][5]))["token"]
         config_doc["theme"] = "new preference after setup"
         write_json(config, config_doc)
         before = {p: p.read_bytes() for p in store.directory.rglob("*") if p.is_file()}
@@ -185,7 +196,7 @@ def test_profiles_have_distinct_credentials_and_disconnect_does_not_break_other_
         b = connect_client(store, provider="cursor", config=second)
         assert a["client_id"] != b["client_id"]
         entries = [read_json(path)["mcpServers"]["dots-brain"] for path in (first, second)]
-        tokens = [read_connection(Path(entry["args"][4]))["token"] for entry in entries]
+        tokens = [read_connection(Path(entry["args"][5]))["token"] for entry in entries]
         assert disconnect_client(store, provider="cursor", config=first)["state"] == "disconnected"
         assert authenticate(store, tokens[0]) is None
         assert authenticate(store, tokens[1]) is not None

@@ -69,12 +69,19 @@ def main():
         return 1
     environment = dict(os.environ)
     environment.setdefault("UV_CACHE_DIR", str(root / ".cache" / "uv"))
-    sync = [uv, "sync", "--locked", "--no-dev"]
+    sync = [uv, "sync", "--locked", "--no-dev", "--no-editable"]
     if args.semantic:
         sync += ["--extra", "semantic"]
     step("dependencies", sync, cwd=root, env=environment)
     executable = root / ".venv" / "bin/python"
-    base = [str(executable), "-m", "dots_brain.cli", "--data-dir", str(args.data_dir)]
+    base = [
+        str(executable),
+        "-I",
+        "-m",
+        "dots_brain.cli",
+        "--data-dir",
+        str(args.data_dir),
+    ]
     setup = step("setup", base + ["setup"], states={"local_ready", "disabled"})
     if args.semantic:
         step("model", base + ["model", "prepare"])

@@ -62,9 +62,22 @@ def test_audit_chain_rejects_tampering_and_receipt_requires_actor_intent(tmp_pat
     store = audit_store(tmp_path)
     log = AuditLog(store)
     writer = policy("audit:write")
+    with pytest.raises(InputError, match="reference an intent"):
+        log.record(writer, project="a", kind="receipt", client_event_id="missing-reference")
     with pytest.raises(InputError):
         log.record(writer, project="a", kind="receipt", client_event_id="r", intent_event_id="none")
     log.record(writer, project="a", kind="intent", client_event_id="i")
+    first = log.record(
+        writer, project="a", kind="receipt", client_event_id="done", intent_event_id="i"
+    )
+    replay = log.record(
+        writer, project="a", kind="receipt", client_event_id="done", intent_event_id="i"
+    )
+    assert replay["replayed"] and replay["id"] == first["id"]
+    with pytest.raises(ConflictError, match="already has a receipt"):
+        log.record(
+            writer, project="a", kind="receipt", client_event_id="duplicate", intent_event_id="i"
+        )
     with store.connection(write=True) as db:
         with pytest.raises(Exception, match="append-only"):
             db.execute("UPDATE audit_events SET kind='gap'")

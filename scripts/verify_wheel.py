@@ -41,7 +41,7 @@ def require(condition, message):
 async def verify_mcp(store):
     params = StdioServerParameters(
         command=sys.executable,
-        args=["-m", "dots_brain.cli", "--data-dir", str(store.directory), "serve"],
+        args=["-I", "-m", "dots_brain.cli", "--data-dir", str(store.directory), "serve"],
     )
     async with stdio_client(params) as (read, write):
         async with ClientSession(read, write) as session:
