@@ -68,6 +68,33 @@ def test_expired_credential_is_rejected_and_only_hash_is_stored(tmp_path):
     assert authenticate(store, token) is None
 
 
+@pytest.mark.parametrize(
+    "client_fields",
+    [{}, {"client_id": None}, {"client_id": ""}, {"client_id": 7}, {"client_id": " "}],
+)
+def test_connect_rejects_invalid_client_identity_with_safe_json(tmp_path, client_fields):
+    directory, config = tmp_path / "client-state", tmp_path / "cursor.json"
+    credential = tmp_path / "client.json"
+    token = "synthetic-private-credential"
+    credential.write_text(
+        json.dumps({"version": 1, "url": "http://127.0.0.1:1/mcp", "token": token, **client_fields})
+    )
+    result = cli(
+        directory,
+        "connect",
+        "cursor",
+        "--config",
+        str(config),
+        "--credential-file",
+        str(credential),
+    )
+    assert result.returncode == 1 and result.stdout == ""
+    report = json.loads(result.stderr)
+    assert report["state"] == "error" and report["code"] == "invalid_input"
+    assert token not in result.stderr
+    assert not config.exists() and not Store(directory).path.exists()
+
+
 @pytest.mark.parametrize("output_state", ["owned", "replacement", "cleanup-denied", "removed"])
 def test_failed_issuance_cleans_only_owned_output(tmp_path, monkeypatch, output_state):
     store = Store(tmp_path / "memory")

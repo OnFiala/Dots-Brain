@@ -568,13 +568,18 @@ def test_interrupted_config_publication_preserves_referenced_access_and_reports_
     assert registered["connection_file"] == str(observed["connection"])
 
 
+@pytest.mark.parametrize("isolated", [False, True])
+@pytest.mark.parametrize("local", [False, True])
 def test_registered_bridge_is_upgraded_to_isolated_mode_without_losing_ownership(
-    install, monkeypatch
+    install, monkeypatch, isolated, local
 ):
-    item = install(private_url="http://127.0.0.1:9988/mcp")
+    endpoint = "http://127.0.0.1:9988/mcp"
+    item = install(local=local, private_url=endpoint if local else None)
     old_entry = previous_bridge_entry(
         item.connection, None, item.provider, command="/old/release/bin/python"
     )
+    if isolated:
+        old_entry["args"].insert(0, "-I")
     current = document(item.config, item.provider)
     current["mcpServers"]["dots-brain"] = old_entry
     item.config.write_text(json.dumps(current))
@@ -588,11 +593,12 @@ def test_registered_bridge_is_upgraded_to_isolated_mode_without_losing_ownership
         return {"state": "verified_read", "read": True, "write": "not_tested"}
 
     monkeypatch.setattr(clients, "_read_probe", probe)
+    connection_args = {"mcp_url": endpoint} if local else {"connection": item.connection}
     result = clients.connect_client(
         item.store,
         provider=item.provider,
         config=item.config,
-        mcp_url="http://127.0.0.1:9988/mcp",
+        **connection_args,
     )
     entry = document(item.config, item.provider)["mcpServers"]["dots-brain"]
     record = registrations(item.store.directory)["items"][item.key]
@@ -600,17 +606,24 @@ def test_registered_bridge_is_upgraded_to_isolated_mode_without_losing_ownership
     assert entry["args"][:3] == ["-I", "-m", "dots_brain.cli"]
     assert record["entry"] == entry
     assert record["ownership"]["backup_hash"] == backup_hash
-    assert (
-        removal.disconnect_client(item.store, provider=item.provider, config=item.config)["state"]
-        == "disconnected"
-    )
+    assert not clients.connect_client(
+        item.store, provider=item.provider, config=item.config, **connection_args
+    )["configuration_changed"]
+    assert removal.disconnect_client(item.store, provider=item.provider, config=item.config)[
+        "state"
+    ] == ("disconnected" if local else "partial")
 
 
-def test_cross_environment_bridge_upgrade_rolls_back_config_and_registry(install, monkeypatch):
+@pytest.mark.parametrize("isolated", [False, True])
+def test_cross_environment_bridge_upgrade_rolls_back_config_and_registry(
+    install, monkeypatch, isolated
+):
     item = install(private_url="http://127.0.0.1:9988/mcp")
     old_entry = previous_bridge_entry(
         item.connection, None, item.provider, command="/old/release/bin/python"
     )
+    if isolated:
+        old_entry["args"].insert(0, "-I")
     current = document(item.config, item.provider)
     current["mcpServers"]["dots-brain"] = old_entry
     item.config.write_text(json.dumps(current))

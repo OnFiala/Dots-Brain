@@ -40,6 +40,11 @@ Use the same canonical data directory and restart only the intended supervisor.
 Check `doctor` and actual authorized MCP read/write calls through each intended
 client. Publication alone does not perform these deployment steps.
 
+Run `connect` from the selected installation again for each registered client,
+keeping its original `--config` path and connection mode. Exactly owned generated
+entries are updated to the selected interpreter; modified or unowned entries
+are preserved.
+
 For an existing v2 store, no schema migration or new store is required. Keep
 existing scoped credentials, OAuth configuration and grant history. A normal
 code upgrade does not reset a grant's fixed expiry. If a grant has expired,
