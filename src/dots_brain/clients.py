@@ -7,7 +7,6 @@ import hashlib
 import json
 import os
 import shlex
-import sys
 from contextlib import ExitStack
 from pathlib import Path
 
@@ -17,7 +16,14 @@ from .auth import read_connection, revoke_client
 from .bridge import verify_command
 from .errors import InputError
 from .local import atomic_write, locked, read_json, write_json
-from .runtime import credential, private_endpoint, state_path, stop_process, up
+from .runtime import (
+    credential,
+    isolated_cli_command,
+    private_endpoint,
+    state_path,
+    stop_process,
+    up,
+)
 from .store import Store
 
 PROVIDERS = {
@@ -43,13 +49,43 @@ def registrations(directory: Path) -> dict:
 
 
 def bridge_entry(connection: Path, directory: Path | None, provider: str) -> dict:
-    args = ["-m", "dots_brain.cli", "bridge", "--credential-file", str(connection)]
+    command = isolated_cli_command("bridge", "--credential-file", str(connection))
     if directory is not None:
-        args += ["--local-data-dir", str(directory)]
-    entry = {"command": sys.executable, "args": args}
+        command += ["--local-data-dir", str(directory)]
+    entry = {"command": command[0], "args": command[1:]}
     if provider == "claude-code":
         entry["type"] = "stdio"
     return entry
+
+
+def previous_bridge_entry(
+    connection: Path, directory: Path | None, provider: str, *, command: str | None = None
+) -> dict:
+    """Exact pre-isolation entry accepted only when the integration registry owns it."""
+    entry = bridge_entry(connection, directory, provider)
+    entry["args"] = entry["args"][1:]
+    if command is not None:
+        entry["command"] = command
+    return entry
+
+
+def owned_previous_bridge_entry(record, *, provider, target, connection, directory, local):
+    if not (
+        isinstance(record, dict)
+        and record.get("provider") == provider
+        and record.get("config_file") == str(target)
+        and record.get("connection_file") == str(connection)
+        and record.get("local") is local
+        and isinstance(record.get("ownership"), dict)
+        and record["ownership"].get("entry_created") is True
+        and isinstance(record.get("entry"), dict)
+    ):
+        return None
+    command = record["entry"].get("command")
+    if not isinstance(command, str) or not Path(command).is_absolute():
+        return None
+    expected = previous_bridge_entry(connection, directory, provider, command=command)
+    return record["entry"] if record["entry"] == expected else None
 
 
 def providers() -> dict:
@@ -117,6 +153,7 @@ def configure(
     rollback=None,
     ownership=None,
     publish=None,
+    replace=None,
 ) -> bool:
     lock = config_lock_path(directory, path)
     with locked(lock):
@@ -143,7 +180,7 @@ def configure(
             if not dry_run and publish is not None:
                 publish()
             return False
-        if existing is not None:
+        if existing is not None and existing != replace:
             raise InputError(
                 legacy_notice(provider, path, existing)
                 or "A different dots-brain connection already exists; it was preserved."
@@ -164,12 +201,11 @@ def configure(
         if ownership is not None:
             ownership.update(
                 entry_created=True,
-                config_created=not existed,
+                config_created=ownership.get("config_created", not existed),
                 config_hash=hashlib.sha256(content.encode("utf-8")).hexdigest(),
-                backup_hash=hashlib.sha256(original.encode("utf-8")).hexdigest()
-                if new_backup
-                else None,
             )
+            if new_backup:
+                ownership["backup_hash"] = hashlib.sha256(original.encode("utf-8")).hexdigest()
         if publish is not None:
             publish()  # Ownership intent precedes the configuration and backup writes.
         if new_backup:
@@ -302,6 +338,7 @@ def _connect_client(store, *, provider, config, connection, projects, mcp_url, r
     created_dirs = [str(parent) for parent in target.parents if not parent.exists()]
     local = connection is None
     managed = local and mcp_url is None
+    replace = None
     if local:
         private = store.directory / "connections"
         if private.is_symlink():
@@ -319,6 +356,15 @@ def _connect_client(store, *, provider, config, connection, projects, mcp_url, r
                         "Unexpected managed credential path; existing state was preserved."
                     )
                 connection = previous_path
+        registered = registry["items"].get(key)
+        replace = owned_previous_bridge_entry(
+            registered,
+            provider=provider,
+            target=target,
+            connection=connection,
+            directory=store.directory if managed else None,
+            local=local,
+        )
         with locked(private / f"{provider}.lock"):
             configure(
                 target,
@@ -326,6 +372,7 @@ def _connect_client(store, *, provider, config, connection, projects, mcp_url, r
                 provider=provider,
                 entry=bridge_entry(connection, store.directory if managed else None, provider),
                 dry_run=True,
+                replace=replace,
             )
             if connection.exists() and (
                 connection.is_symlink() or ownership.get("credential_hash") != file_hash(connection)
@@ -352,8 +399,24 @@ def _connect_client(store, *, provider, config, connection, projects, mcp_url, r
     else:
         connection = connection.expanduser().absolute()
         client_id = read_connection(connection)["client_id"]
+        registered = registry["items"].get(key)
+        replace = owned_previous_bridge_entry(
+            registered,
+            provider=provider,
+            target=target,
+            connection=connection,
+            directory=None,
+            local=local,
+        )
     entry = bridge_entry(connection, store.directory if managed else None, provider)
-    configure(target, directory=store.directory, provider=provider, entry=entry, dry_run=True)
+    configure(
+        target,
+        directory=store.directory,
+        provider=provider,
+        entry=entry,
+        dry_run=True,
+        replace=replace,
+    )
     check = asyncio.run(
         asyncio.wait_for(
             _read_probe(
@@ -392,6 +455,7 @@ def _connect_client(store, *, provider, config, connection, projects, mcp_url, r
         rollback=rollback,
         ownership=ownership,
         publish=lambda: write_json(registry_path, registry),
+        replace=replace,
     )
     return {
         "state": "configured_verified_bridge",

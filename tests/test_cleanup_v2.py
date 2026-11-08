@@ -11,7 +11,14 @@ import tomlkit
 
 from dots_brain import clients, removal
 from dots_brain.auth import authenticate, issue_client, read_connection
-from dots_brain.clients import bridge_entry, configure, file_hash, integration_key, registrations
+from dots_brain.clients import (
+    bridge_entry,
+    configure,
+    file_hash,
+    integration_key,
+    previous_bridge_entry,
+    registrations,
+)
 from dots_brain.errors import InputError
 from dots_brain.local import atomic_write, write_json
 from dots_brain.removal import disconnect_client
@@ -70,8 +77,11 @@ def install(tmp_path, monkeypatch):
             url=private_url or "https://synthetic.invalid/mcp",
         )
         token = read_connection(connection)["token"]
-        entry = bridge_entry(
-            connection, store.directory if local and not private_url else None, provider
+        bridge_directory = store.directory if local and not private_url else None
+        entry = (
+            previous_bridge_entry(connection, bridge_directory, provider)
+            if legacy
+            else bridge_entry(connection, bridge_directory, provider)
         )
         entry.update(entry_extra or {})
         ownership = {"directories": directories}
@@ -470,7 +480,7 @@ def test_failed_connect_preserves_replacement_credential_and_its_identity(
     observed = {}
 
     async def failed_probe(entry, **_checks):
-        path = Path(entry["args"][4])
+        path = Path(entry["args"][5])
         assert path == connection
         observed["own_token"] = read_connection(path)["token"]
         replacement = tmp_path / "foreign-credential.json"
@@ -515,7 +525,7 @@ def test_interrupted_config_publication_preserves_referenced_access_and_reports_
     observed = {}
 
     async def read_probe(entry, **_checks):
-        connection = Path(entry["args"][4])
+        connection = Path(entry["args"][5])
         observed["connection"] = connection
         observed["token"] = read_connection(connection)["token"]
         return {"state": "verified", "read": True, "write": False}
@@ -542,7 +552,7 @@ def test_interrupted_config_publication_preserves_referenced_access_and_reports_
         failure = error
     current = json.loads(config.read_text())
     assert current["theme"] == "Concurrent setting after publication"
-    assert current["mcpServers"]["dots-brain"]["args"][4] == str(observed["connection"])
+    assert current["mcpServers"]["dots-brain"]["args"][5] == str(observed["connection"])
     assert {
         "registry_retained": registry.exists(),
         "credential_retained": observed["connection"].exists(),
@@ -556,3 +566,81 @@ def test_interrupted_config_publication_preserves_referenced_access_and_reports_
     registered = registrations(store.directory)["items"][integration_key("cursor", config)]
     assert registered["entry"] == current["mcpServers"]["dots-brain"]
     assert registered["connection_file"] == str(observed["connection"])
+
+
+def test_registered_bridge_is_upgraded_to_isolated_mode_without_losing_ownership(
+    install, monkeypatch
+):
+    item = install(private_url="http://127.0.0.1:9988/mcp")
+    old_entry = previous_bridge_entry(
+        item.connection, None, item.provider, command="/old/release/bin/python"
+    )
+    current = document(item.config, item.provider)
+    current["mcpServers"]["dots-brain"] = old_entry
+    item.config.write_text(json.dumps(current))
+    item.record["entry"] = old_entry
+    item.record["ownership"]["config_hash"] = file_hash(item.config)
+    backup_hash = item.record["ownership"]["backup_hash"]
+    item.save()
+
+    async def probe(*_args, **_kwargs):
+        assert _args[0]["command"] != old_entry["command"]
+        return {"state": "verified_read", "read": True, "write": "not_tested"}
+
+    monkeypatch.setattr(clients, "_read_probe", probe)
+    result = clients.connect_client(
+        item.store,
+        provider=item.provider,
+        config=item.config,
+        mcp_url="http://127.0.0.1:9988/mcp",
+    )
+    entry = document(item.config, item.provider)["mcpServers"]["dots-brain"]
+    record = registrations(item.store.directory)["items"][item.key]
+    assert result["configuration_changed"]
+    assert entry["args"][:3] == ["-I", "-m", "dots_brain.cli"]
+    assert record["entry"] == entry
+    assert record["ownership"]["backup_hash"] == backup_hash
+    assert (
+        removal.disconnect_client(item.store, provider=item.provider, config=item.config)["state"]
+        == "disconnected"
+    )
+
+
+def test_cross_environment_bridge_upgrade_rolls_back_config_and_registry(install, monkeypatch):
+    item = install(private_url="http://127.0.0.1:9988/mcp")
+    old_entry = previous_bridge_entry(
+        item.connection, None, item.provider, command="/old/release/bin/python"
+    )
+    current = document(item.config, item.provider)
+    current["mcpServers"]["dots-brain"] = old_entry
+    item.config.write_text(json.dumps(current))
+    item.record["entry"] = old_entry
+    item.record["ownership"]["config_hash"] = file_hash(item.config)
+    item.save()
+    config_before = item.config.read_bytes()
+    registry = item.store.directory / "integrations.json"
+    registry_before = registry.read_bytes()
+
+    async def probe(*_args, **_kwargs):
+        return {"state": "verified_read", "read": True, "write": "not_tested"}
+
+    real_write = clients.atomic_write
+    failed = []
+
+    def write_then_fail(path, content, **kwargs):
+        real_write(path, content, **kwargs)
+        if path == item.config and not failed:
+            failed.append(True)
+            raise OSError("synthetic post-publication failure")
+
+    monkeypatch.setattr(clients, "_read_probe", probe)
+    monkeypatch.setattr(clients, "atomic_write", write_then_fail)
+    with pytest.raises(OSError, match="post-publication"):
+        clients.connect_client(
+            item.store,
+            provider=item.provider,
+            config=item.config,
+            mcp_url="http://127.0.0.1:9988/mcp",
+        )
+    assert item.config.read_bytes() == config_before
+    assert registry.read_bytes() == registry_before

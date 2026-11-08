@@ -85,7 +85,7 @@ def test_connect_only_reads_keeps_tokens_private_and_bridge_restarts_service(tmp
         assert again["client_id"] == result["client_id"]
         assert store.status()["memories"] == 0  # Read-only connect created no probe memory.
         entry = json.loads(config.read_text())["mcpServers"]["dots-brain"]
-        token = json.loads(Path(entry["args"][4]).read_text())["token"]
+        token = json.loads(Path(entry["args"][5]).read_text())["token"]
         assert token not in config.read_text() + json.dumps(result)
         down(store)
         entry = json.loads(config.read_text())["mcpServers"]["dots-brain"]

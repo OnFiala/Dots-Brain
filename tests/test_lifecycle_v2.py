@@ -1,6 +1,7 @@
 import json
 import os
 import signal
+import subprocess
 import sys
 from contextlib import ExitStack
 from types import SimpleNamespace
@@ -51,6 +52,35 @@ def test_readiness_precedes_state_publication_and_probe_only_reads(
     assert result["read"] and result["write"] == "not_tested"
     assert state["data_dir"] == str(store.directory.resolve())
     assert simulated_start == [] and store.status()["memories"] == 0
+
+
+def test_managed_cli_command_uses_isolated_mode():
+    assert runtime.isolated_cli_command("status") == [
+        sys.executable,
+        "-I",
+        "-m",
+        "dots_brain.cli",
+        "status",
+    ]
+
+
+def test_isolated_cli_ignores_shadow_package_in_working_directory(tmp_path):
+    marker = tmp_path / "shadow-imported"
+    package = tmp_path / "dots_brain"
+    package.mkdir()
+    (package / "__init__.py").write_text("")
+    (package / "cli.py").write_text(
+        f"from pathlib import Path\nPath({str(marker)!r}).write_text('imported')\n"
+    )
+    result = subprocess.run(
+        runtime.isolated_cli_command("--help"),
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    assert result.returncode == 0
+    assert not marker.exists()
 
 
 @pytest.mark.parametrize("failure", ["readiness", "publication", "credential"])

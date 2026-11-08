@@ -248,7 +248,7 @@ def test_findings_require_observed_ids(tmp_path, source):
 
 
 @pytest.mark.parametrize("field", ["project", "principal"])
-def test_receipt_from_another_actor_or_project_is_not_a_match(source, field):
+def test_historical_receipt_from_another_actor_or_project_is_reported_and_progresses(source, field):
     append, fetch = source
     append("intent", "i")
     _, checkpoint = review.collect({}, fetch)
@@ -267,10 +267,60 @@ def test_receipt_from_another_actor_or_project_is_not_a_match(source, field):
             ).hexdigest()
         return page
 
-    before = copy.deepcopy(checkpoint)
-    with pytest.raises(ValueError, match="actor/project"):
-        review.collect(checkpoint, mismatched)
-    assert checkpoint == before
+    rows, updated = review.collect(checkpoint, mismatched)
+    assert rows[0]["review_anomaly"] == "unmatched_receipt"
+    assert len(updated["unresolved"]) == 1
+
+
+def test_historical_duplicate_receipt_is_reported_without_blocking_progress(source):
+    append, fetch = source
+    append("intent", "i")
+    append("receipt", "first", intent_event_id="i")
+    append(event_id="historical-duplicate")
+
+    def duplicate(after, limit):
+        page = copy.deepcopy(fetch(after, limit))
+        for row in page["events"]:
+            if row["client_event_id"] != "historical-duplicate":
+                continue
+            payload = review.validate_row(row, row["prev_hash"])
+            row["kind"] = payload["kind"] = "receipt"
+            row["intent_event_id"] = payload["intent_event_id"] = "i"
+            row["payload_hash"] = review.digest(payload)
+            row["event_hash"] = review.hashlib.sha256(
+                (row["prev_hash"] + row["payload_hash"]).encode()
+            ).hexdigest()
+        return page
+
+    rows, checkpoint = review.collect({}, duplicate)
+    assert rows[-1]["review_anomaly"] == "unmatched_receipt"
+    assert checkpoint["last_id"] == 3 and checkpoint["unresolved"] == []
+
+
+def test_large_pages_reduce_limit_and_preserve_page_budget(source, monkeypatch):
+    append, fetch = source
+    for index in range(5):
+        append(event_id=str(index))
+    calls = []
+
+    def bounded(after, limit):
+        calls.append((after, limit))
+        if limit > 2:
+            raise review.PageTooLarge("synthetic transport limit")
+        return fetch(after, limit)
+
+    monkeypatch.setattr(review, "PAGE_SIZE", 4)
+    rows, checkpoint = review.collect({}, bounded, max_pages=3)
+    assert [row["id"] for row in rows] == [1, 2, 3, 4, 5]
+    assert calls == [(0, 4), (0, 2), (2, 2), (4, 2)]
+    assert not checkpoint["has_more"]
+
+
+def test_single_oversized_event_remains_an_explicit_failure(source, monkeypatch):
+    _append, _fetch = source
+    monkeypatch.setattr(review, "PAGE_SIZE", 1)
+    with pytest.raises(review.PageTooLarge):
+        review.collect({}, lambda *_: (_ for _ in ()).throw(review.PageTooLarge("large")))
 
 
 def test_reviewed_chunks_continue_the_same_run_and_errors_preserve_ack(

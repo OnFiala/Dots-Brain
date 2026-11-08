@@ -127,6 +127,8 @@ class AuditLog:
         if kind not in _KINDS:
             raise InputError("Unsupported audit event kind.")
         validate_text(client_event_id, "client_event_id", 500)
+        if kind == "receipt" and intent_event_id is None:
+            raise InputError("A receipt must reference an intent.")
         if intent_event_id is not None:
             validate_text(intent_event_id, "intent_event_id", 500)
             if kind != "receipt":
@@ -194,6 +196,15 @@ class AuditLog:
                 raise InputError(
                     "A receipt must reference an existing intent for this actor and project."
                 )
+            if (
+                intent_event_id is not None
+                and db.execute(
+                    "SELECT 1 FROM audit_events WHERE project=? AND principal=? "
+                    "AND intent_event_id=? AND kind='receipt'",
+                    (project, principal, intent_event_id),
+                ).fetchone()
+            ):
+                raise ConflictError("This intent already has a receipt.")
             previous = db.execute(
                 "SELECT event_hash FROM audit_events ORDER BY id DESC LIMIT 1"
             ).fetchone()
