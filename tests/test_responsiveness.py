@@ -55,37 +55,44 @@ def test_waiting_writer_does_not_block_mcp_reads(tmp_path):
     def hold_write_lock():
         with store.connection(write=True):
             lock_acquired.set()
-            release_lock.wait(timeout=3)
+            release_lock.wait(timeout=10)
 
     async def exercise():
         async with connect(store.directory / "writer.connection.json") as writer:
             async with connect(store.directory / "probe.connection.json") as reader:
                 thread = threading.Thread(target=hold_write_lock)
                 thread.start()
-                await asyncio.to_thread(lock_acquired.wait, 3)
-                writing = asyncio.create_task(
-                    writer.call_tool(
-                        "memory_remember",
-                        dict(
-                            content="Waiting synthetic write",
-                            source="test",
-                            account="a",
-                            event_id="blocked",
-                            project="__dots_brain_probe__",
-                        ),
-                    )
-                )
+                writing = None
                 try:
-                    await asyncio.sleep(0.2)
+                    assert await asyncio.to_thread(lock_acquired.wait, 3), (
+                        "Writer lock not acquired"
+                    )
+                    writing = asyncio.create_task(
+                        writer.call_tool(
+                            "memory_remember",
+                            dict(
+                                content="Waiting synthetic write",
+                                source="test",
+                                account="a",
+                                event_id="blocked",
+                                project="__dots_brain_probe__",
+                            ),
+                        )
+                    )
+                    done, _ = await asyncio.wait({writing}, timeout=0.2)
+                    assert not done, "The write must still be waiting on the SQLite lock"
                     started = time.monotonic()
                     result = await reader.call_tool("memory_status", {})
                     elapsed = time.monotonic() - started
                     assert not result.isError
                     assert elapsed < 1.5, f"Read blocked behind SQLite writer for {elapsed:.2f}s"
+                    assert not writing.done(), "The write completed before the lock was released"
                 finally:
                     release_lock.set()
                     await asyncio.to_thread(thread.join, 5)
-                    assert not (await writing).isError
+                    assert not thread.is_alive(), "Writer lock thread did not stop"
+                    if writing is not None:
+                        assert not (await writing).isError
 
     try:
         running = up(store, port=0)

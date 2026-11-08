@@ -491,6 +491,7 @@ class Store:
     def status(self, *, projects: tuple[str, ...] | None = None) -> dict:
         clause, args = self._filter(projects)
         with self.connection() as db:
+            db.execute("BEGIN")  # Keep totals and source groups on one read snapshot.
             counts = db.execute(
                 "SELECT COUNT(*) AS memories,COALESCE(SUM(m.current_revision),0) AS revisions "
                 "FROM memories m WHERE 1" + clause,

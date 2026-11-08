@@ -70,6 +70,7 @@ def previous_bridge_entry(
 
 
 def owned_previous_bridge_entry(record, *, provider, target, connection, directory, local):
+    """Recognize an exactly owned bridge from either supported launch format."""
     if not (
         isinstance(record, dict)
         and record.get("provider") == provider
@@ -85,7 +86,8 @@ def owned_previous_bridge_entry(record, *, provider, target, connection, directo
     if not isinstance(command, str) or not Path(command).is_absolute():
         return None
     expected = previous_bridge_entry(connection, directory, provider, command=command)
-    return record["entry"] if record["entry"] == expected else None
+    isolated = {**expected, "args": ["-I", *expected["args"]]}
+    return record["entry"] if record["entry"] in (expected, isolated) else None
 
 
 def providers() -> dict:

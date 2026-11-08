@@ -1,3 +1,4 @@
+import contextlib
 import sqlite3
 from concurrent.futures import ThreadPoolExecutor
 
@@ -190,6 +191,28 @@ def test_concurrent_retries_create_one_record(store):
     assert len({r["id"] for r in records}) == 1
     assert sum(r["changed"] for r in records) == 1
     assert store.status()["revisions"] == 1
+
+
+def test_status_uses_one_snapshot_during_a_concurrent_write(store, monkeypatch):
+    connection = store.connection
+    inserted = []
+
+    def concurrent_write(statement):
+        if not inserted and statement.startswith("SELECT m.source,m.account,m.project"):
+            inserted.append(remember(store))
+
+    @contextlib.contextmanager
+    def traced_connection(*, write=False):
+        with connection(write=write) as db:
+            if not write:
+                db.set_trace_callback(concurrent_write)
+            yield db
+
+    monkeypatch.setattr(store, "connection", traced_connection)
+    result = store.status()
+    assert len(inserted) == 1
+    assert result["memories"] == result["revisions"] == 0 and result["sources"] == []
+    assert store.status()["memories"] == 1
 
 
 def test_concurrent_setup_converges_on_one_schema(tmp_path):

@@ -151,6 +151,7 @@ def read_connection(path: Path) -> dict:
         validate_endpoint(data["url"])
         if data.get("version") != 1 or not isinstance(data["token"], str) or not data["token"]:
             raise ValueError
+        validate_text(data["client_id"], "client_id", 500)
         return data
     except (OSError, ValueError, KeyError, TypeError) as exc:
         raise InputError("Cannot read a valid connection credential file.") from exc

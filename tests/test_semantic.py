@@ -60,6 +60,29 @@ def test_semantic_excludes_stale_revisions_and_unauthorized_projects(index):
     assert index.search("fact") == []
 
 
+def test_status_uses_one_snapshot_during_concurrent_indexing(index, monkeypatch):
+    connection = index.store.connection
+    inserted = []
+
+    def concurrent_indexing(statement):
+        if not inserted and statement.startswith("SELECT COUNT(DISTINCT m.id)"):
+            inserted.append(save(index))
+            index.index()
+
+    @contextlib.contextmanager
+    def traced_connection(*, write=False):
+        with connection(write=write) as db:
+            if not write:
+                db.set_trace_callback(concurrent_indexing)
+            yield db
+
+    monkeypatch.setattr(index.store, "connection", traced_connection)
+    result = index.status()
+    assert len(inserted) == 1
+    assert result["state"] == "ready" and result["indexed"] == result["pending"] == 0
+    assert index.status()["indexed"] == 1 and index.status()["pending"] == 0
+
+
 def test_forget_during_embedding_does_not_resurrect_memory(index):
     memory = save(index)
     original = index._embed

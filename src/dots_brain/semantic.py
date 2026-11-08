@@ -215,6 +215,7 @@ class SemanticIndex:
     def status(self, *, projects: tuple[str, ...] | None = None) -> dict:
         clause, args = self.store._filter(projects)
         with self.store.connection() as db:
+            db.execute("BEGIN")  # A concurrent index/write must not split these counts.
             count = db.execute(
                 "SELECT COUNT(*) FROM memories m WHERE 1" + clause,
                 args,
