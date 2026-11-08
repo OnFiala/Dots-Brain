@@ -93,6 +93,29 @@ jobs:
           git archive --format=zip --prefix=dots-brain/ --output="dist/dots-brain-${RELEASE_TAG#v}-plugin.zip" HEAD
           cd dist
           sha256sum -- *.whl *.tar.gz *.zip > SHA256SUMS
+      - name: Verify the documented release ZIP installation
+        if: matrix.python == '3.12'
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          CHECK_ROOT=$(mktemp -d)
+          trap 'rm -rf "$CHECK_ROOT"' EXIT
+          RELEASE_DIST="$PWD/dist"
+          (cd "$RELEASE_DIST" && sha256sum --check SHA256SUMS)
+          unzip -q "$RELEASE_DIST/dots-brain-${RELEASE_TAG#v}-plugin.zip" -d "$CHECK_ROOT"
+          cd "$CHECK_ROOT/dots-brain"
+          uv sync --locked --no-dev --python 3.12
+          test "$(.venv/bin/dots-brain --version)" = "${RELEASE_TAG#v}"
+          .venv/bin/dots-brain --data-dir "$CHECK_ROOT/memory" setup
+          .venv/bin/dots-brain --data-dir "$CHECK_ROOT/memory" doctor > "$CHECK_ROOT/doctor.json"
+          python - "$CHECK_ROOT/doctor.json" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+          result = json.loads(Path(sys.argv[1]).read_text())
+          assert result["state"] == "local_ready", result
+          print(json.dumps({"source_zip_install": "passed", "doctor": result["state"]}))
+          PY
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: matrix.python == '3.12'
         with:

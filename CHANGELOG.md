@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.0.0 — 2026-11-08
+
+- Establish a stable release for the existing Linux memory core: explicit notes,
+  revisions, project-scoped access, full-text search and optional local embeddings.
+- Document pinned release installation, checksum verification, clean installed-wheel
+  acceptance and compatible binary rollback. Schema v2 and runtime behavior remain
+  unchanged from 0.4.4.
+- Clarify the fixed 30-day OAuth grant lifetime and owner-approved re-pairing; token
+  refresh does not extend authorization or remove stored memories.
+- Update the locked certifi dependency to 2026.10.19, matching the maintained
+  deployment. No paid API integration or hosted store is added.
+- Capture and CORTEX modules remain disabled and excluded from core artifacts.
+  Full host-loss recovery and automatic assistant memory use remain unsupported.
+
 ## 0.4.4
 
 - Make the default systemd example work with core dependencies. Document the

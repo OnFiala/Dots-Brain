@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "dots-brain"
-version = "0.4.4"
+version = "1.0.0"
 description = "Self-hosted MCP memory for explicitly saved notes and source references."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -12,7 +12,7 @@ license = "MIT"
 license-files = ["LICENSE"]
 authors = [{name = "Dots Brain contributors"}]
 classifiers = [
-  "Development Status :: 3 - Alpha",
+  "Development Status :: 5 - Production/Stable",
   "Programming Language :: Python :: 3",
   "Topic :: Database",
 ]

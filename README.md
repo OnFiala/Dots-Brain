@@ -5,44 +5,53 @@ stores source metadata and revisions in one SQLite database, supports full-text
 search, and can add local CPU embeddings. It does not automatically collect
 assistant conversations.
 
-You can try it on Linux, but it's still a work in progress. Don't expect a
-finished product.
+Version 1.0.0 is the stable release of the Linux core: explicit notes,
+source references, revisions, full-text search and optional local CPU embeddings.
+Publication and acceptance on your own host remain separate steps.
 
 A **Dot** means an AI assistant or client using this shared service. It is a
 product term, not a separate database or a grant of access.
 
-**Source version: 0.4.4.** Includes schema-v2 storage, access control, MCP boundaries,
-retrieval and lifecycle diagnostics, ownership-aware client cleanup, v2 audit
-review and operator diagnostics. Disabled CORTEX and capture modules are excluded
-from the core distribution. Source checks, installed artifacts and each deployment
-have separate evidence; verify client behavior, data recovery and Linux lifecycle
-for the deployed artifact.
+**Source version: 1.0.0.** The core includes schema-v2 storage, scoped access,
+MCP tools and offline maintenance. Capture and CORTEX modules are disabled and
+excluded from the core distribution. Stability applies to the documented core;
+it does not guarantee that every assistant uses memory in every conversation.
 
 ## Quick start on Linux
 
-Use a writable checkout, Python 3.11 or newer, and [uv](https://docs.astral.sh/uv/).
-The documented installation uses the locked source checkout at a reviewed commit
-or release tag.
+Use Python **3.11 or 3.12** with SQLite **3.42 or newer and FTS5**,
+[uv](https://docs.astral.sh/uv/), `curl`, `unzip` and `sha256sum`.
+Install the versioned source/plugin ZIP from the
+[1.0.0 release](https://github.com/OnFiala/Dots-Brain/releases/tag/v1.0.0).
+Start in a new installation directory, then verify the archive before extracting it:
 
 ```sh
-git clone https://github.com/OnFiala/Dots-Brain.git
-cd Dots-Brain
-uv sync --locked
-uv run dots-brain --data-dir /absolute/private/memory setup
-uv run dots-brain --data-dir /absolute/private/memory doctor
+set -eu
+RELEASE_URL=https://github.com/OnFiala/Dots-Brain/releases/download/v1.0.0
+curl --fail --location --output SHA256SUMS "$RELEASE_URL/SHA256SUMS"
+curl --fail --location --output dots-brain-1.0.0-plugin.zip "$RELEASE_URL/dots-brain-1.0.0-plugin.zip"
+sha256sum --check --ignore-missing SHA256SUMS
+unzip dots-brain-1.0.0-plugin.zip
+cd dots-brain
+uv sync --locked --no-dev --python 3.12
+.venv/bin/dots-brain --version
+.venv/bin/dots-brain --data-dir /absolute/private/memory setup
+.venv/bin/dots-brain --data-dir /absolute/private/memory doctor
 ```
 
-For repeatable work, check out a reviewed commit or release tag before syncing.
-Python must provide SQLite 3.42 or newer. The data, backup, and export directories
-must be on a local POSIX filesystem with working SQLite and advisory file locks.
+The version must be `1.0.0`. Use `--python 3.11` instead if needed. The ZIP
+contains the release's dependency lock; keep both together. See
+[installation](docs/installation.md) for the verified wheel alternative and
+prerequisite checks. Use a local POSIX filesystem with working SQLite and
+advisory locks for data, backups and exports.
 
 For several clients on the same Linux host, use `up` to run an authenticated
 loopback HTTP service, then configure a supported local adapter. See
 [installation](docs/installation.md).
 
 ```sh
-uv run dots-brain --data-dir /absolute/private/memory up
-uv run dots-brain --data-dir /absolute/private/memory connect codex --project work
+.venv/bin/dots-brain --data-dir /absolute/private/memory up
+.venv/bin/dots-brain --data-dir /absolute/private/memory connect codex --project work
 ```
 
 Linux is the supported deployment platform. macOS is suitable for local source
@@ -71,6 +80,8 @@ conversation. See the [tool reference](docs/reference/mcp-tools.md).
   is disabled and excluded from the core package.
 - Remote OAuth needs an existing HTTPS route and an explicit owner approval flow.
   Dots Brain does not provision public ingress or configure web accounts.
+  Authorization lasts 30 days; refreshing tokens does not extend it. Expiry
+  requires owner-approved pairing again and does not delete stored notes.
 - CORTEX is a separate service for project context, decisions and outcomes.
   Its connector is disabled and excluded from the core package. Existing module
   configuration and state are preserved; [activation needs a separate plan](docs/activity.md).

@@ -1,4 +1,4 @@
-# V2 upgrade and recovery
+# Upgrading and recovery
 
 This version retains application schema **v2**. Production rollout requires separate owner approval
 and evidence for the exact installed artifact. Keep one canonical data directory.
@@ -23,6 +23,34 @@ No command searches for or kills foreign processes. Stop the original supervisor
 and all clients before migration or activation, then pass `--writers-stopped`.
 An occupied maintenance lock refuses the operation. Advisory lock files are not
 PID files; do not delete them while a process might hold them.
+
+## Updating to 1.0.0
+
+Version 1.0.0 retains application schema v2 and the 0.4.4 canonical note and
+revision format. It establishes the stable Linux core; it does not activate
+capture or CORTEX, change OAuth grant lifetimes, or add automatic conversation
+capture. Python 3.11 and 3.12 with SQLite 3.42+ and FTS5 are the supported target.
+
+Install the [versioned release and matching lock](installation.md#install-an-identified-release)
+in a separate directory/environment. Verify its version, checksums and installed
+wheel before switching a supervisor. Record the prior executable, environment,
+service owner and data path; keep a current validated backup. Stop the existing
+supervisor and clients before offline maintenance or switching the executable.
+Use the same canonical data directory and restart only the intended supervisor.
+Check `doctor` and actual authorized MCP read/write calls through each intended
+client. Publication alone does not perform these deployment steps.
+
+For an existing v2 store, no schema migration or new store is required. Keep
+existing scoped credentials, OAuth configuration and grant history. A normal
+code upgrade does not reset a grant's fixed expiry. If a grant has expired,
+[re-pair that client](oauth.md#expiry-and-re-pairing); its notes remain in the
+store. Do not delete or reinitialize a store to repair client authorization.
+
+Retain the old environment for a compatible binary rollback, subject to the
+[rollback boundary](#rollback-boundary). It does not make restoring an older
+database over new writes or deletions safe. Existing recovery/disable barriers
+remain in force; inspect them rather than removing them as an upgrade step.
+When upgrading from an older release, also follow the applicable notes below.
 
 ## Updating to 0.4.4
 
