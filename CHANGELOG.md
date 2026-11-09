@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.2
+
+- Read canonical memory totals, source groups and semantic index counts from one
+  SQLite snapshot in `memory_status`, including project-scoped requests. Concurrent
+  saves, indexing, revisions and deletions no longer mix counts from different moments.
+- Preserve read-only status behavior without blocking concurrent WAL writers;
+  retain standalone component status calls and semantic-disabled operation.
+- Retain schema v2, dependency versions, model artifacts, search behavior and
+  existing credentials. No data migration or index rebuild is required.
+
 ## 1.0.1 — 2026-11-08
 
 - Isolate managed Python module launches from caller-controlled import paths and
