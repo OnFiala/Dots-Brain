@@ -2,6 +2,7 @@ import contextlib
 import hashlib
 import math
 import os
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -81,6 +82,83 @@ def test_status_uses_one_snapshot_during_concurrent_indexing(index, monkeypatch)
     assert len(inserted) == 1
     assert result["state"] == "ready" and result["indexed"] == result["pending"] == 0
     assert index.status()["indexed"] == 1 and index.status()["pending"] == 0
+
+
+@pytest.mark.parametrize("change", ["save", "index", "update", "delete"])
+@pytest.mark.parametrize("projects", [None, ("alpha",), ()])
+def test_service_status_shares_snapshot_while_a_writer_progresses(
+    index, monkeypatch, change, projects
+):
+    save(index, project="beta", event_id="other", source="other")
+    index.index()
+    if change != "save":
+        memory = save(index)
+        if change != "index":
+            index.index()
+    service = MemoryService(index.store, index)
+    caller = Policy(frozenset({"memory:read"}), projects)
+    before = service.status(policy=caller)
+    visible = projects is None or "alpha" in projects
+    total = int(projects is None) + int(visible and change != "save")
+    indexed = int(projects is None) + int(visible and change in {"update", "delete"})
+    assert before["memories"] == before["revisions"] == total
+    assert before["semantic"]["indexed"] == indexed
+    assert before["semantic"]["pending"] == total - indexed
+
+    def mutate():
+        if change == "save":
+            save(index)
+            index.index()
+        elif change == "index":
+            index.index()
+        elif change == "update":
+            save(index, content="A revised fact", expected_revision=1)
+        else:
+            index.store.forget(memory["id"], expected_revision=1)
+
+    connection = index.store.connection
+    reader = threading.get_ident()
+    futures, completed, failures = [], [], []
+    with ThreadPoolExecutor(max_workers=1) as executor:
+
+        def interleave(statement):
+            # The semantic count starts after the canonical totals/source groups.
+            if not futures and statement.startswith("SELECT COUNT(*) FROM memories m WHERE 1"):
+                future = executor.submit(mutate)
+                futures.append(future)
+                try:
+                    completed.append(future.result(timeout=5))
+                except Exception as exc:
+                    # SQLite otherwise swallows trace callback exceptions.
+                    failures.append(exc)
+
+        @contextlib.contextmanager
+        def traced_connection(*, write=False):
+            with connection(write=write) as db:
+                if not write and threading.get_ident() == reader:
+                    db.set_trace_callback(interleave)
+                yield db
+
+        monkeypatch.setattr(index.store, "connection", traced_connection)
+        result = service.status(policy=caller)
+        assert len(futures) == 1 and not failures
+        assert completed == [None]  # The writer committed before the status read resumed.
+        futures[0].result()
+    assert result == before
+
+    after = service.status(policy=caller)
+    delta = int(visible)
+    expected_total = total + delta * {"save": 1, "index": 0, "update": 0, "delete": -1}[change]
+    expected_indexed = indexed + delta * {"save": 1, "index": 1, "update": -1, "delete": -1}[change]
+    assert after["memories"] == expected_total
+    assert after["semantic"]["indexed"] == expected_indexed
+    for snapshot in (result, after):
+        assert sum(row["memories"] for row in snapshot["sources"]) == snapshot["memories"]
+        assert all(projects is None or row["project"] in projects for row in snapshot["sources"])
+        semantic = snapshot["semantic"]
+        assert 0 <= semantic["indexed"] <= snapshot["memories"]
+        assert semantic["pending"] == snapshot["memories"] - semantic["indexed"]
+        assert semantic["state"] == ("ready" if semantic["pending"] == 0 else "pending_index")
 
 
 def test_forget_during_embedding_does_not_resurrect_memory(index):
@@ -394,9 +472,11 @@ def test_semantic_failure_falls_back_without_echoing_error(index, caplog):
         raise RuntimeError("synthetic-secret-canary")
 
     index.search = fail
-    result = MemoryService(index.store, index).search(
-        "porcelain", policy=Policy(frozenset({"memory:read"}))
-    )
+    service = MemoryService(index.store, index)
+    result = service.search("porcelain", policy=Policy(frozenset({"memory:read"})))
     assert result["mode"] == "fulltext" and result["semantic"] == "degraded"
     assert result["results"][0]["excerpt"] == "Remember the porcelain tray."
     assert "synthetic-secret-canary" not in caplog.text
+    status = service.status(policy=Policy(frozenset({"memory:read"})))
+    assert status["memories"] == status["semantic"]["pending"] == 1
+    assert status["semantic"]["state"] == "pending_index"

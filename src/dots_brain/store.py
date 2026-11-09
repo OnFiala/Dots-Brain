@@ -489,21 +489,25 @@ class Store:
             )
 
     def status(self, *, projects: tuple[str, ...] | None = None) -> dict:
-        clause, args = self._filter(projects)
         with self.connection() as db:
             db.execute("BEGIN")  # Keep totals and source groups on one read snapshot.
-            counts = db.execute(
-                "SELECT COUNT(*) AS memories,COALESCE(SUM(m.current_revision),0) AS revisions "
-                "FROM memories m WHERE 1" + clause,
-                args,
-            ).fetchone()
-            sources = db.execute(
-                "SELECT m.source,m.account,m.project,COUNT(*) AS memories,"
-                "MAX(m.updated_at) AS last_write FROM memories m WHERE 1"
-                + clause
-                + " GROUP BY m.source,m.account,m.project ORDER BY m.source,m.account,m.project",
-                args,
-            ).fetchall()
+            return self._status(db, projects=projects)
+
+    def _status(self, db: sqlite3.Connection, *, projects: tuple[str, ...] | None = None) -> dict:
+        """Read counts using the caller's snapshot, without opening or ending it."""
+        clause, args = self._filter(projects)
+        counts = db.execute(
+            "SELECT COUNT(*) AS memories,COALESCE(SUM(m.current_revision),0) AS revisions "
+            "FROM memories m WHERE 1" + clause,
+            args,
+        ).fetchone()
+        sources = db.execute(
+            "SELECT m.source,m.account,m.project,COUNT(*) AS memories,"
+            "MAX(m.updated_at) AS last_write FROM memories m WHERE 1"
+            + clause
+            + " GROUP BY m.source,m.account,m.project ORDER BY m.source,m.account,m.project",
+            args,
+        ).fetchall()
         return {
             **dict(counts),
             "sources": [dict(r) for r in sources],
