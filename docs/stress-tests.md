@@ -46,6 +46,57 @@ query. Fulltext fallback fails the run even if it returns the expected records.
 Six repeated synthetic Czech/English prompts check recall at three; this is not
 a representative relevance benchmark.
 
+## Frozen CZ/EN retrieval baseline
+
+[The versioned corpus](../tests/fixtures/retrieval/cz-en-v1.json) contains ten
+fictional notes and sixteen declared queries. Eight notes are visible to the
+reader; two belong to an excluded project. Thirteen queries have declared
+relevant sources. Three have no relevant visible source, including one targeting
+only the excluded project. Cases cover exact terms, Czech diacritics and
+inflections, cross-language questions, paraphrases and short queries.
+
+From a checkout with locked semantic dependencies and the explicitly prepared
+model directory above, run:
+
+```sh
+BASELINE_DIR=$(mktemp -d)
+uv run --locked --no-sync python scripts/retrieval_baseline.py --model-dir /absolute/private/prepared-model --output "$BASELINE_DIR/retrieval.json"
+```
+
+The script always creates a disposable synthetic store. It accepts no existing
+database or user corpus and refuses to overwrite an existing report. It verifies
+the model artifacts, checks that loaded retrieval code matches the checkout,
+indexes all ten notes, then measures full-text and enabled hybrid search at three
+results per query. Wrong mode, degraded semantic search, project leakage or a
+mismatched source/revision fails the run. Relevance misses are recorded rather
+than turned into a new acceptance threshold.
+
+Fixture creation uses stable UUIDs derived from corpus version, project and
+source event ID. The override is limited to synchronous note creation in the
+disposable store and ends before indexing. This preserves existing UUID-based
+tie-breaking while avoiding random rank changes between otherwise identical
+measurements; product identity generation and ranking are unchanged.
+
+The report includes each query's stable source event IDs and judgments, recall
+at three and reciprocal rank within three, category summaries, and counts of
+negative queries that still return results. Negative queries are excluded from
+positive-query averages. Hybrid search has no abstention threshold, so returning
+results for an unrelated question is observable behavior, not proof that the
+question was answered correctly. Timings exclude one warmup per mode and model
+loading/indexing; they are not a throughput benchmark.
+
+Keep the corpus version/hash, model manifest hash, source/lock hashes and
+environment fields with each comparison. Freeze judgments before comparing
+changes; a deliberate corpus change requires a new version. A small fictional
+corpus does not establish usefulness for an owner's real memories.
+
+The dedicated `semantic-baseline` CI job prepares and verifies the pinned model
+even on a cache hit, then performs inference offline. It runs the existing real
+model test and checks its JUnit receipt: a missing, failed or skipped test fails
+the job. Regular matrix jobs retain the opt-in skip. CI publishes only the
+synthetic baseline JSON and JUnit as `semantic-retrieval-baseline`, retained for
+14 days; model weights and stores are not uploaded.
+
 ## Interpret the reports
 
 Keep host, Python/SQLite versions, pinned model, corpus and expected answers

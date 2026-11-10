@@ -86,7 +86,9 @@ is explicit. There is no relevance threshold that guarantees unrelated queries
 return no results. Known short-word retrieval weaknesses remain. Compare versions
 using the same frozen neutral corpus, pinned model and environment. Check exact
 source, revision and body passage as well as result rank; the owner's usefulness
-assessment is a separate requirement. See [performance checks](stress-tests.md).
+assessment is a separate requirement. The [frozen CZ/EN baseline](stress-tests.md#frozen-czen-retrieval-baseline)
+measures current behavior without changing the retrieval algorithm or adding an
+abstention threshold.
 
 If semantic search fails, search returns full-text results with
 `semantic: degraded`; it does not expose the underlying exception. Indexing reports
