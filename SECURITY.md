@@ -28,5 +28,9 @@ assistant response is useful, but it does not create a secret boundary for a use
 or process that can read the file. Store backups and exports privately: they may
 contain memories and authentication state.
 
-The input filter rejects known high-confidence credential forms. It cannot detect
-every secret, so do not save credentials, keys, or private exports as memory.
+The input filter rejects known high-confidence credential forms. Usernames in URLs,
+explicit documentation placeholders and uncertain prose can be accepted; warnings
+are advisory and contain no submitted values. Audit minimization can redact more
+than the write filter rejects. See [content checks](docs/using-memory.md#content-checks-and-truthful-results).
+The filter cannot detect every secret, so do not save credentials, keys, or private
+exports as memory.

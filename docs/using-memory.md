@@ -23,11 +23,23 @@ New verified snapshots omit deleted source and FTS content. See
 
 ## Content checks and truthful results
 
-The filter rejects recognized token prefixes, private-key blocks, concrete
-credential assignments/headers and credential-bearing URLs. It recognizes
+The filter rejects recognized token forms, private-key blocks, concrete
+credential assignments/headers and URLs containing passwords, recognized tokens
+or credential assignments in userinfo. A username alone, such as
+`ssh://git@github.com/acme/repo.git`,
+is accepted. Lowercase `sk-learn` library references with hyphenated words are
+accepted; other recognized `sk-` token forms remain blocked. It recognizes
 sensitive names without treating `token_count`, `tokenizer` or `secretariat` as
 credentials. This is a narrow heuristic, not a general credential grammar.
 Unknown formats, unlabeled opaque values and disguised secrets can escape it.
+
+Exact documentation placeholders such as `api_key=YOUR_KEY_HERE`,
+`api_key=${DEPLOY_API_KEY}` and `Authorization: Bearer <token>` are accepted.
+A placeholder with appended credential text is not an exemption. Query names
+alone are insufficient to establish a secret: `?token=overview` is retained with
+safe warnings, while recognized or concrete credential values are rejected.
+Rejection messages name only fixed field labels and detection categories, never
+the submitted value. There is no owner bypass for rejected content.
 
 Uncertain text such as `password: rotation procedure pending` is saved exactly
 as submitted. The response includes
@@ -36,6 +48,16 @@ an idempotent replay. Warnings contain no submitted text. They do not change the
 memory digest or source identity. Review uncertain content before sharing it.
 Audit minimization continues to redact uncertain matches. Snapshot capture is
 disabled; its retained source is described in [activity](activity.md).
+
+URL minimization parses query pairs before redacting values, preserving unrelated
+parameters, repeated keys and safe fragments. A changed URL may normalize query
+encoding. Supported redacted values are stable on recheck: a second sanitization
+reports no new redactions, and valid redacted note content passes the write
+filter. This does not waive size, structure or nonempty-content validation.
+Sanitization is minimization, not a guarantee that arbitrary content is safe to
+publish. Capture and CORTEX source modules remain disabled.
+Malformed URLs still undergo the plain-text credential assignment scan; a URL
+parsing failure does not exempt their content from filtering or minimization.
 
 If a memory transaction commits but its audit receipt fails, the successful
 response carries `audit_warning` with the missing receipt's intent ID. Inspect
