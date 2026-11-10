@@ -89,7 +89,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
-      BRAIN_CI_DATA_DIR: ${{ runner.temp }}/dots-brain-semantic
       HF_HUB_DISABLE_TELEMETRY: '1'
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -111,7 +110,8 @@ jobs:
 
           manifest = json.dumps({"model": MODEL_ID, "files": FILES}, sort_keys=True).encode()
           identity = hashlib.sha256(manifest).hexdigest()
-          directory = Path(os.environ["BRAIN_CI_DATA_DIR"]) / "models" / MODEL_REVISION
+          data_directory = Path(os.environ["RUNNER_TEMP"]) / "dots-brain-semantic"
+          directory = data_directory / "models" / MODEL_REVISION
           with open(os.environ["GITHUB_OUTPUT"], "a") as output:
               print(f"cache-key={identity}", file=output)
               print("files<<MODEL_FILES", file=output)
@@ -119,6 +119,7 @@ jobs:
                   print(directory / name, file=output)
               print("MODEL_FILES", file=output)
           with open(os.environ["GITHUB_ENV"], "a") as environment:
+              print(f"BRAIN_CI_DATA_DIR={data_directory}", file=environment)
               print(f"BRAIN_TEST_MODEL_DIR={directory}", file=environment)
           PY
       - name: Cache only pinned public model files
