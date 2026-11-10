@@ -261,6 +261,30 @@ def test_mcp_errors_and_logs_never_echo_input_or_exception(
     assert CANARY not in caplog.text
 
 
+def test_mcp_privacy_accepts_documentation_and_rejects_credentials(contract_store, caplog):
+    content = "ssh://git@github.com/acme/repo.git\nAuthorization: Bearer <token>"
+
+    async def exercise():
+        async with mcp_client(contract_store) as (session, _, _):
+            result = await session.call_tool("memory_remember", arguments(content=content))
+            assert not result.isError
+            saved = await session.call_tool(
+                "memory_get", {"memory_id": result.structuredContent["id"]}
+            )
+            assert saved.structuredContent["content"] == content
+            rejected = await session.call_tool(
+                "memory_remember", arguments(content=CANARY, event_id="rejected")
+            )
+            assert rejected.isError
+            error = rejected.structuredContent["error"]
+            assert error["code"] == "invalid_input"
+            assert "Fields: content" in error["message"] and "Categories: token" in error["message"]
+            assert CANARY not in rejected.model_dump_json()
+
+    asyncio.run(exercise())
+    assert CANARY not in caplog.text and contract_store.status()["memories"] == 1
+
+
 def test_mcp_version_instructions_limits_and_legacy_argument_conversion(contract_store):
     async def exercise():
         async with mcp_client(contract_store) as (session, initialized, _):

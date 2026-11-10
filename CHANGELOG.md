@@ -1,5 +1,15 @@
 # Changelog
 
+**Unreleased**
+
+- Accept technical URL usernames, explicit credential placeholders and lowercase
+  `sk-learn` references without weakening recognized credential rejection. Return
+  safe detection categories alongside field labels on rejected writes.
+- Preserve unrelated URL query pairs and fragments during minimization, and make
+  supported redacted values stable on recheck. Add synthetic Store, audit and MCP
+  regressions. Capture and CORTEX modules remain disabled; no schema or dependency
+  changes are required.
+
 ## 1.0.1 — 2026-11-08
 
 - Isolate managed Python module launches from caller-controlled import paths and

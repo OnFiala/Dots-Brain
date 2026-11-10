@@ -9,7 +9,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from typing import Any
-from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+from urllib.parse import parse_qsl, unquote, urlencode, urlsplit, urlunsplit
 
 from .errors import InputError
 
@@ -36,6 +36,16 @@ _HEADER = re.compile(
     re.I,
 )
 _URL = re.compile(r"(?<![A-Za-z0-9+.-])[A-Za-z][A-Za-z0-9+.-]*+://[^\s'\"<>]++")
+_PLACEHOLDER = re.compile(
+    r"\[REDACTED(?:_TOKEN|_PRIVATE_KEY)?\]|\$\{[A-Za-z_][A-Za-z0-9_]*\}|"
+    r"<(?:token|api[-_]?key|password|secret|credential)>|"
+    r"YOUR_(?:API_)?(?:KEY|TOKEN|PASSWORD|SECRET)(?:_HERE)?",
+    re.I,
+)
+
+
+def _placeholder(value: str) -> bool:
+    return bool(_PLACEHOLDER.fullmatch(unquote(value.strip().strip("\"'"))))
 
 
 def sensitive_name(name: str) -> bool:
@@ -45,7 +55,7 @@ def sensitive_name(name: str) -> bool:
 
 def certain(value: str, *, name: str = "", literal: bool = False) -> bool | None:
     value = value.strip().strip("\"'")
-    if not value or value.startswith(("[REDACTED", "${", "<")):
+    if not value or _placeholder(value):
         return None
     if name.lower() == "token":
         return False  # Parser tokens and modes do not establish a credential.
@@ -79,15 +89,34 @@ def _redact_text(text: str, *, redact_uncertain=True):
     counts: dict[str, int] = {}
     warnings: dict[str, int] = {}
 
-    def replace(category: str, pattern: re.Pattern[str], replacement: str, value: str) -> str:
+    def replace(
+        category: str,
+        pattern: re.Pattern[str],
+        replacement: str,
+        value: str,
+        *,
+        before: int | None = None,
+    ) -> str:
         nonlocal counts
 
         def substitute(match):
+            if before is not None and match.start() >= before:
+                return match[0]
+            if category == "bearer" and _placeholder(match[0].split(None, 1)[1]):
+                return match[0]
+            # A documented library name is not an API-key prefix. Keep other sk-
+            # forms, including all-alphabetic synthetic keys, under the guard.
+            if category == "token" and re.fullmatch(r"sk-learn(?:-[a-z]+)*", match[0]):
+                return match[0]
             if category in {"assignment", "credential_header"}:
                 if category == "assignment":
                     confidence = certain(match[3], name=match[1])
                 else:
                     value = match[2]
+                    if value.lower().startswith(("basic ", "bearer ")) and _placeholder(
+                        value.split(None, 1)[1]
+                    ):
+                        return match[0]
                     confidence = certain(
                         value,
                         literal=(
@@ -119,10 +148,10 @@ def _redact_text(text: str, *, redact_uncertain=True):
         cursor = len(text) if end < 0 else end + len(end_marker)
         counts["private_key"] = counts.get("private_key", 0) + 1
     text = "".join(pieces) + text[cursor:]
+    # Check recognizable forms before URL encoding can change their boundaries.
     text = replace("credential_header", _HEADER, r"\1: [REDACTED]", text)
     text = replace("token", _TOKEN, "[REDACTED_TOKEN]", text)
     text = replace("bearer", _BEARER, "Bearer [REDACTED]", text)
-    text = replace("assignment", _ASSIGNMENT, r"\1\2[REDACTED]", text)
 
     def url_replace(match: re.Match[str]) -> str:
         value = match.group(0)
@@ -131,26 +160,62 @@ def _redact_text(text: str, *, redact_uncertain=True):
             pairs = parse_qsl(parsed.query, keep_blank_values=True)
             changed = False
             netloc = parsed.netloc
-            if parsed.username is not None or parsed.password is not None:
+            username = unquote(parsed.username or "")
+            clean_username = replace("assignment", _ASSIGNMENT, r"\1\2[REDACTED]", username)
+            if parsed.password is not None or _TOKEN.search(username) or clean_username != username:
                 netloc = netloc.rsplit("@", 1)[-1]
                 changed = True
             safe = []
             for key, item in pairs:
-                if sensitive_name(key):
+                if sensitive_name(key) and not _placeholder(item):
+                    # Query parameter names alone do not prove a credential:
+                    # documentation can legitimately use ?token=overview.
+                    confidence = certain(item)
+                    if not confidence:
+                        warnings["url_credential"] = warnings.get("url_credential", 0) + 1
+                        if not redact_uncertain:
+                            safe.append((key, item))
+                            continue
                     safe.append((key, "[REDACTED]"))
                     changed = True
                 else:
-                    safe.append((key, item))
+                    clean = replace("credential_header", _HEADER, r"\1: [REDACTED]", item)
+                    clean = replace("token", _TOKEN, "[REDACTED_TOKEN]", clean)
+                    clean = replace("bearer", _BEARER, "Bearer [REDACTED]", clean)
+                    clean = replace("assignment", _ASSIGNMENT, r"\1\2[REDACTED]", clean)
+                    changed |= clean != item
+                    safe.append((key, clean))
+            path = replace("assignment", _ASSIGNMENT, r"\1\2[REDACTED]", parsed.path)
+            fragment = replace("assignment", _ASSIGNMENT, r"\1\2[REDACTED]", parsed.fragment)
+            changed |= path != parsed.path or fragment != parsed.fragment
             if changed:
                 counts["url_credential"] = counts.get("url_credential", 0) + 1
-                return urlunsplit(
-                    (parsed.scheme, netloc, parsed.path, urlencode(safe), parsed.fragment)
-                )
+                return urlunsplit((parsed.scheme, netloc, path, urlencode(safe), fragment))
         except ValueError:
-            pass
+            # A malformed URL is still untrusted text. It must not bypass the
+            # assignment scan merely because structured URL parsing failed.
+            return replace("assignment", _ASSIGNMENT, r"\1\2[REDACTED]", value)
         return value
 
-    return _URL.sub(url_replace, text), counts, warnings
+    # Parse URLs before assignments, which otherwise consume following query
+    # parameters. Exact encoded redaction markers are recognized on recheck.
+    text = _URL.sub(url_replace, text)
+    # URL components were checked separately. Reinterpreting their encoded query
+    # as a plain assignment can swallow a safe fragment or adjacent parameter.
+    pieces, cursor = [], 0
+    for match in _URL.finditer(text):
+        pieces.append(
+            replace(
+                "assignment",
+                _ASSIGNMENT,
+                r"\1\2[REDACTED]",
+                text[cursor : match.end()],
+                before=match.start() - cursor,
+            )
+        )
+        cursor = match.end()
+    pieces.append(replace("assignment", _ASSIGNMENT, r"\1\2[REDACTED]", text[cursor:]))
+    return "".join(pieces), counts, warnings
 
 
 def sanitize(
@@ -175,7 +240,8 @@ def sanitize(
             truncated["depth"] = truncated.get("depth", 0) + 1
             return "[TRUNCATED_DEPTH]"
         if key and sensitive_name(key):
-            note("sensitive_field")
+            if item != "[REDACTED]":
+                note("sensitive_field")
             return "[REDACTED]"
         if isinstance(item, str):
             clean, found, uncertain = _redact_text(item, redact_uncertain=_redact_uncertain)
@@ -233,6 +299,8 @@ def check_content(mapping: dict[str, Any]) -> list[dict[str, str]]:
         raise InputError(
             "Content rejected because it appears to contain a secret. Fields: "
             + (", ".join(fields) or "payload")
+            + ". Categories: "
+            + ", ".join(sorted(result.categories))
             + "."
         )
     if result.truncated:
