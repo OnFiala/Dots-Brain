@@ -89,10 +89,19 @@ def _redact_text(text: str, *, redact_uncertain=True):
     counts: dict[str, int] = {}
     warnings: dict[str, int] = {}
 
-    def replace(category: str, pattern: re.Pattern[str], replacement: str, value: str) -> str:
+    def replace(
+        category: str,
+        pattern: re.Pattern[str],
+        replacement: str,
+        value: str,
+        *,
+        before: int | None = None,
+    ) -> str:
         nonlocal counts
 
         def substitute(match):
+            if before is not None and match.start() >= before:
+                return match[0]
             if category == "bearer" and _placeholder(match[0].split(None, 1)[1]):
                 return match[0]
             # A documented library name is not an API-key prefix. Keep other sk-
@@ -139,6 +148,10 @@ def _redact_text(text: str, *, redact_uncertain=True):
         cursor = len(text) if end < 0 else end + len(end_marker)
         counts["private_key"] = counts.get("private_key", 0) + 1
     text = "".join(pieces) + text[cursor:]
+    # Check recognizable forms before URL encoding can change their boundaries.
+    text = replace("credential_header", _HEADER, r"\1: [REDACTED]", text)
+    text = replace("token", _TOKEN, "[REDACTED_TOKEN]", text)
+    text = replace("bearer", _BEARER, "Bearer [REDACTED]", text)
 
     def url_replace(match: re.Match[str]) -> str:
         value = match.group(0)
@@ -166,7 +179,10 @@ def _redact_text(text: str, *, redact_uncertain=True):
                     safe.append((key, "[REDACTED]"))
                     changed = True
                 else:
-                    clean = replace("assignment", _ASSIGNMENT, r"\1\2[REDACTED]", item)
+                    clean = replace("credential_header", _HEADER, r"\1: [REDACTED]", item)
+                    clean = replace("token", _TOKEN, "[REDACTED_TOKEN]", clean)
+                    clean = replace("bearer", _BEARER, "Bearer [REDACTED]", clean)
+                    clean = replace("assignment", _ASSIGNMENT, r"\1\2[REDACTED]", clean)
                     changed |= clean != item
                     safe.append((key, clean))
             path = replace("assignment", _ASSIGNMENT, r"\1\2[REDACTED]", parsed.path)
@@ -184,17 +200,19 @@ def _redact_text(text: str, *, redact_uncertain=True):
     # Parse URLs before assignments, which otherwise consume following query
     # parameters. Exact encoded redaction markers are recognized on recheck.
     text = _URL.sub(url_replace, text)
-    text = replace("credential_header", _HEADER, r"\1: [REDACTED]", text)
-    text = replace("token", _TOKEN, "[REDACTED_TOKEN]", text)
-    text = replace("bearer", _BEARER, "Bearer [REDACTED]", text)
     # URL components were checked separately. Reinterpreting their encoded query
     # as a plain assignment can swallow a safe fragment or adjacent parameter.
     pieces, cursor = [], 0
     for match in _URL.finditer(text):
         pieces.append(
-            replace("assignment", _ASSIGNMENT, r"\1\2[REDACTED]", text[cursor : match.start()])
+            replace(
+                "assignment",
+                _ASSIGNMENT,
+                r"\1\2[REDACTED]",
+                text[cursor : match.end()],
+                before=match.start() - cursor,
+            )
         )
-        pieces.append(match[0])
         cursor = match.end()
     pieces.append(replace("assignment", _ASSIGNMENT, r"\1\2[REDACTED]", text[cursor:]))
     return "".join(pieces), counts, warnings

@@ -58,6 +58,8 @@ Sanitization is minimization, not a guarantee that arbitrary content is safe to
 publish. Capture and CORTEX source modules remain disabled.
 Malformed URLs still undergo the plain-text credential assignment scan; a URL
 parsing failure does not exempt their content from filtering or minimization.
+Recognized tokens in decoded query values are checked before re-encoding, and
+URL-shaped values in credential assignments remain subject to the write filter.
 
 If a memory transaction commits but its audit receipt fails, the successful
 response carries `audit_warning` with the missing receipt's intent ID. Inspect

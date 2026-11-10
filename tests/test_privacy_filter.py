@@ -63,6 +63,10 @@ def test_technical_notes_preserve_content_identity_and_replay(tmp_path, content)
         "https://example.test／evil?api_key=SYNTHETIC_CREDENTIAL_VALUE",
         "https://api_key=SYNTHETIC_CREDENTIAL_VALUE@example.test/path",
         "https://api_key%3DSYNTHETIC_CREDENTIAL_VALUE@example.test/path",
+        "password=https://example.test/SYNTHETIC_CREDENTIAL_VALUE",
+        "api_key=https://example.test/SYNTHETIC_CREDENTIAL_VALUE?mode=live",
+        "https://example.test/?redirect=/" + CANARY + "&token=overview",
+        "https://example.test/?redirect=%2F" + CANARY,
         "-----BEGIN PRIVATE KEY-----\nSYNTHETIC_CREDENTIAL_VALUE",
     ],
 )
@@ -84,7 +88,7 @@ def test_url_sanitization_preserves_other_query_pairs_and_rechecks(key):
     assert CANARY not in result.value and result.redactions > 0
     parsed = urlsplit(result.value)
     assert parse_qsl(parsed.query, keep_blank_values=True) == [
-        (key, "[REDACTED]"),
+        (key, "[REDACTED_TOKEN]"),
         ("page", "2"),
         ("tag", "a"),
         ("tag", "b"),
@@ -165,3 +169,31 @@ def test_invalid_urls_and_credential_usernames_cannot_enter_audit(tmp_path, url)
     assert "SYNTHETIC_CREDENTIAL_VALUE" not in cleaned.value
     assert sanitize(cleaned.value).value == cleaned.value
     assert sanitize(cleaned.value).redactions == 0
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        "password=https://example.test/SYNTHETIC_CREDENTIAL_VALUE",
+        "api_key=https://example.test/SYNTHETIC_CREDENTIAL_VALUE?mode=live",
+        "https://example.test/?redirect=/" + CANARY + "&token=overview&page=2#section",
+        "https://example.test/?redirect=%2F" + CANARY + "&page=2#section",
+    ],
+)
+def test_url_encoding_and_assignment_boundaries_do_not_hide_audit_credentials(tmp_path, content):
+    store = Store(tmp_path / "memory")
+    store.initialize()
+    log = AuditLog(store)
+    log.record(
+        Policy(), project="alpha", kind="action", client_event_id="boundary", details=content
+    )
+    with store.connection() as db:
+        persisted = db.execute("SELECT details FROM audit_events").fetchone()[0]
+    assert CANARY not in persisted and "SYNTHETIC_CREDENTIAL_VALUE" not in persisted
+    clean = sanitize(content)
+    assert CANARY not in clean.value and "SYNTHETIC_CREDENTIAL_VALUE" not in clean.value
+    assert sanitize(clean.value).redactions == 0
+    assert sanitize(clean.value).value == clean.value
+    assert not check_content({"content": clean.value})
+    if content.startswith("https://"):
+        assert "page=2#section" in clean.value
