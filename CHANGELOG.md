@@ -2,6 +2,11 @@
 
 **Unreleased**
 
+- Run the pinned real embedding model in a dedicated CI job with verified model
+  caching and a receipt that rejects skipped tests. Publish a frozen synthetic
+  CZ/EN full-text/hybrid relevance baseline with source and environment hashes.
+  Retrieval behavior, dependencies and schema remain unchanged.
+
 - Accept technical URL usernames, explicit credential placeholders and lowercase
   `sk-learn` references without weakening recognized credential rejection. Return
   safe detection categories alongside field labels on rejected writes.
