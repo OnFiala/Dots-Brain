@@ -24,6 +24,20 @@ and all clients before migration or activation, then pass `--writers-stopped`.
 An occupied maintenance lock refuses the operation. Advisory lock files are not
 PID files; do not delete them while a process might hold them.
 
+## Updating to 1.0.2
+
+Version 1.0.2 makes the complete `memory_status` response use one SQLite read
+snapshot for canonical totals, source groups and semantic index counts. A save,
+index update, revision or deletion may commit while status is being read; the
+response consistently describes the earlier snapshot. Project filtering and
+the response format are unchanged. Status does not run embedding inference.
+
+The 1.0.1 schema, dependency versions, model and canonical note/revision format
+are unchanged. No migration, grant reset, model download or reindex is needed.
+Use the versioned installation and separately authorized supervisor switch below.
+Retain the verified 1.0.1 environment for code-only rollback using the current
+database; an older database must not replace newer writes or deletions.
+
 ## Updating to 1.0.1
 
 Version 1.0.1 hardens managed Python launches and audit review, repairs owned

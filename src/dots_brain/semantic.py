@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import sqlite3
 import threading
 from pathlib import Path
 from urllib.request import Request, urlopen
@@ -213,19 +214,23 @@ class SemanticIndex:
         return {"indexed_now": indexed, "examined": len(rows), **self.status()}
 
     def status(self, *, projects: tuple[str, ...] | None = None) -> dict:
-        clause, args = self.store._filter(projects)
         with self.store.connection() as db:
             db.execute("BEGIN")  # A concurrent index/write must not split these counts.
-            count = db.execute(
-                "SELECT COUNT(*) FROM memories m WHERE 1" + clause,
-                args,
-            ).fetchone()[0]
-            indexed = db.execute(
-                "SELECT COUNT(DISTINCT m.id) FROM memories m "
-                "JOIN semantic_chunks v ON v.memory_id=m.id "
-                "AND v.revision=m.current_revision WHERE v.model=?" + clause,
-                [MODEL_ID, *args],
-            ).fetchone()[0]
+            return self._status(db, projects=projects)
+
+    def _status(self, db: sqlite3.Connection, *, projects: tuple[str, ...] | None = None) -> dict:
+        """Read index counts within an existing canonical-store snapshot."""
+        clause, args = self.store._filter(projects)
+        count = db.execute(
+            "SELECT COUNT(*) FROM memories m WHERE 1" + clause,
+            args,
+        ).fetchone()[0]
+        indexed = db.execute(
+            "SELECT COUNT(DISTINCT m.id) FROM memories m "
+            "JOIN semantic_chunks v ON v.memory_id=m.id "
+            "AND v.revision=m.current_revision WHERE v.model=?" + clause,
+            [MODEL_ID, *args],
+        ).fetchone()[0]
         return {
             "state": "ready" if count == indexed else "pending_index",
             "model": MODEL_ID,

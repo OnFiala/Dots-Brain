@@ -1,6 +1,6 @@
 # Installation and operation
 
-Version 1.0.1 uses schema v2. Linux with Python **3.11 or 3.12** is the
+Version 1.0.2 uses schema v2. Linux with Python **3.11 or 3.12** is the
 supported deployment target. Python must provide SQLite **3.42 or newer with
 FTS5**. Data, backups and exports need a local POSIX filesystem with SQLite and advisory lock support.
 macOS supports local development and stdio checks; managed `up` requires Linux
@@ -16,17 +16,19 @@ to the canonical data. Keep host paths and credentials out of public reports.
 
 Use a fresh installation directory, outside the private data directory. The
 commands require [uv](https://docs.astral.sh/uv/), `curl`, `unzip` and GNU
-`sha256sum`. They target the published
-[1.0.1 release](https://github.com/OnFiala/Dots-Brain/releases/tag/v1.0.1).
+`sha256sum`. They target the
+[1.0.2 release](https://github.com/OnFiala/Dots-Brain/releases/tag/v1.0.2) and require
+its published, verified assets. Source version metadata and passing CI do not
+establish download availability; check [published releases](https://github.com/OnFiala/Dots-Brain/releases).
 Download the attached source/plugin ZIP, not a floating `main` checkout:
 
 ```sh
 set -eu
-RELEASE_URL=https://github.com/OnFiala/Dots-Brain/releases/download/v1.0.1
+RELEASE_URL=https://github.com/OnFiala/Dots-Brain/releases/download/v1.0.2
 curl --fail --location --output SHA256SUMS "$RELEASE_URL/SHA256SUMS"
-curl --fail --location --output dots-brain-1.0.1-plugin.zip "$RELEASE_URL/dots-brain-1.0.1-plugin.zip"
+curl --fail --location --output dots-brain-1.0.2-plugin.zip "$RELEASE_URL/dots-brain-1.0.2-plugin.zip"
 sha256sum --check --ignore-missing SHA256SUMS
-unzip dots-brain-1.0.1-plugin.zip
+unzip dots-brain-1.0.2-plugin.zip
 cd dots-brain
 ```
 
@@ -60,12 +62,12 @@ Keep the extracted source ZIP for its matching lock and installed-wheel verifier
 download the wheel next to that directory and verify it with the same manifest:
 
 ```sh
-curl --fail --location --output ../dots_brain-1.0.1-py3-none-any.whl "$RELEASE_URL/dots_brain-1.0.1-py3-none-any.whl"
+curl --fail --location --output ../dots_brain-1.0.2-py3-none-any.whl "$RELEASE_URL/dots_brain-1.0.2-py3-none-any.whl"
 (cd .. && sha256sum --check --ignore-missing SHA256SUMS)
 uv export --locked --no-dev --no-emit-project --format requirements.txt --output-file core-requirements.txt
 uv venv --python 3.12 ../dots-brain-venv
 uv pip sync --python ../dots-brain-venv/bin/python --require-hashes core-requirements.txt
-uv pip install --python ../dots-brain-venv/bin/python --no-deps ../dots_brain-1.0.1-py3-none-any.whl
+uv pip install --python ../dots-brain-venv/bin/python --no-deps ../dots_brain-1.0.2-py3-none-any.whl
 env -u PYTHONPATH ../dots-brain-venv/bin/python scripts/verify_wheel.py
 BRAIN_EXEC="$PWD/../dots-brain-venv/bin/dots-brain"
 "$BRAIN_EXEC" --version
@@ -75,7 +77,7 @@ The checksum check must report both downloaded assets as `OK`. Dependencies
 come from `uv.lock` with required hashes; `--no-deps` prevents the wheel install
 from resolving a different dependency set. The verifier uses disposable stores
 and real local stdio/HTTP MCP calls. It must report `state: "passed"` and version
-`1.0.1`; it does not use your canonical memory directory. This core-only verifier
+`1.0.2`; it does not use your canonical memory directory. This core-only verifier
 expects no semantic extra. See [verification](verification.md#installed-wheel).
 
 ## Initialize and connect
@@ -88,7 +90,7 @@ canonical data directory outside the extracted source and environment:
 "$BRAIN_EXEC" --data-dir /absolute/private/memory doctor
 ```
 
-`--version` must print `1.0.1`; inspect `doctor` for SQLite, storage and capability
+`--version` must print `1.0.2`; inspect `doctor` for SQLite, storage and capability
 failures before starting a service. Python's `sqlite3` library is what matters,
 not a separately installed `sqlite3` shell.
 
@@ -169,7 +171,7 @@ For the wheel installation, use its matching release lock and verified wheel:
 ```sh
 uv export --locked --no-dev --no-emit-project --extra semantic --format requirements.txt --output-file semantic-requirements.txt
 uv pip sync --python ../dots-brain-venv/bin/python --require-hashes semantic-requirements.txt
-uv pip install --python ../dots-brain-venv/bin/python --no-deps ../dots_brain-1.0.1-py3-none-any.whl
+uv pip install --python ../dots-brain-venv/bin/python --no-deps ../dots_brain-1.0.2-py3-none-any.whl
 ```
 
 Keep `BRAIN_EXEC` pointed at the chosen environment. Do not run the core-only

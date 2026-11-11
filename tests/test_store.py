@@ -4,7 +4,9 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
+from dots_brain.auth import Policy
 from dots_brain.errors import ConflictError, InputError, NotFoundError, SuppressedError
+from dots_brain.service import MemoryService
 from dots_brain.store import Store, source_key
 
 
@@ -213,6 +215,23 @@ def test_status_uses_one_snapshot_during_a_concurrent_write(store, monkeypatch):
     assert len(inserted) == 1
     assert result["memories"] == result["revisions"] == 0 and result["sources"] == []
     assert store.status()["memories"] == 1
+
+
+@pytest.mark.parametrize("projects", [None, ("alpha",), ()])
+def test_service_status_without_semantics_preserves_scoped_counts(store, projects):
+    service = MemoryService(store)
+    caller = Policy(frozenset({"memory:read"}), projects)
+    empty = service.status(policy=caller)
+    assert empty["memories"] == empty["revisions"] == 0 and empty["sources"] == []
+    assert empty["semantic"] == {"state": "disabled"}
+    remember(store)
+    remember(store, project="beta", event_id="other")
+    result = service.status(policy=caller)
+    expected = 2 if projects is None else len(projects)
+    assert result["memories"] == result["revisions"] == expected
+    assert sum(row["memories"] for row in result["sources"]) == expected
+    assert all(projects is None or row["project"] in projects for row in result["sources"])
+    assert result["semantic"] == {"state": "disabled"}
 
 
 def test_concurrent_setup_converges_on_one_schema(tmp_path):

@@ -1,7 +1,14 @@
 # Changelog
 
-**Unreleased**
+## 1.0.2
 
+- Read canonical memory totals, source groups and semantic index counts from one
+  SQLite snapshot in `memory_status`, including project-scoped requests. Concurrent
+  saves, indexing, revisions and deletions no longer mix counts from different moments.
+- Preserve read-only status behavior without blocking concurrent WAL writers;
+  retain standalone component status calls and semantic-disabled operation.
+- Retain schema v2, dependency versions, model artifacts, search behavior and
+  existing credentials. No data migration or index rebuild is required.
 - Run the pinned real embedding model in a dedicated CI job with verified model
   caching and a receipt that rejects skipped tests. Publish a frozen synthetic
   CZ/EN full-text/hybrid relevance baseline with source and environment hashes.

@@ -157,11 +157,17 @@ class MemoryService:
 
     def status(self, *, policy: Policy) -> dict:
         policy.require("memory:read")
+        with self.store.connection() as db:
+            db.execute("BEGIN")  # Canonical and semantic counts describe the same snapshot.
+            status = self.store._status(db, projects=policy.projects)
+            semantic = (
+                {"state": "disabled"}
+                if self.semantic is None
+                else self.semantic._status(db, projects=policy.projects)
+            )
         return {
-            **self.store.status(projects=policy.projects),
-            "semantic": {"state": "disabled"}
-            if self.semantic is None
-            else self.semantic.status(projects=policy.projects),
+            **status,
+            "semantic": semantic,
             "remote_oauth": "available_when_configured",
             "http_listeners": getattr(self, "http_listeners", []),
             "audit": {
