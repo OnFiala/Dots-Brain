@@ -169,7 +169,10 @@ jobs:
           test -s "$RUNNER_TEMP/retrieval-baseline.json"
       - name: Measure development relevance with all fixture seeds
         run: |
-          uv run --locked --no-sync python scripts/retrieval_baseline.py --model-dir "$BRAIN_TEST_MODEL_DIR" --corpus tests/fixtures/retrieval/cz-en-dev-v2.json --output "$RUNNER_TEMP/retrieval-development.json"
+          uv run --locked --no-sync python scripts/retrieval_baseline.py --model-dir "$BRAIN_TEST_MODEL_DIR" --corpus tests/fixtures/retrieval/cz-en-dev-v2.json --field-diagnostics --output "$RUNNER_TEMP/retrieval-development.json"
+      - name: Measure independently authored development challenge
+        run: |
+          uv run --locked --no-sync python scripts/retrieval_baseline.py --model-dir "$BRAIN_TEST_MODEL_DIR" --corpus tests/fixtures/retrieval/cz-en-challenge-v1.json --field-diagnostics --output "$RUNNER_TEMP/retrieval-challenge.json"
       - name: Measure bounded capacity in a disposable 2 GiB systemd unit
         if: github.event_name == 'workflow_dispatch' && inputs.capacity
         run: |
@@ -223,6 +226,7 @@ jobs:
             ${{ runner.temp }}/semantic-model.junit.xml
             ${{ runner.temp }}/retrieval-baseline.json
             ${{ runner.temp }}/retrieval-development.json
+            ${{ runner.temp }}/retrieval-challenge.json
             ${{ runner.temp }}/capacity/*.json
           if-no-files-found: error
           retention-days: 14

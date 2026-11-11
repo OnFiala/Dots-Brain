@@ -1,0 +1,750 @@
+{
+  "version": "cz-en-challenge-v1",
+  "split": "development",
+  "evaluation_role": "challenge",
+  "description": "Independent synthetic development challenge: 25 positive and 25 unsupported queries, paired cross-domain name and vocabulary collisions, explicit current-revision, deletion and project-scope cases. All people, named objects and operational facts are fictional.",
+  "scope": [
+    "garden"
+  ],
+  "fixture_id_seeds": [
+    11,
+    29,
+    47
+  ],
+  "records": [
+    {
+      "event_id": "challenge-01",
+      "project": "garden",
+      "title": "Kestrel tuning notebook",
+      "content": "Kestrel is the name of a handmade rooftop kite. Its tuning session fixed the bridle at the second blue knot. This notebook concerns kite rigging.",
+      "topic": "challenge-kestrel-kite",
+      "language": "en"
+    },
+    {
+      "event_id": "challenge-02",
+      "project": "garden",
+      "title": "Nacre exposure schedule",
+      "content": "Nacre is a cyanotype printing workshop. The fern contact print receives nine minutes under the violet lamp before rinsing. The schedule describes paper prints.",
+      "topic": "challenge-nacre-cyanotype",
+      "language": "en"
+    },
+    {
+      "event_id": "challenge-03",
+      "project": "garden",
+      "title": "Bramble token rotation",
+      "content": "Bramble pořádá stolní tombolu. Dřevěné žetony se po každém losování vracejí do lněného sáčku. Jde o pomůcky pro hru u stolu.",
+      "topic": "challenge-bramble-raffle",
+      "language": "cs"
+    },
+    {
+      "event_id": "challenge-04",
+      "project": "garden",
+      "title": "Velin pressure test",
+      "content": "Velin je dílna keramiky. Při zkoušce se na patku hliněné misky položí závaží 600 gramů. Test slouží k porovnání tvarů misek.",
+      "topic": "challenge-velin-pottery",
+      "language": "cs"
+    },
+    {
+      "event_id": "challenge-05",
+      "project": "garden",
+      "title": "Orbis migration route",
+      "content": "Orbis is a wooden bird sculpture in a gallery exercise. The installation crew moves it from shelf C to the amber plinth. The route is a physical gallery move.",
+      "topic": "challenge-orbis-sculpture",
+      "language": "en"
+    },
+    {
+      "event_id": "challenge-06",
+      "project": "garden",
+      "title": "Daria evening shift",
+      "content": "Daria is the label of the small aquarium by the studio entrance. Its evening light switches to dim amber at 19:40. This is an aquarium lighting note.",
+      "topic": "challenge-daria-aquarium",
+      "language": "en"
+    },
+    {
+      "event_id": "challenge-07",
+      "project": "garden",
+      "title": "Soren prism delivery",
+      "content": "Soren je hranol z barevného akrylu používaný jako divadelní rekvizita. Po zkoušce patří do zelené skříně pod jevištěm.",
+      "topic": "challenge-soren-prop",
+      "language": "cs"
+    },
+    {
+      "event_id": "challenge-08",
+      "project": "garden",
+      "title": "Mirel volume setting",
+      "content": "Mirel is a listening booth for recorded oral histories. The reference playback tone is set to minus eighteen dBFS before the interviews are played.",
+      "topic": "challenge-mirel-audio",
+      "language": "en"
+    },
+    {
+      "event_id": "challenge-09",
+      "project": "garden",
+      "title": "Tova port assignment",
+      "content": "Tova je figurka v deskové hře o přístavech. Na začátku partie stojí na poli označeném stříbrnou kotvou. Text popisuje herní plán.",
+      "topic": "challenge-tova-boardgame",
+      "language": "cs"
+    },
+    {
+      "event_id": "challenge-10",
+      "project": "garden",
+      "title": "Asterin release lever",
+      "content": "Asterin is a teaching loom. To release the cloth beam, lift the brass lever beside the left wooden foot. This note concerns a weaving machine.",
+      "topic": "challenge-asterin-loom",
+      "language": "en"
+    },
+    {
+      "event_id": "challenge-11",
+      "project": "garden",
+      "title": "ZX-62 glaze card",
+      "content": "ZX-62 is the fictional identifier of a test glaze batch. Its recipe uses two parts ochre pigment to seven parts clear glaze. The batch belongs to a pottery exercise.",
+      "topic": "challenge-zx62-glaze",
+      "language": "en"
+    },
+    {
+      "event_id": "challenge-12",
+      "project": "garden",
+      "title": "QVL",
+      "content": "QVL znamená v grafické dílně zkušební výtiskový list. Eviduje se na něm pořadí ručně číslovaných linorytů. Je to místní označení papírového formuláře.",
+      "topic": "challenge-qvl-print-ledger",
+      "language": "cs"
+    },
+    {
+      "event_id": "challenge-13",
+      "project": "garden",
+      "title": "PK_73 shuttle",
+      "content": "PK_73 je označení dřevěného člunku pro ruční tkaní. Po kurzu se ukládá do plstěného pouzdra v zásuvce číslo šest.",
+      "topic": "challenge-pk73-shuttle",
+      "language": "cs"
+    },
+    {
+      "event_id": "challenge-14",
+      "project": "garden",
+      "title": "VTX ticket tray",
+      "content": "VTX is the local abbreviation for the violet ticket tray at a puppet theatre. The tray sits beside the painted moon at the box-office counter.",
+      "topic": "challenge-vtx-ticket-tray",
+      "language": "en"
+    },
+    {
+      "event_id": "challenge-15",
+      "project": "garden",
+      "title": "RU-84 paint sample",
+      "content": "RU-84 is the inventory identifier of a sculpture paint sample. The sample mixes one scoop of umber with four scoops of chalk-white binder.",
+      "topic": "challenge-ru84-paint",
+      "language": "en"
+    },
+    {
+      "event_id": "challenge-16",
+      "project": "garden",
+      "title": "Selka pressure and supplies log",
+      "content": "Selka is a felt-hat workshop in a fictional craft cooperative. The morning log records sorting wool by texture, brushing the workbench and checking the wooden hat blocks. The green hats are left on the north rack and the cream hats on the lower drying shelf. A separate paragraph describes the felt pressing exercise: makers wet the cloth, apply even hand pressure and let the brim cool on its form. The supply count lists ribbons, paper labels, blunt pins and three wooden measuring bands. The instructor then explains why every hat block has a smooth base: rough wood catches the damp felt and makes the surface uneven. Students inspect the blocks by touch before stretching a sample over them. The log gives a separate account of a demonstration brim, which was allowed to dry without clips so that the edge could curl naturally. That sample is reserved for comparing the feel of thick wool with a thinner mixture. The afternoon group practises rolling a narrow strip into a soft cord, laying it on a wooden board and checking the thickness along its length. Nobody attaches the cord to a finished hat during this lesson. A page of housekeeping observations follows. The broad brushes should rest with their bristles pointing upward, the cloth aprons should be hung apart to dry, and the floor mat should be shaken outdoors before the door is locked. The instructor also notes that paper patterns must remain flat under the clean board rather than being folded into the tool basket. The room contains no electronic inventory equipment: these are handwritten notes about hand tools and textile work. A final materials paragraph describes plain cotton thread, spare ribbons, small felt offcuts and bundles of undyed fibre. These are counted for the next craft session and arranged so that the workbench is clear for measuring the hat brims. The closing instruction is precise: the curved sewing needles are kept in the tin marked Cedar Moon, inside drawer eight. The remaining log concerns sweeping wool scraps, returning stools and airing the room. Selka in this source is a hat workshop; the pressure mentioned here is the pressure used when shaping felt. The craft lesson ends after the instructor checks the dry brims and writes the next textile sample number in a paper register.",
+      "topic": "challenge-selka-hats",
+      "language": "en"
+    },
+    {
+      "event_id": "challenge-17",
+      "project": "garden",
+      "title": "Dorven rehearsal field log",
+      "content": "Dorven je soubor ručních zvonků pro školní hudební cvičení. Dlouhý zápis začíná inventurou polstrovaných rukavic a látkových sáčků. Dále popisuje rozestavení židlí do půlkruhu, zakrytí oken kvůli odleskům a rozdělení lehkých paliček mezi žáky. Vedoucí postupně vyzkouší zvonky a zapíše, které rukojeti potřebují nový provázek. Samostatná část líčí nácvik tichého odložení nástroje. Každý žák nejprve přidrží kovový plášť v rukavici, počká na doznění a teprve potom položí zvonek na složenou látku. Učitel sleduje, zda se nástroje navzájem nedotýkají. Při dalším cvičení žáci předávají paličku po půlkruhu, aby si osvojili společné tempo bez hlasitého počítání. Zapisovatel připomíná, že číslované papírové kartičky označují místa židlí, nikoli jednotlivé hráče. Po přemístění židlí se kartičky znovu srovnají podle směru pohledu učitele. Následuje popis přípravy učebny pro mladší skupinu. Na lavice se položí čistá plátna, otevřou se mělké zásuvky s rukavicemi a poškozený látkový sáček se odloží k ruční opravě. Rodiče čekají na chodbě a do cvičebního prostoru vstupují až po skončení hodiny. Celý text zachycuje práci s malými ručními hudebními nástroji a nepopisuje žádný výzkum v přírodě. V závěru organizačního oddílu učitel porovnává dvě měkké podložky, které tlumí náraz při pokládání zvonků. Silnější podložka zůstává na hlavním stole a tenčí se používá při ukázce pro jednu dvojici žáků. Tato část nemění domluvené zvukové znamení. Uprostřed zápisu je pokyn pro přestávku: signálem k přestávce jsou tři pomalá klepnutí dřevěnou paličkou na stojan. Ostatní odstavce rozebírají balení zvonků do měkkých sáčků, skládání židlí, větrání učebny a uložení tištěných not do kartonové složky. Dorven je zde hudební sada a zápis se týká pouze organizace tohoto cvičení. Poslední část připomíná, že se látkové sáčky suší rozložené, aby se kovové zvonky příště nebalily do vlhké tkaniny.",
+      "topic": "challenge-dorven-bells",
+      "language": "cs"
+    },
+    {
+      "event_id": "challenge-18",
+      "project": "garden",
+      "title": "Pellin ceramic display",
+      "content": "Pellin is now the name of a ceramic exhibit. Its turquoise bowl is displayed on the third oak shelf. This current note is a gallery placement record.",
+      "topic": "challenge-pellin-ceramics",
+      "language": "en",
+      "previous": [
+        {
+          "title": "Pellin telescope collimation",
+          "content": "The former Pellin telescope worksheet specified a collimation angle of fourteen arcminutes. This worksheet is superseded by the current ceramic exhibit record."
+        }
+      ]
+    },
+    {
+      "event_id": "challenge-19",
+      "project": "garden",
+      "title": "Virel rug inventory",
+      "content": "Virel je štítek kolekce tkaných koberců. Červený koberec s kosočtverci leží v kartonové tubě označené R5. Jde o skladování textilu.",
+      "topic": "challenge-virel-rugs",
+      "language": "cs"
+    },
+    {
+      "event_id": "challenge-20",
+      "project": "garden",
+      "title": "Hedra marbling bath",
+      "content": "Hedra is a paper-marbling class. The bath thickener is prepared from three spoonfuls of carrageenan in a litre of water. This is a decorative paper exercise.",
+      "topic": "challenge-hedra-marbling",
+      "language": "en"
+    },
+    {
+      "event_id": "challenge-21",
+      "project": "garden",
+      "title": "Lyran pitch standard",
+      "content": "Lyran je model střechy pro řemeslnickou výuku. Jeho sklon je stanoven na dvacet sedm stupňů. Zápis patří k měření modelu budovy.",
+      "topic": "challenge-lyran-roof",
+      "language": "cs"
+    },
+    {
+      "event_id": "challenge-22",
+      "project": "garden",
+      "title": "Ovela conductor sleeve",
+      "content": "Ovela is a low-voltage demonstration panel used only as an unpowered classroom model. Its copper conductor is covered by a blue silicone sleeve before the model is placed in the display case.",
+      "topic": "challenge-ovela-busbar",
+      "language": "en"
+    },
+    {
+      "event_id": "challenge-23",
+      "project": "garden",
+      "title": "Ternis cell assignment",
+      "content": "Ternis je rekvizitní sklad rozdělený na očíslované přihrádky. Papírové koruny patří do přihrádky jedenáct. Tato evidence popisuje ukládání divadelních rekvizit.",
+      "topic": "challenge-ternis-storage",
+      "language": "cs"
+    },
+    {
+      "event_id": "challenge-24",
+      "project": "garden",
+      "title": "Ulven key signature",
+      "content": "Ulven is a cabinet for a miniature railway collection. Its mechanical key is identified by a square red tag, attached with a cotton loop.",
+      "topic": "challenge-ulven-key-tag",
+      "language": "en"
+    },
+    {
+      "event_id": "challenge-25",
+      "project": "garden",
+      "title": "Zafra scale calibration",
+      "content": "Zafra je mechanická váha pro třídění keramických korálků. Před lekcí se ověřuje mosazným závažím o hmotnosti osmdesát gramů. Zápis popisuje měření hmotnosti.",
+      "topic": "challenge-zafra-balance",
+      "language": "cs"
+    },
+    {
+      "event_id": "challenge-26",
+      "project": "garden",
+      "title": "Virel cave approach",
+      "content": "The Virel limestone cave could be entered through the eastern fissure beyond the dry stream. This synthetic access note has been deleted.",
+      "topic": "challenge-virel-cave",
+      "language": "en",
+      "deleted": true
+    },
+    {
+      "event_id": "challenge-27",
+      "project": "workshop",
+      "title": "Hedra glider launch",
+      "content": "The fictional Hedra glider launches from ramp Delta beside the gravel strip. This record belongs exclusively to the excluded workshop project.",
+      "topic": "challenge-hedra-glider",
+      "language": "en"
+    },
+    {
+      "event_id": "challenge-28",
+      "project": "garden",
+      "title": "Selka needle drawer label",
+      "content": "Selka felt-hat workshop: curved sewing needles are in the Cedar Moon tin in drawer eight. This current inventory slip repeats the closing instruction from the workshop log.",
+      "topic": "challenge-selka-hats",
+      "language": "en"
+    }
+  ],
+  "queries": [
+    {
+      "id": "challenge-p01",
+      "topic": "challenge-kestrel-kite",
+      "text": "Na který uzel byla nastavena uzda draka Kestrel?",
+      "category": "title_attraction",
+      "language": "cs",
+      "cross_language": true,
+      "relevant": [
+        "challenge-01"
+      ]
+    },
+    {
+      "id": "challenge-n01",
+      "topic": "challenge-kestrel-kite-unrelated",
+      "text": "Jaké ladění houslí používá kvarteto Kestrel?",
+      "category": "title_attraction",
+      "language": "cs",
+      "cross_language": false,
+      "relevant": []
+    },
+    {
+      "id": "challenge-p02",
+      "topic": "challenge-nacre-cyanotype",
+      "text": "How long is the Nacre fern print exposed under the lamp?",
+      "category": "title_attraction",
+      "language": "en",
+      "cross_language": false,
+      "relevant": [
+        "challenge-02"
+      ]
+    },
+    {
+      "id": "challenge-n02",
+      "topic": "challenge-nacre-cyanotype-unrelated",
+      "text": "Which camera exposure should Nacre use to photograph a lunar eclipse?",
+      "category": "title_attraction",
+      "language": "en",
+      "cross_language": false,
+      "relevant": []
+    },
+    {
+      "id": "challenge-p03",
+      "topic": "challenge-bramble-raffle",
+      "text": "Where do Bramble raffle tokens go after each draw?",
+      "category": "title_attraction",
+      "language": "en",
+      "cross_language": true,
+      "relevant": [
+        "challenge-03"
+      ]
+    },
+    {
+      "id": "challenge-n03",
+      "topic": "challenge-bramble-raffle-unrelated",
+      "text": "How frequently does Bramble rotate its API authentication tokens?",
+      "category": "title_attraction",
+      "language": "en",
+      "cross_language": false,
+      "relevant": []
+    },
+    {
+      "id": "challenge-p04",
+      "topic": "challenge-velin-pottery",
+      "text": "Jaké závaží používá keramická dílna Velin při zkoušce patky misky?",
+      "category": "title_attraction",
+      "language": "cs",
+      "cross_language": false,
+      "relevant": [
+        "challenge-04"
+      ]
+    },
+    {
+      "id": "challenge-n04",
+      "topic": "challenge-velin-pottery-unrelated",
+      "text": "What tire pressure does the Velin racing motorcycle require?",
+      "category": "title_attraction",
+      "language": "en",
+      "cross_language": false,
+      "relevant": []
+    },
+    {
+      "id": "challenge-p05",
+      "topic": "challenge-orbis-sculpture",
+      "text": "Kam se přesouvá dřevěná socha ptáka Orbis?",
+      "category": "title_attraction",
+      "language": "cs",
+      "cross_language": true,
+      "relevant": [
+        "challenge-05"
+      ]
+    },
+    {
+      "id": "challenge-n05",
+      "topic": "challenge-orbis-sculpture-unrelated",
+      "text": "Which database migration tool does the Orbis billing server use?",
+      "category": "title_attraction",
+      "language": "en",
+      "cross_language": false,
+      "relevant": []
+    },
+    {
+      "id": "challenge-p06",
+      "topic": "challenge-daria-aquarium",
+      "text": "V kolik přechází osvětlení akvária Daria na tlumenou jantarovou?",
+      "category": "shared_name",
+      "language": "cs",
+      "cross_language": true,
+      "relevant": [
+        "challenge-06"
+      ]
+    },
+    {
+      "id": "challenge-n06",
+      "topic": "challenge-daria-aquarium-unrelated",
+      "text": "Kdo střídá lékařku Dariu na noční směně v nemocnici?",
+      "category": "shared_name",
+      "language": "cs",
+      "cross_language": false,
+      "relevant": []
+    },
+    {
+      "id": "challenge-p07",
+      "topic": "challenge-soren-prop",
+      "text": "Where is the Soren acrylic stage prism stored after rehearsal?",
+      "category": "shared_name",
+      "language": "en",
+      "cross_language": true,
+      "relevant": [
+        "challenge-07"
+      ]
+    },
+    {
+      "id": "challenge-n07",
+      "topic": "challenge-soren-prop-unrelated",
+      "text": "What is the optical alignment procedure for the Soren astronomical telescope?",
+      "category": "shared_name",
+      "language": "en",
+      "cross_language": false,
+      "relevant": []
+    },
+    {
+      "id": "challenge-p08",
+      "topic": "challenge-mirel-audio",
+      "text": "Na jakou úroveň se nastavuje referenční tón poslechové kabiny Mirel?",
+      "category": "shared_name",
+      "language": "cs",
+      "cross_language": true,
+      "relevant": [
+        "challenge-08"
+      ]
+    },
+    {
+      "id": "challenge-n08",
+      "topic": "challenge-mirel-audio-unrelated",
+      "text": "Jak se ve škole Mirel počítá objem koule?",
+      "category": "shared_name",
+      "language": "cs",
+      "cross_language": false,
+      "relevant": []
+    },
+    {
+      "id": "challenge-p09",
+      "topic": "challenge-tova-boardgame",
+      "text": "Which board space holds the Tova playing piece at the start?",
+      "category": "shared_name",
+      "language": "en",
+      "cross_language": true,
+      "relevant": [
+        "challenge-09"
+      ]
+    },
+    {
+      "id": "challenge-n09",
+      "topic": "challenge-tova-boardgame-unrelated",
+      "text": "Which TCP port does the Tova network monitoring daemon listen on?",
+      "category": "shared_name",
+      "language": "en",
+      "cross_language": false,
+      "relevant": []
+    },
+    {
+      "id": "challenge-p10",
+      "topic": "challenge-asterin-loom",
+      "text": "Kterou páku je třeba zvednout pro uvolnění válce na stavu Asterin?",
+      "category": "title_attraction",
+      "language": "cs",
+      "cross_language": true,
+      "relevant": [
+        "challenge-10"
+      ]
+    },
+    {
+      "id": "challenge-n10",
+      "topic": "challenge-asterin-loom-unrelated",
+      "text": "Kdy vyjde příští verze mobilní aplikace Asterin?",
+      "category": "title_attraction",
+      "language": "cs",
+      "cross_language": false,
+      "relevant": []
+    },
+    {
+      "id": "challenge-p11",
+      "topic": "challenge-zx62-glaze",
+      "text": "ZX-62",
+      "category": "exact",
+      "language": "en",
+      "cross_language": false,
+      "relevant": [
+        "challenge-11"
+      ]
+    },
+    {
+      "id": "challenge-n11",
+      "topic": "challenge-zx62-glaze-unrelated",
+      "text": "Which encryption mode protects the ZX-62 satellite uplink?",
+      "category": "identifier",
+      "language": "en",
+      "cross_language": false,
+      "relevant": []
+    },
+    {
+      "id": "challenge-p12",
+      "topic": "challenge-qvl-print-ledger",
+      "text": "QVL",
+      "category": "acronym",
+      "language": "cs",
+      "cross_language": false,
+      "relevant": [
+        "challenge-12"
+      ]
+    },
+    {
+      "id": "challenge-n12",
+      "topic": "challenge-qvl-print-ledger-unrelated",
+      "text": "What fuel does the QVL orbital launch vehicle burn?",
+      "category": "identifier",
+      "language": "en",
+      "cross_language": false,
+      "relevant": []
+    },
+    {
+      "id": "challenge-p13",
+      "topic": "challenge-pk73-shuttle",
+      "text": "PK_73",
+      "category": "exact",
+      "language": "cs",
+      "cross_language": false,
+      "relevant": [
+        "challenge-13"
+      ]
+    },
+    {
+      "id": "challenge-n13",
+      "topic": "challenge-pk73-shuttle-unrelated",
+      "text": "What cryptographic signing algorithm does the PK_73 package registry require?",
+      "category": "identifier",
+      "language": "en",
+      "cross_language": false,
+      "relevant": []
+    },
+    {
+      "id": "challenge-p14",
+      "topic": "challenge-vtx-ticket-tray",
+      "text": "VTX",
+      "category": "acronym",
+      "language": "en",
+      "cross_language": false,
+      "relevant": [
+        "challenge-14"
+      ]
+    },
+    {
+      "id": "challenge-n14",
+      "topic": "challenge-vtx-ticket-tray-unrelated",
+      "text": "Na jaké rádiové frekvenci vysílá VTX závodního dronu?",
+      "category": "identifier",
+      "language": "cs",
+      "cross_language": false,
+      "relevant": []
+    },
+    {
+      "id": "challenge-p15",
+      "topic": "challenge-ru84-paint",
+      "text": "RU-84",
+      "category": "exact",
+      "language": "en",
+      "cross_language": false,
+      "relevant": [
+        "challenge-15"
+      ]
+    },
+    {
+      "id": "challenge-n15",
+      "topic": "challenge-ru84-paint-unrelated",
+      "text": "Kterou drahou má letět družice RU-84 kolem Marsu?",
+      "category": "identifier",
+      "language": "cs",
+      "cross_language": false,
+      "relevant": []
+    },
+    {
+      "id": "challenge-p16",
+      "topic": "challenge-selka-hats",
+      "text": "Kde má kloboučnická dílna Selka zakřivené šicí jehly?",
+      "category": "long_passage",
+      "language": "cs",
+      "cross_language": true,
+      "relevant": [
+        "challenge-16",
+        "challenge-28"
+      ]
+    },
+    {
+      "id": "challenge-n16",
+      "topic": "challenge-selka-hats-unrelated",
+      "text": "Jaký dekompresní profil používá potápěčská expedice Selka?",
+      "category": "long_passage",
+      "language": "cs",
+      "cross_language": false,
+      "relevant": []
+    },
+    {
+      "id": "challenge-p17",
+      "topic": "challenge-dorven-bells",
+      "text": "What signal starts the break in the Dorven handbell lesson?",
+      "category": "long_passage",
+      "language": "en",
+      "cross_language": true,
+      "relevant": [
+        "challenge-17"
+      ]
+    },
+    {
+      "id": "challenge-n17",
+      "topic": "challenge-dorven-bells-unrelated",
+      "text": "How deep is the Dorven geological fault below the valley?",
+      "category": "long_passage",
+      "language": "en",
+      "cross_language": false,
+      "relevant": []
+    },
+    {
+      "id": "challenge-p18",
+      "topic": "challenge-pellin-ceramics",
+      "text": "Na které polici je tyrkysová miska ve výstavě Pellin?",
+      "category": "revision",
+      "language": "cs",
+      "cross_language": true,
+      "relevant": [
+        "challenge-18"
+      ]
+    },
+    {
+      "id": "challenge-n18",
+      "topic": "challenge-pellin-ceramics-unrelated",
+      "text": "Jaký kolimační úhel byl předepsán teleskopu Pellin?",
+      "category": "revision",
+      "language": "cs",
+      "cross_language": false,
+      "relevant": []
+    },
+    {
+      "id": "challenge-p19",
+      "topic": "challenge-virel-rugs",
+      "text": "Where is the red diamond-pattern rug from Virel stored?",
+      "category": "deletion",
+      "language": "en",
+      "cross_language": true,
+      "relevant": [
+        "challenge-19"
+      ]
+    },
+    {
+      "id": "challenge-n19",
+      "topic": "challenge-virel-rugs-unrelated",
+      "text": "Which entrance gives access to the Virel limestone cave?",
+      "category": "deletion",
+      "language": "en",
+      "cross_language": false,
+      "relevant": []
+    },
+    {
+      "id": "challenge-p20",
+      "topic": "challenge-hedra-marbling",
+      "text": "Z čeho se připravuje zahušťovadlo lázně kurzu mramorování Hedra?",
+      "category": "project_boundary",
+      "language": "cs",
+      "cross_language": true,
+      "relevant": [
+        "challenge-20"
+      ]
+    },
+    {
+      "id": "challenge-n20",
+      "topic": "challenge-hedra-marbling-unrelated",
+      "text": "Ze které rampy startuje kluzák Hedra?",
+      "category": "project_scope",
+      "language": "cs",
+      "cross_language": false,
+      "relevant": []
+    },
+    {
+      "id": "challenge-p21",
+      "topic": "challenge-lyran-roof",
+      "text": "What roof angle is specified for the Lyran teaching model?",
+      "category": "title_attraction",
+      "language": "en",
+      "cross_language": true,
+      "relevant": [
+        "challenge-21"
+      ]
+    },
+    {
+      "id": "challenge-n21",
+      "topic": "challenge-lyran-roof-unrelated",
+      "text": "What concert pitch does the Lyran chamber orchestra tune to?",
+      "category": "title_attraction",
+      "language": "en",
+      "cross_language": false,
+      "relevant": []
+    },
+    {
+      "id": "challenge-p22",
+      "topic": "challenge-ovela-busbar",
+      "text": "Jaký návlek zakrývá měděný vodič na výukovém modelu Ovela?",
+      "category": "title_attraction",
+      "language": "cs",
+      "cross_language": true,
+      "relevant": [
+        "challenge-22"
+      ]
+    },
+    {
+      "id": "challenge-n22",
+      "topic": "challenge-ovela-busbar-unrelated",
+      "text": "Jaký honorář dostává dirigent orchestru Ovela za zkoušku?",
+      "category": "title_attraction",
+      "language": "cs",
+      "cross_language": false,
+      "relevant": []
+    },
+    {
+      "id": "challenge-p23",
+      "topic": "challenge-ternis-storage",
+      "text": "Which storage cell holds the paper crowns in Ternis?",
+      "category": "title_attraction",
+      "language": "en",
+      "cross_language": true,
+      "relevant": [
+        "challenge-23"
+      ]
+    },
+    {
+      "id": "challenge-n23",
+      "topic": "challenge-ternis-storage-unrelated",
+      "text": "How long does embryonic cell division take in the Ternis laboratory?",
+      "category": "title_attraction",
+      "language": "en",
+      "cross_language": false,
+      "relevant": []
+    },
+    {
+      "id": "challenge-p24",
+      "topic": "challenge-ulven-key-tag",
+      "text": "Jaká visačka označuje mechanický klíč ke skříni Ulven?",
+      "category": "title_attraction",
+      "language": "cs",
+      "cross_language": true,
+      "relevant": [
+        "challenge-24"
+      ]
+    },
+    {
+      "id": "challenge-n24",
+      "topic": "challenge-ulven-key-tag-unrelated",
+      "text": "Jaké předznamenání má symfonie Ulven?",
+      "category": "title_attraction",
+      "language": "cs",
+      "cross_language": false,
+      "relevant": []
+    },
+    {
+      "id": "challenge-p25",
+      "topic": "challenge-zafra-balance",
+      "text": "Which test weight calibrates the Zafra bead-sorting scale?",
+      "category": "title_attraction",
+      "language": "en",
+      "cross_language": true,
+      "relevant": [
+        "challenge-25"
+      ]
+    },
+    {
+      "id": "challenge-n25",
+      "topic": "challenge-zafra-balance-unrelated",
+      "text": "Which musical scale does the Zafra choir use for its opening vocal exercise?",
+      "category": "title_attraction",
+      "language": "en",
+      "cross_language": false,
+      "relevant": []
+    }
+  ]
+}
