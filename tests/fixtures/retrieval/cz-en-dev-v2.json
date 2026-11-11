@@ -1,0 +1,1579 @@
+{
+  "version": "cz-en-dev-v2",
+  "split": "development",
+  "fixture_id_seeds": [
+    11,
+    29,
+    47
+  ],
+  "scope": [
+    "garden"
+  ],
+  "description": "Fictional development notes, fixed before ranking experiments. Twenty-five positive fact topics with four differently worded queries each; twenty-five no-answer queries. This is synthetic regression evidence, not a population sample. All listed alternative visible sources are judged for retrieval relevance, not complete generated-answer coverage.",
+  "records": [
+    {
+      "event_id": "ledger-storage",
+      "project": "garden",
+      "topic": "dev-ledger-storage",
+      "language": "en",
+      "title": "Ledger local storage",
+      "content": "The fictional Ledger desktop app stores its notes in SQLite on the owner's laptop. It never sends the database to a hosted service."
+    },
+    {
+      "event_id": "harbor-backup",
+      "project": "garden",
+      "topic": "dev-harbor-backup",
+      "language": "cs",
+      "title": "Obnovovací kopie Harbor",
+      "content": "Projekt Harbor ukládá každou noc šifrovanou zálohu na druhý počítač. Obnovu zkoušíme v prázdném dočasném adresáři a původní databázi nepřepisujeme."
+    },
+    {
+      "event_id": "comet-branches",
+      "project": "garden",
+      "topic": "dev-comet-branches",
+      "language": "en",
+      "title": "Comet branch convention",
+      "content": "Comet contributors prefix feature branches with work/. Commit subjects begin with an imperative verb and describe one coherent change."
+    },
+    {
+      "event_id": "lumen-release",
+      "project": "garden",
+      "topic": "dev-lumen-release",
+      "language": "cs",
+      "title": "Publikace Lumen",
+      "content": "Sestavení Lumen se nejprve zkouší ve stagingu. Nasazení do produkce schvaluje vlastník až po kontrole konkrétního balíčku a postupu návratu."
+    },
+    {
+      "event_id": "iris-retry",
+      "project": "garden",
+      "topic": "dev-iris-retry",
+      "language": "en",
+      "title": "IR-27 retry policy",
+      "content": "Issue IR-27 concerns importing the same message twice. Iris uses the tuple provider, account and event ID as an idempotency key, so retrying an unchanged message creates no extra revision."
+    },
+    {
+      "event_id": "cedar-architecture",
+      "project": "garden",
+      "topic": "dev-cedar-architecture",
+      "language": "cs",
+      "title": "Architektura Cedar",
+      "content": "V architektuře Cedar oddělujeme ukládání poznámek od HTTP rozhraní. Datová vrstva nevolá síťový server a obě části lze testovat samostatně."
+    },
+    {
+      "event_id": "maple-conflict",
+      "project": "garden",
+      "topic": "dev-maple-conflict",
+      "language": "en",
+      "title": "Maple optimistic edits",
+      "content": "A Maple note update must include its expected revision. When two editors start from revision four, only the first update succeeds; the other receives a revision conflict and must read the current note."
+    },
+    {
+      "event_id": "spruce-queue",
+      "project": "garden",
+      "topic": "dev-spruce-queue",
+      "language": "cs",
+      "title": "Fronta Spruce",
+      "content": "Spruce zpracovává úlohy FIFO: první přijatá úloha se odbaví jako první. Neúspěšná úloha čeká pět sekund před jediným opakováním."
+    },
+    {
+      "event_id": "tomato-water",
+      "project": "garden",
+      "topic": "dev-tomato-water",
+      "language": "en",
+      "title": "Greenhouse tomatoes",
+      "content": "In the fictional Willow greenhouse, tomatoes receive water at their roots just after sunrise. Leaves stay dry because wet foliage previously encouraged mildew."
+    },
+    {
+      "event_id": "basil-harvest",
+      "project": "garden",
+      "topic": "dev-basil-harvest",
+      "language": "cs",
+      "title": "Sklizeň bazalky",
+      "content": "V zahradě Meadow sklízíme bazalku odstřižením vrcholu nad párem listů. Na rostlině ponecháváme alespoň dva páry zdravých listů, aby znovu obrostla."
+    },
+    {
+      "event_id": "compost-bin",
+      "project": "garden",
+      "topic": "dev-compost-bin",
+      "language": "en",
+      "title": "Brook compost routine",
+      "content": "Brook gardeners mix dry shredded cardboard into wet grass clippings. They turn the compost every Saturday to admit air and avoid a compact soggy layer."
+    },
+    {
+      "event_id": "visitor-lunch",
+      "project": "garden",
+      "topic": "dev-visitor-lunch",
+      "language": "cs",
+      "title": "Oběd hosta v Oak",
+      "content": "Fiktivní host dílny Oak má alergii na sezam. Jeho oběd nesmí obsahovat sezamová semínka ani tahini; samostatné náčiní omezuje křížový kontakt."
+    },
+    {
+      "event_id": "bread-order",
+      "project": "garden",
+      "topic": "dev-bread-order",
+      "language": "en",
+      "title": "Juniper bakery pickup",
+      "content": "Juniper's team orders twelve rye rolls for Wednesday. The order is collected at the bakery's side entrance at 07:30, before the front shop opens."
+    },
+    {
+      "event_id": "train-trip",
+      "project": "garden",
+      "topic": "dev-train-trip",
+      "language": "cs",
+      "title": "Výlet týmu Birch",
+      "content": "Tým Birch pojede v sobotu vlakem do Olomouce. Sraz je u severního vstupu nádraží v 08:10 a zpáteční jízdenky drží koordinátorka Hana."
+    },
+    {
+      "event_id": "workshop-room",
+      "project": "garden",
+      "topic": "dev-workshop-room",
+      "language": "en",
+      "title": "Moss workshop room",
+      "content": "The Moss workshop moved to room M-204 in the east wing. Participants use the courtyard entrance because the main lobby is being renovated.",
+      "previous": [
+        {
+          "title": "Old Moss venue",
+          "content": "The Moss workshop used to meet in room W-101 in the west wing. Participants entered through the main lobby."
+        }
+      ]
+    },
+    {
+      "event_id": "meetup-access",
+      "project": "garden",
+      "topic": "dev-meetup-access",
+      "language": "cs",
+      "title": "Přístup na setkání Fern",
+      "content": "Bezbariérový vstup na setkání Fern vede ze zadního parkoviště. Dobrovolník u zvonku otevře rampu; schody u hlavního vchodu se nepoužívají."
+    },
+    {
+      "event_id": "invoice-reference",
+      "project": "garden",
+      "topic": "dev-invoice-reference",
+      "language": "en",
+      "title": "Aspen invoice matching",
+      "content": "Aspen matches invoice INV-482 to purchase order PO-731. The supplier must quote PO-731 in the payment reference so the finance team can reconcile the transfer."
+    },
+    {
+      "event_id": "team-budget",
+      "project": "garden",
+      "topic": "dev-team-budget",
+      "language": "cs",
+      "title": "Rozpočet týmu Hazel",
+      "content": "Tým Hazel vyčlenil na čtvrtletní vzdělávání 18 000 korun. Nevyužitou částku lze převést do dalšího čtvrtletí, ale jednotlivý kurz před nákupem schvaluje vedoucí."
+    },
+    {
+      "event_id": "bicycle-chain",
+      "project": "garden",
+      "topic": "dev-bicycle-chain",
+      "language": "en",
+      "title": "Rowan commuter bicycle",
+      "content": "After riding the Rowan commuter bicycle in rain, dry its chain and apply one drop of lubricant to each roller. Wipe the outside plates so excess oil does not collect road grit."
+    },
+    {
+      "event_id": "bicycle-lock",
+      "project": "garden",
+      "topic": "dev-bicycle-lock",
+      "language": "cs",
+      "title": "Zamykání kola Elm",
+      "content": "Kolo Elm parkujeme ve stojanu pod kamerou. Pevný zámek prochází rámem a zadním kolem; přední rychloupínací kolo zajišťuje druhé lanko."
+    },
+    {
+      "event_id": "cat-sitter",
+      "project": "garden",
+      "topic": "dev-cat-sitter",
+      "language": "en",
+      "title": "Clover cat sitter",
+      "content": "The fictional cat Clover receives half a pouch of food at 18:00. Her sitter refreshes the water bowl and checks that the balcony door is latched before leaving."
+    },
+    {
+      "event_id": "dog-walk",
+      "project": "garden",
+      "topic": "dev-dog-walk",
+      "language": "cs",
+      "title": "Procházka psa Pippin",
+      "content": "Pes Pippin chodí ráno po klidné stezce podél potoka. Kvůli opravě lávky se trasa otáčí u červené lavičky a vyhýbá se severnímu mostu."
+    },
+    {
+      "event_id": "italian-class",
+      "project": "garden",
+      "topic": "dev-italian-class",
+      "language": "en",
+      "title": "Acorn Italian class",
+      "content": "Acorn's beginner Italian class meets online on Tuesdays at 19:00. Learners bring five sentences about their week; the tutor corrects pronunciation before introducing new vocabulary."
+    },
+    {
+      "event_id": "task-priority",
+      "project": "garden",
+      "topic": "dev-task-priority",
+      "language": "cs",
+      "title": "Priorita úloh Pine",
+      "content": "Aktuální pořadí úloh Pine je nejprve opravit export, pak zrychlit náhledy a nakonec upravit barvy. Vadný export blokuje týdenní odevzdání zákazníkovi.",
+      "previous": [
+        {
+          "title": "Dřívější pořadí Pine",
+          "content": "Původně měl Pine upravovat barvy, potom náhledy a export až nakonec. Toto pořadí už neplatí."
+        }
+      ]
+    },
+    {
+      "event_id": "handover-checklist",
+      "project": "garden",
+      "topic": "dev-handover-checklist",
+      "language": "en",
+      "title": "Sequoia handover notes",
+      "content": "Sequoia is a fictional team preparing a monthly delivery. Its coordinator first lists all open tasks and marks which outputs have an identified recipient. During the meeting, each owner can describe a difficulty without treating it as a completed result. The team keeps links to exact artifacts so a later reader can distinguish a proposal from a verified output.\n\nThe handover page has a section for context. This section explains why a task was requested, which assumptions were used and which documents are authoritative. It avoids copying the entire discussion because a long transcript makes the actual decision hard to find. An old estimate remains a historical estimate until someone measures the current result.\n\nThe coordinator then checks dependencies. A task can be finished locally while another team still has to activate it. In that situation, the note identifies the completed local layer and names the separate owner of activation. The coordinator never marks the external step complete based on the producer's intention.\n\nDuring a review, reviewers can open the linked output, compare it with the stated requirement and record a concrete observation. A disagreement is attached to the relevant part of the artifact instead of becoming a general judgment about the contributor. Corrections keep the previous receipt available so a later reader can understand what changed.\n\nThe last section is the operational handover rule. Sequoia maintains one handover checklist. A task owner records the result, links the exact output, names a remaining limitation and assigns the next owner. A green test badge alone does not complete the handover."
+    },
+    {
+      "event_id": "retired-printer",
+      "project": "garden",
+      "topic": "dev-retired-printer",
+      "language": "en",
+      "title": "Retired printer routing",
+      "content": "The retired office printer Puffin used tray Z-19 for purple envelopes.",
+      "deleted": true
+    },
+    {
+      "event_id": "private-hotel",
+      "project": "workshop",
+      "topic": "dev-private-hotel",
+      "language": "en",
+      "title": "Workshop-only hotel code",
+      "content": "The secret fictional hotel reservation for team Finch uses reference HOTEL-903. The room is in the annex."
+    },
+    {
+      "event_id": "private-ledger",
+      "project": "workshop",
+      "topic": "dev-private-ledger",
+      "language": "en",
+      "title": "Workshop Ledger storage",
+      "content": "Workshop's unrelated Ledger project stores financial transactions in PostgreSQL on a remote host. It does not use the garden project's storage policy."
+    }
+  ],
+  "queries": [
+    {
+      "id": "ledger-storage-1",
+      "topic": "dev-ledger-storage",
+      "category": "exact",
+      "language": "en",
+      "cross_language": false,
+      "text": "Ledger SQLite notes",
+      "relevant": [
+        "ledger-storage"
+      ]
+    },
+    {
+      "id": "ledger-storage-2",
+      "topic": "dev-ledger-storage",
+      "category": "paraphrase",
+      "language": "en",
+      "cross_language": false,
+      "text": "Where does Ledger keep its saved information?",
+      "relevant": [
+        "ledger-storage"
+      ]
+    },
+    {
+      "id": "ledger-storage-3",
+      "topic": "dev-ledger-storage",
+      "category": "cross_language",
+      "language": "cs",
+      "cross_language": true,
+      "text": "Ve které databázi jsou uložené poznámky aplikace Ledger?",
+      "relevant": [
+        "ledger-storage"
+      ]
+    },
+    {
+      "id": "ledger-storage-4",
+      "topic": "dev-ledger-storage",
+      "category": "cross_language",
+      "language": "cs",
+      "cross_language": true,
+      "text": "Posílá Ledger uložená data do cloudu?",
+      "relevant": [
+        "ledger-storage"
+      ]
+    },
+    {
+      "id": "harbor-backup-1",
+      "topic": "dev-harbor-backup",
+      "category": "exact",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Harbor šifrovaná záloha",
+      "relevant": [
+        "harbor-backup"
+      ]
+    },
+    {
+      "id": "harbor-backup-2",
+      "topic": "dev-harbor-backup",
+      "category": "paraphrase",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Jak bezpečně vyzkoušíme obnovení dat Harbor?",
+      "relevant": [
+        "harbor-backup"
+      ]
+    },
+    {
+      "id": "harbor-backup-3",
+      "topic": "dev-harbor-backup",
+      "category": "cross_language",
+      "language": "en",
+      "cross_language": true,
+      "text": "Where does Harbor put its nightly recovery copy?",
+      "relevant": [
+        "harbor-backup"
+      ]
+    },
+    {
+      "id": "harbor-backup-4",
+      "topic": "dev-harbor-backup",
+      "category": "cross_language",
+      "language": "en",
+      "cross_language": true,
+      "text": "Does a Harbor recovery drill overwrite the original database?",
+      "relevant": [
+        "harbor-backup"
+      ]
+    },
+    {
+      "id": "comet-branches-1",
+      "topic": "dev-comet-branches",
+      "category": "exact",
+      "language": "en",
+      "cross_language": false,
+      "text": "Comet work/ feature branches",
+      "relevant": [
+        "comet-branches"
+      ]
+    },
+    {
+      "id": "comet-branches-2",
+      "topic": "dev-comet-branches",
+      "category": "paraphrase",
+      "language": "en",
+      "cross_language": false,
+      "text": "How should contributors name a branch and its commit subject in Comet?",
+      "relevant": [
+        "comet-branches"
+      ]
+    },
+    {
+      "id": "comet-branches-3",
+      "topic": "dev-comet-branches",
+      "category": "cross_language",
+      "language": "cs",
+      "cross_language": true,
+      "text": "Jaký prefix mají vývojové větve Comet?",
+      "relevant": [
+        "comet-branches"
+      ]
+    },
+    {
+      "id": "comet-branches-4",
+      "topic": "dev-comet-branches",
+      "category": "cross_language",
+      "language": "cs",
+      "cross_language": true,
+      "text": "Jak formulujeme předmět commitu projektu Comet?",
+      "relevant": [
+        "comet-branches"
+      ]
+    },
+    {
+      "id": "lumen-release-1",
+      "topic": "dev-lumen-release",
+      "category": "exact",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Lumen staging produkce",
+      "relevant": [
+        "lumen-release"
+      ]
+    },
+    {
+      "id": "lumen-release-2",
+      "topic": "dev-lumen-release",
+      "category": "paraphrase",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Kdo může povolit zveřejnění hotového balíčku Lumen?",
+      "relevant": [
+        "lumen-release"
+      ]
+    },
+    {
+      "id": "lumen-release-3",
+      "topic": "dev-lumen-release",
+      "category": "cross_language",
+      "language": "en",
+      "cross_language": true,
+      "text": "What must the owner review before a Lumen production deployment?",
+      "relevant": [
+        "lumen-release"
+      ]
+    },
+    {
+      "id": "lumen-release-4",
+      "topic": "dev-lumen-release",
+      "category": "cross_language",
+      "language": "en",
+      "cross_language": true,
+      "text": "Where is a Lumen build exercised before production?",
+      "relevant": [
+        "lumen-release"
+      ]
+    },
+    {
+      "id": "iris-retry-1",
+      "topic": "dev-iris-retry",
+      "category": "exact",
+      "language": "en",
+      "cross_language": false,
+      "text": "IR-27",
+      "relevant": [
+        "iris-retry"
+      ]
+    },
+    {
+      "id": "iris-retry-2",
+      "topic": "dev-iris-retry",
+      "category": "paraphrase",
+      "language": "en",
+      "cross_language": false,
+      "text": "What prevents a retried Iris message import from creating another revision?",
+      "relevant": [
+        "iris-retry"
+      ]
+    },
+    {
+      "id": "iris-retry-3",
+      "topic": "dev-iris-retry",
+      "category": "cross_language",
+      "language": "cs",
+      "cross_language": true,
+      "text": "Jak Iris rozpozná opakovaný import stejné zprávy?",
+      "relevant": [
+        "iris-retry"
+      ]
+    },
+    {
+      "id": "iris-retry-4",
+      "topic": "dev-iris-retry",
+      "category": "cross_language",
+      "language": "cs",
+      "cross_language": true,
+      "text": "Které tři údaje tvoří identitu události u chyby IR-27?",
+      "relevant": [
+        "iris-retry"
+      ]
+    },
+    {
+      "id": "cedar-architecture-1",
+      "topic": "dev-cedar-architecture",
+      "category": "inflection",
+      "language": "cs",
+      "cross_language": false,
+      "text": "architektura Cedar",
+      "relevant": [
+        "cedar-architecture"
+      ]
+    },
+    {
+      "id": "cedar-architecture-2",
+      "topic": "dev-cedar-architecture",
+      "category": "diacritics",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Cedar oddeleni ukladani poznamek od sitoveho rozhrani",
+      "relevant": [
+        "cedar-architecture"
+      ]
+    },
+    {
+      "id": "cedar-architecture-3",
+      "topic": "dev-cedar-architecture",
+      "category": "cross_language",
+      "language": "en",
+      "cross_language": true,
+      "text": "Which Cedar layers can be tested independently?",
+      "relevant": [
+        "cedar-architecture"
+      ]
+    },
+    {
+      "id": "cedar-architecture-4",
+      "topic": "dev-cedar-architecture",
+      "category": "cross_language",
+      "language": "en",
+      "cross_language": true,
+      "text": "Does Cedar's storage layer call the network server?",
+      "relevant": [
+        "cedar-architecture"
+      ]
+    },
+    {
+      "id": "maple-conflict-1",
+      "topic": "dev-maple-conflict",
+      "category": "exact",
+      "language": "en",
+      "cross_language": false,
+      "text": "Maple expected revision conflict",
+      "relevant": [
+        "maple-conflict"
+      ]
+    },
+    {
+      "id": "maple-conflict-2",
+      "topic": "dev-maple-conflict",
+      "category": "paraphrase",
+      "language": "en",
+      "cross_language": false,
+      "text": "What happens if two people edit revision four of the same Maple note?",
+      "relevant": [
+        "maple-conflict"
+      ]
+    },
+    {
+      "id": "maple-conflict-3",
+      "topic": "dev-maple-conflict",
+      "category": "cross_language",
+      "language": "cs",
+      "cross_language": true,
+      "text": "Co musí editor Maple poslat při změně poznámky?",
+      "relevant": [
+        "maple-conflict"
+      ]
+    },
+    {
+      "id": "maple-conflict-4",
+      "topic": "dev-maple-conflict",
+      "category": "cross_language",
+      "language": "cs",
+      "cross_language": true,
+      "text": "Co má udělat druhý editor Maple po souběžné změně?",
+      "relevant": [
+        "maple-conflict"
+      ]
+    },
+    {
+      "id": "spruce-queue-1",
+      "topic": "dev-spruce-queue",
+      "category": "acronym",
+      "language": "cs",
+      "cross_language": false,
+      "text": "FIFO Spruce",
+      "relevant": [
+        "spruce-queue"
+      ]
+    },
+    {
+      "id": "spruce-queue-2",
+      "topic": "dev-spruce-queue",
+      "category": "paraphrase",
+      "language": "cs",
+      "cross_language": false,
+      "text": "V jakém pořadí Spruce odebírá čekající úlohy?",
+      "relevant": [
+        "spruce-queue"
+      ]
+    },
+    {
+      "id": "spruce-queue-3",
+      "topic": "dev-spruce-queue",
+      "category": "cross_language",
+      "language": "en",
+      "cross_language": true,
+      "text": "How many retries does a failed Spruce job get?",
+      "relevant": [
+        "spruce-queue"
+      ]
+    },
+    {
+      "id": "spruce-queue-4",
+      "topic": "dev-spruce-queue",
+      "category": "cross_language",
+      "language": "en",
+      "cross_language": true,
+      "text": "How long does Spruce wait before retrying a job?",
+      "relevant": [
+        "spruce-queue"
+      ]
+    },
+    {
+      "id": "tomato-water-1",
+      "topic": "dev-tomato-water",
+      "category": "exact",
+      "language": "en",
+      "cross_language": false,
+      "text": "Willow tomatoes sunrise roots",
+      "relevant": [
+        "tomato-water"
+      ]
+    },
+    {
+      "id": "tomato-water-2",
+      "topic": "dev-tomato-water",
+      "category": "paraphrase",
+      "language": "en",
+      "cross_language": false,
+      "text": "Why should Willow avoid spraying water over tomato leaves?",
+      "relevant": [
+        "tomato-water"
+      ]
+    },
+    {
+      "id": "tomato-water-3",
+      "topic": "dev-tomato-water",
+      "category": "cross_language",
+      "language": "cs",
+      "cross_language": true,
+      "text": "Kdy ve skleníku Willow zalévají rajčata?",
+      "relevant": [
+        "tomato-water"
+      ]
+    },
+    {
+      "id": "tomato-water-4",
+      "topic": "dev-tomato-water",
+      "category": "cross_language",
+      "language": "cs",
+      "cross_language": true,
+      "text": "Kam se má při zalévání rajčat Willow dostat voda?",
+      "relevant": [
+        "tomato-water"
+      ]
+    },
+    {
+      "id": "basil-harvest-1",
+      "topic": "dev-basil-harvest",
+      "category": "exact",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Meadow bazalka páry listů",
+      "relevant": [
+        "basil-harvest"
+      ]
+    },
+    {
+      "id": "basil-harvest-2",
+      "topic": "dev-basil-harvest",
+      "category": "inflection",
+      "language": "cs",
+      "cross_language": false,
+      "text": "sklizeň bazalky v Meadow",
+      "relevant": [
+        "basil-harvest"
+      ]
+    },
+    {
+      "id": "basil-harvest-3",
+      "topic": "dev-basil-harvest",
+      "category": "cross_language",
+      "language": "en",
+      "cross_language": true,
+      "text": "Where should the basil tip be cut in Meadow?",
+      "relevant": [
+        "basil-harvest"
+      ]
+    },
+    {
+      "id": "basil-harvest-4",
+      "topic": "dev-basil-harvest",
+      "category": "cross_language",
+      "language": "en",
+      "cross_language": true,
+      "text": "How much healthy foliage must remain on a harvested Meadow basil plant?",
+      "relevant": [
+        "basil-harvest"
+      ]
+    },
+    {
+      "id": "compost-bin-1",
+      "topic": "dev-compost-bin",
+      "category": "exact",
+      "language": "en",
+      "cross_language": false,
+      "text": "Brook cardboard grass compost",
+      "relevant": [
+        "compost-bin"
+      ]
+    },
+    {
+      "id": "compost-bin-2",
+      "topic": "dev-compost-bin",
+      "category": "paraphrase",
+      "language": "en",
+      "cross_language": false,
+      "text": "Why is the Brook compost turned each Saturday?",
+      "relevant": [
+        "compost-bin"
+      ]
+    },
+    {
+      "id": "compost-bin-3",
+      "topic": "dev-compost-bin",
+      "category": "cross_language",
+      "language": "cs",
+      "cross_language": true,
+      "text": "Co se přidává k mokré posekané trávě v Brook?",
+      "relevant": [
+        "compost-bin"
+      ]
+    },
+    {
+      "id": "compost-bin-4",
+      "topic": "dev-compost-bin",
+      "category": "cross_language",
+      "language": "cs",
+      "cross_language": true,
+      "text": "Který den zahradníci Brook provzdušňují kompost?",
+      "relevant": [
+        "compost-bin"
+      ]
+    },
+    {
+      "id": "visitor-lunch-1",
+      "topic": "dev-visitor-lunch",
+      "category": "exact",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Oak sezam tahini alergie",
+      "relevant": [
+        "visitor-lunch"
+      ]
+    },
+    {
+      "id": "visitor-lunch-2",
+      "topic": "dev-visitor-lunch",
+      "category": "paraphrase",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Proč se oběd hosta Oak připravuje jiným náčiním?",
+      "relevant": [
+        "visitor-lunch"
+      ]
+    },
+    {
+      "id": "visitor-lunch-3",
+      "topic": "dev-visitor-lunch",
+      "category": "cross_language",
+      "language": "en",
+      "cross_language": true,
+      "text": "Which seed and paste must be excluded from the Oak visitor's meal?",
+      "relevant": [
+        "visitor-lunch"
+      ]
+    },
+    {
+      "id": "visitor-lunch-4",
+      "topic": "dev-visitor-lunch",
+      "category": "cross_language",
+      "language": "en",
+      "cross_language": true,
+      "text": "How does Oak reduce cross-contact when preparing its visitor's lunch?",
+      "relevant": [
+        "visitor-lunch"
+      ]
+    },
+    {
+      "id": "bread-order-1",
+      "topic": "dev-bread-order",
+      "category": "exact",
+      "language": "en",
+      "cross_language": false,
+      "text": "Juniper rye rolls Wednesday",
+      "relevant": [
+        "bread-order"
+      ]
+    },
+    {
+      "id": "bread-order-2",
+      "topic": "dev-bread-order",
+      "category": "paraphrase",
+      "language": "en",
+      "cross_language": false,
+      "text": "Which bakery entrance should Juniper use for the early collection?",
+      "relevant": [
+        "bread-order"
+      ]
+    },
+    {
+      "id": "bread-order-3",
+      "topic": "dev-bread-order",
+      "category": "cross_language",
+      "language": "cs",
+      "cross_language": true,
+      "text": "Kolik žitných rohlíků si objednal tým Juniper?",
+      "relevant": [
+        "bread-order"
+      ]
+    },
+    {
+      "id": "bread-order-4",
+      "topic": "dev-bread-order",
+      "category": "cross_language",
+      "language": "cs",
+      "cross_language": true,
+      "text": "V kolik a který den Juniper vyzvedává pečivo?",
+      "relevant": [
+        "bread-order"
+      ]
+    },
+    {
+      "id": "train-trip-1",
+      "topic": "dev-train-trip",
+      "category": "exact",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Birch Olomouc sobota",
+      "relevant": [
+        "train-trip"
+      ]
+    },
+    {
+      "id": "train-trip-2",
+      "topic": "dev-train-trip",
+      "category": "paraphrase",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Kde a kdy se Birch sejde před odjezdem?",
+      "relevant": [
+        "train-trip"
+      ]
+    },
+    {
+      "id": "train-trip-3",
+      "topic": "dev-train-trip",
+      "category": "cross_language",
+      "language": "en",
+      "cross_language": true,
+      "text": "Who is keeping the Birch team's return rail tickets?",
+      "relevant": [
+        "train-trip"
+      ]
+    },
+    {
+      "id": "train-trip-4",
+      "topic": "dev-train-trip",
+      "category": "cross_language",
+      "language": "en",
+      "cross_language": true,
+      "text": "Which city will Birch visit by train on Saturday?",
+      "relevant": [
+        "train-trip"
+      ]
+    },
+    {
+      "id": "workshop-room-1",
+      "topic": "dev-workshop-room",
+      "category": "revision",
+      "language": "en",
+      "cross_language": false,
+      "text": "Current Moss workshop room",
+      "relevant": [
+        "workshop-room"
+      ]
+    },
+    {
+      "id": "workshop-room-2",
+      "topic": "dev-workshop-room",
+      "category": "exact",
+      "language": "en",
+      "cross_language": false,
+      "text": "M-204",
+      "relevant": [
+        "workshop-room"
+      ]
+    },
+    {
+      "id": "workshop-room-3",
+      "topic": "dev-workshop-room",
+      "category": "cross_language",
+      "language": "cs",
+      "cross_language": true,
+      "text": "Kde se nyní koná workshop Moss?",
+      "relevant": [
+        "workshop-room"
+      ]
+    },
+    {
+      "id": "workshop-room-4",
+      "topic": "dev-workshop-room",
+      "category": "cross_language",
+      "language": "cs",
+      "cross_language": true,
+      "text": "Kterým vchodem mají přijít účastníci workshopu Moss?",
+      "relevant": [
+        "workshop-room"
+      ]
+    },
+    {
+      "id": "meetup-access-1",
+      "topic": "dev-meetup-access",
+      "category": "exact",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Fern bezbariérový vstup rampa",
+      "relevant": [
+        "meetup-access"
+      ]
+    },
+    {
+      "id": "meetup-access-2",
+      "topic": "dev-meetup-access",
+      "category": "paraphrase",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Jak se na setkání Fern dostane návštěvník na vozíku?",
+      "relevant": [
+        "meetup-access"
+      ]
+    },
+    {
+      "id": "meetup-access-3",
+      "topic": "dev-meetup-access",
+      "category": "cross_language",
+      "language": "en",
+      "cross_language": true,
+      "text": "Where should a Fern visitor needing step-free access arrive?",
+      "relevant": [
+        "meetup-access"
+      ]
+    },
+    {
+      "id": "meetup-access-4",
+      "topic": "dev-meetup-access",
+      "category": "cross_language",
+      "language": "en",
+      "cross_language": true,
+      "text": "Who opens the ramp at the Fern gathering?",
+      "relevant": [
+        "meetup-access"
+      ]
+    },
+    {
+      "id": "invoice-reference-1",
+      "topic": "dev-invoice-reference",
+      "category": "exact",
+      "language": "en",
+      "cross_language": false,
+      "text": "INV-482 PO-731",
+      "relevant": [
+        "invoice-reference"
+      ]
+    },
+    {
+      "id": "invoice-reference-2",
+      "topic": "dev-invoice-reference",
+      "category": "paraphrase",
+      "language": "en",
+      "cross_language": false,
+      "text": "Which reference lets Aspen reconcile this supplier payment?",
+      "relevant": [
+        "invoice-reference"
+      ]
+    },
+    {
+      "id": "invoice-reference-3",
+      "topic": "dev-invoice-reference",
+      "category": "cross_language",
+      "language": "cs",
+      "cross_language": true,
+      "text": "Ke které objednávce patří faktura INV-482?",
+      "relevant": [
+        "invoice-reference"
+      ]
+    },
+    {
+      "id": "invoice-reference-4",
+      "topic": "dev-invoice-reference",
+      "category": "cross_language",
+      "language": "cs",
+      "cross_language": true,
+      "text": "Co má dodavatel Aspen uvést jako referenci platby?",
+      "relevant": [
+        "invoice-reference"
+      ]
+    },
+    {
+      "id": "team-budget-1",
+      "topic": "dev-team-budget",
+      "category": "exact",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Hazel rozpočet vzdělávání",
+      "relevant": [
+        "team-budget"
+      ]
+    },
+    {
+      "id": "team-budget-2",
+      "topic": "dev-team-budget",
+      "category": "paraphrase",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Propadne Hazel nevyčerpaná část peněz na kurzy?",
+      "relevant": [
+        "team-budget"
+      ]
+    },
+    {
+      "id": "team-budget-3",
+      "topic": "dev-team-budget",
+      "category": "cross_language",
+      "language": "en",
+      "cross_language": true,
+      "text": "Who approves buying a Hazel training course?",
+      "relevant": [
+        "team-budget"
+      ]
+    },
+    {
+      "id": "team-budget-4",
+      "topic": "dev-team-budget",
+      "category": "cross_language",
+      "language": "en",
+      "cross_language": true,
+      "text": "How much has Hazel allocated to quarterly learning?",
+      "relevant": [
+        "team-budget"
+      ]
+    },
+    {
+      "id": "bicycle-chain-1",
+      "topic": "dev-bicycle-chain",
+      "category": "exact",
+      "language": "en",
+      "cross_language": false,
+      "text": "Rowan bicycle chain rollers",
+      "relevant": [
+        "bicycle-chain"
+      ]
+    },
+    {
+      "id": "bicycle-chain-2",
+      "topic": "dev-bicycle-chain",
+      "category": "paraphrase",
+      "language": "en",
+      "cross_language": false,
+      "text": "Why wipe surplus chain oil from the Rowan bicycle?",
+      "relevant": [
+        "bicycle-chain"
+      ]
+    },
+    {
+      "id": "bicycle-chain-3",
+      "topic": "dev-bicycle-chain",
+      "category": "cross_language",
+      "language": "cs",
+      "cross_language": true,
+      "text": "Jak ošetřit řetěz kola Rowan po jízdě v dešti?",
+      "relevant": [
+        "bicycle-chain"
+      ]
+    },
+    {
+      "id": "bicycle-chain-4",
+      "topic": "dev-bicycle-chain",
+      "category": "cross_language",
+      "language": "cs",
+      "cross_language": true,
+      "text": "Na kterou část řetězu Rowan patří kapka maziva?",
+      "relevant": [
+        "bicycle-chain"
+      ]
+    },
+    {
+      "id": "bicycle-lock-1",
+      "topic": "dev-bicycle-lock",
+      "category": "exact",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Elm zámek rám zadní kolo",
+      "relevant": [
+        "bicycle-lock"
+      ]
+    },
+    {
+      "id": "bicycle-lock-2",
+      "topic": "dev-bicycle-lock",
+      "category": "paraphrase",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Proč při zamykání kola Elm používáme navíc lanko?",
+      "relevant": [
+        "bicycle-lock"
+      ]
+    },
+    {
+      "id": "bicycle-lock-3",
+      "topic": "dev-bicycle-lock",
+      "category": "cross_language",
+      "language": "en",
+      "cross_language": true,
+      "text": "Which parts of the Elm bicycle must the rigid lock secure?",
+      "relevant": [
+        "bicycle-lock"
+      ]
+    },
+    {
+      "id": "bicycle-lock-4",
+      "topic": "dev-bicycle-lock",
+      "category": "cross_language",
+      "language": "en",
+      "cross_language": true,
+      "text": "Where is the designated Elm bicycle parking stand?",
+      "relevant": [
+        "bicycle-lock"
+      ]
+    },
+    {
+      "id": "cat-sitter-1",
+      "topic": "dev-cat-sitter",
+      "category": "exact",
+      "language": "en",
+      "cross_language": false,
+      "text": "Clover half pouch 18:00",
+      "relevant": [
+        "cat-sitter"
+      ]
+    },
+    {
+      "id": "cat-sitter-2",
+      "topic": "dev-cat-sitter",
+      "category": "paraphrase",
+      "language": "en",
+      "cross_language": false,
+      "text": "What must Clover's sitter check before leaving the flat?",
+      "relevant": [
+        "cat-sitter"
+      ]
+    },
+    {
+      "id": "cat-sitter-3",
+      "topic": "dev-cat-sitter",
+      "category": "cross_language",
+      "language": "cs",
+      "cross_language": true,
+      "text": "Kdy a jakou porci dostává kočka Clover?",
+      "relevant": [
+        "cat-sitter"
+      ]
+    },
+    {
+      "id": "cat-sitter-4",
+      "topic": "dev-cat-sitter",
+      "category": "cross_language",
+      "language": "cs",
+      "cross_language": true,
+      "text": "Co se má při návštěvě kočky Clover udělat s vodou?",
+      "relevant": [
+        "cat-sitter"
+      ]
+    },
+    {
+      "id": "dog-walk-1",
+      "topic": "dev-dog-walk",
+      "category": "exact",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Pippin červená lavička",
+      "relevant": [
+        "dog-walk"
+      ]
+    },
+    {
+      "id": "dog-walk-2",
+      "topic": "dev-dog-walk",
+      "category": "paraphrase",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Proč se ranní venčení Pippina nedostane k severnímu mostu?",
+      "relevant": [
+        "dog-walk"
+      ]
+    },
+    {
+      "id": "dog-walk-3",
+      "topic": "dev-dog-walk",
+      "category": "cross_language",
+      "language": "en",
+      "cross_language": true,
+      "text": "Where should Pippin's morning walk turn back?",
+      "relevant": [
+        "dog-walk"
+      ]
+    },
+    {
+      "id": "dog-walk-4",
+      "topic": "dev-dog-walk",
+      "category": "cross_language",
+      "language": "en",
+      "cross_language": true,
+      "text": "What kind of route does Pippin take along the stream?",
+      "relevant": [
+        "dog-walk"
+      ]
+    },
+    {
+      "id": "italian-class-1",
+      "topic": "dev-italian-class",
+      "category": "exact",
+      "language": "en",
+      "cross_language": false,
+      "text": "Acorn Italian Tuesdays",
+      "relevant": [
+        "italian-class"
+      ]
+    },
+    {
+      "id": "italian-class-2",
+      "topic": "dev-italian-class",
+      "category": "paraphrase",
+      "language": "en",
+      "cross_language": false,
+      "text": "What should Acorn learners prepare before their Italian lesson?",
+      "relevant": [
+        "italian-class"
+      ]
+    },
+    {
+      "id": "italian-class-3",
+      "topic": "dev-italian-class",
+      "category": "cross_language",
+      "language": "cs",
+      "cross_language": true,
+      "text": "Kdy se schází začátečnický kurz italštiny Acorn?",
+      "relevant": [
+        "italian-class"
+      ]
+    },
+    {
+      "id": "italian-class-4",
+      "topic": "dev-italian-class",
+      "category": "cross_language",
+      "language": "cs",
+      "cross_language": true,
+      "text": "Co lektor Acorn opravuje před probíráním nových slovíček?",
+      "relevant": [
+        "italian-class"
+      ]
+    },
+    {
+      "id": "task-priority-1",
+      "topic": "dev-task-priority",
+      "category": "revision",
+      "language": "cs",
+      "cross_language": false,
+      "text": "aktuální priority úloh Pine",
+      "relevant": [
+        "task-priority"
+      ]
+    },
+    {
+      "id": "task-priority-2",
+      "topic": "dev-task-priority",
+      "category": "paraphrase",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Proč má oprava exportu Pine přednost před barvami?",
+      "relevant": [
+        "task-priority"
+      ]
+    },
+    {
+      "id": "task-priority-3",
+      "topic": "dev-task-priority",
+      "category": "cross_language",
+      "language": "en",
+      "cross_language": true,
+      "text": "Which Pine task comes immediately after repairing export?",
+      "relevant": [
+        "task-priority"
+      ]
+    },
+    {
+      "id": "task-priority-4",
+      "topic": "dev-task-priority",
+      "category": "cross_language",
+      "language": "en",
+      "cross_language": true,
+      "text": "What is blocking Pine's weekly customer handover?",
+      "relevant": [
+        "task-priority"
+      ]
+    },
+    {
+      "id": "handover-checklist-1",
+      "topic": "dev-handover-checklist",
+      "category": "exact",
+      "language": "en",
+      "cross_language": false,
+      "text": "Sequoia handover checklist",
+      "relevant": [
+        "handover-checklist"
+      ]
+    },
+    {
+      "id": "handover-checklist-2",
+      "topic": "dev-handover-checklist",
+      "category": "paraphrase",
+      "language": "en",
+      "cross_language": false,
+      "text": "Is a passing test badge sufficient to hand over a Sequoia task?",
+      "relevant": [
+        "handover-checklist"
+      ]
+    },
+    {
+      "id": "handover-checklist-3",
+      "topic": "dev-handover-checklist",
+      "category": "cross_language",
+      "language": "cs",
+      "cross_language": true,
+      "text": "Jaké informace musí obsahovat předávka úlohy Sequoia?",
+      "relevant": [
+        "handover-checklist"
+      ]
+    },
+    {
+      "id": "handover-checklist-4",
+      "topic": "dev-handover-checklist",
+      "category": "cross_language",
+      "language": "cs",
+      "cross_language": true,
+      "text": "Kdo má být určen při předání práce v Sequoia?",
+      "relevant": [
+        "handover-checklist"
+      ]
+    },
+    {
+      "id": "negative-01",
+      "topic": "dev-retired-printer",
+      "category": "deletion",
+      "language": "en",
+      "cross_language": false,
+      "text": "Puffin tray Z-19 purple envelopes",
+      "relevant": []
+    },
+    {
+      "id": "negative-02",
+      "topic": "dev-private-hotel",
+      "category": "project_boundary",
+      "language": "en",
+      "cross_language": false,
+      "text": "HOTEL-903 Finch annex reservation",
+      "relevant": []
+    },
+    {
+      "id": "negative-03",
+      "topic": "dev-absent-film",
+      "category": "no_answer",
+      "language": "en",
+      "cross_language": false,
+      "text": "Which actor plays the lead in the fictional film Velvet Orchard?",
+      "relevant": []
+    },
+    {
+      "id": "negative-04",
+      "topic": "dev-absent-election",
+      "category": "no_answer",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Který kandidát vyhrál volby v obci Laskov?",
+      "relevant": []
+    },
+    {
+      "id": "negative-05",
+      "topic": "dev-absent-dragon",
+      "category": "no_answer",
+      "language": "en",
+      "cross_language": false,
+      "text": "Where is the fictional dragon Ulmor's hidden cave?",
+      "relevant": []
+    },
+    {
+      "id": "negative-06",
+      "topic": "dev-absent-chess",
+      "category": "no_answer",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Jaké je řešení šachové úlohy Bílý jezdec na d4?",
+      "relevant": []
+    },
+    {
+      "id": "negative-07",
+      "topic": "dev-absent-song",
+      "category": "no_answer",
+      "language": "en",
+      "cross_language": false,
+      "text": "What are the lyrics of the invented song Amber Shoes?",
+      "relevant": []
+    },
+    {
+      "id": "negative-08",
+      "topic": "dev-absent-novel",
+      "category": "no_answer",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Kdo napsal fiktivní román Třináctý zvon?",
+      "relevant": []
+    },
+    {
+      "id": "negative-09",
+      "topic": "dev-absent-costume",
+      "category": "no_answer",
+      "language": "en",
+      "cross_language": false,
+      "text": "Which costume won the Ember masquerade competition?",
+      "relevant": []
+    },
+    {
+      "id": "negative-10",
+      "topic": "dev-absent-spell",
+      "category": "no_answer",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Jak zní zaklínadlo kouzelníka Moriana?",
+      "relevant": []
+    },
+    {
+      "id": "negative-11",
+      "topic": "dev-absent-game",
+      "category": "no_answer",
+      "language": "en",
+      "cross_language": false,
+      "text": "What moves are allowed in the invented board game Kite Kings?",
+      "relevant": []
+    },
+    {
+      "id": "negative-12",
+      "topic": "dev-absent-riddle",
+      "category": "no_answer",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Jaké heslo má fiktivní hádanka Tři stříbrné klíče?",
+      "relevant": []
+    },
+    {
+      "id": "negative-13",
+      "topic": "dev-absent-drama",
+      "category": "no_answer",
+      "language": "en",
+      "cross_language": false,
+      "text": "Who narrates the fictional radio drama Glass Avenue?",
+      "relevant": []
+    },
+    {
+      "id": "negative-14",
+      "topic": "dev-absent-heraldry",
+      "category": "no_answer",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Jakou barvu má erb smyšleného rodu Velarů?",
+      "relevant": []
+    },
+    {
+      "id": "negative-15",
+      "topic": "dev-absent-plot",
+      "category": "no_answer",
+      "language": "en",
+      "cross_language": false,
+      "text": "How does the hero escape the maze in chapter seven of Night Cartographer?",
+      "relevant": []
+    },
+    {
+      "id": "negative-16",
+      "topic": "dev-absent-wordplay",
+      "category": "no_answer",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Ve kterém kole skončil fiktivní turnaj slovních hříček?",
+      "relevant": []
+    },
+    {
+      "id": "negative-17",
+      "topic": "dev-absent-ballet",
+      "category": "no_answer",
+      "language": "en",
+      "cross_language": false,
+      "text": "Which dancer performs the final solo in the invented ballet Silver Lantern?",
+      "relevant": []
+    },
+    {
+      "id": "negative-18",
+      "topic": "dev-absent-script",
+      "category": "no_answer",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Co znamená symbol zavřeného oka ve fiktivním písmu Arven?",
+      "relevant": []
+    },
+    {
+      "id": "negative-19",
+      "topic": "dev-absent-joke",
+      "category": "no_answer",
+      "language": "en",
+      "cross_language": false,
+      "text": "What is the punchline of the fictional comedian's joke about blue umbrellas?",
+      "relevant": []
+    },
+    {
+      "id": "negative-20",
+      "topic": "dev-absent-fable",
+      "category": "no_answer",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Jak se jmenuje kapitán ve smyšlené pohádce Plovoucí věž?",
+      "relevant": []
+    },
+    {
+      "id": "negative-21",
+      "topic": "dev-absent-poem",
+      "category": "no_answer",
+      "language": "en",
+      "cross_language": false,
+      "text": "Which words rhyme in stanza three of the invented poem Winter Clock?",
+      "relevant": []
+    },
+    {
+      "id": "negative-22",
+      "topic": "dev-absent-quiz",
+      "category": "no_answer",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Kdo vyhrál televizní kvíz Sto otázek v neexistující epizodě 77?",
+      "relevant": []
+    },
+    {
+      "id": "negative-23",
+      "topic": "dev-absent-card",
+      "category": "no_answer",
+      "language": "en",
+      "cross_language": false,
+      "text": "How many points does the invented card named Moon Joker score?",
+      "relevant": []
+    },
+    {
+      "id": "negative-24",
+      "topic": "dev-absent-comic",
+      "category": "no_answer",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Jaké povolání má hlavní postava fiktivního komiksu Modrý parapet?",
+      "relevant": []
+    },
+    {
+      "id": "negative-25",
+      "topic": "dev-absent-puppet",
+      "category": "no_answer",
+      "language": "en",
+      "cross_language": false,
+      "text": "Which puppet opens the invented play The Copper Hat?",
+      "relevant": []
+    }
+  ]
+}
