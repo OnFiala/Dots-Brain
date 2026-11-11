@@ -63,8 +63,9 @@ BASELINE_DIR=$(mktemp -d)
 uv run --locked --no-sync python scripts/retrieval_baseline.py --model-dir /absolute/private/prepared-model --output "$BASELINE_DIR/retrieval.json"
 ```
 
-The script always creates a disposable synthetic store. It accepts no existing
-database or user corpus and refuses to overwrite an existing report. It verifies
+The script always creates a disposable store. It accepts no existing database
+and refuses to overwrite an existing report. Use only the reviewed fictional
+fixtures with its `--corpus` option; never supply private memory exports. It verifies
 the model artifacts, checks that loaded retrieval code matches the checkout,
 indexes all ten notes, then measures full-text and enabled hybrid search at three
 results per query. Wrong mode, degraded semantic search, project leakage or a
@@ -94,8 +95,93 @@ The dedicated `semantic-baseline` CI job prepares and verifies the pinned model
 even on a cache hit, then performs inference offline. It runs the existing real
 model test and checks its JUnit receipt: a missing, failed or skipped test fails
 the job. Regular matrix jobs retain the opt-in skip. CI publishes only the
-synthetic baseline JSON and JUnit as `semantic-retrieval-baseline`, retained for
+synthetic baseline/development JSON and JUnit as `semantic-retrieval-baseline`, retained for
 14 days; model weights and stores are not uploaded.
+
+## Development and held-out evaluation
+
+The same runner supports two larger, topic-separated fixtures. The frozen v1
+corpus remains unchanged as regression evidence. V2 source IDs are deterministic
+for each of the fixed UUID seeds `11`, `29`, and `47`; every seed is reported
+separately. Product ID generation and ranking remain unchanged.
+
+- [Development](../tests/fixtures/retrieval/cz-en-dev-v2.json): 28 records,
+  100 positive questions across 25 fact topics, 50 cross-language positives and
+  25 no-answer questions. It includes two updated records, one deleted record and
+  two excluded records. Most negative questions concern distant fictional topics;
+  this is a limited development distribution, not general abstention proof.
+- [Held-out acceptance](../tests/fixtures/retrieval/cz-en-holdout-v2.json):
+  200 positive questions across 50 separate fact topics, at least 50 cross-language
+  positives and 50 no-answer questions. An independent author and oracle reviewer
+  prepare its labels before any candidate evaluation. Topic separation concerns
+  the actual facts, not merely different names or IDs.
+
+Each `relevant` list contains all annotated acceptable current visible sources;
+returning any of these counts as a Hit@3. Recall@3 measures the fraction of that
+list retrieved, while MRR@3 uses the first acceptable result. Positive averages
+exclude no-answer queries. A no-answer false positive is a query with no relevant
+visible source that nevertheless returns a record. A related source does not
+become irrelevant merely because it lacks every requested answer detail.
+
+```sh
+EVALUATION_DIR=$(mktemp -d)
+uv run --locked --no-sync python scripts/retrieval_baseline.py --model-dir /absolute/private/prepared-model --corpus tests/fixtures/retrieval/cz-en-dev-v2.json --output "$EVALUATION_DIR/development.json"
+```
+
+The runner first indexes the initial revisions, applies real updates/deletions,
+checks provenance and project/revision/deletion boundaries while indexing is
+pending, then drains indexing and measures the current corpus. Pending checks
+are not quality measurements. Each indexing phase has a 120-second budget and
+rejects no-progress results. Reports separate loading/indexing and pending-probe
+time, report Hit@3, MRR@3, no-answer rates, categories, cross-language results and
+query p95, and retain the exact corpus, scoring, runtime, lock and model hashes.
+Changing measured source or fixture bytes during execution fails the run.
+
+Only the development fixture runs automatically in CI. Held-out execution needs
+explicit `--allow-holdout` on an immutable candidate after ranking/abstention
+selection. The flag is a guard, not proof of independent custody. Keep an evaluator
+receipt identifying the candidate, fixture, labels, seeds and any prior exposure.
+After results are inspected, that slice becomes regression evidence; do not tune
+against it and continue describing it as an unseen acceptance set.
+
+Release acceptance is not implemented as a hidden runner threshold. The approved
+candidate protocol requires, on every seed, positive Hit@3 at least 95%,
+cross-language Hit@3 at least 90%, no more than 5 of 50 unsupported no-answer
+results, and MRR@3 no worse than the matched baseline. Exact identifiers/acronyms
+and revision/deletion cases must not regress; source, project and passage
+invariants must have zero violations. Candidate and baseline use identical
+fixtures, model, dependencies and host limits. Failed criteria block release
+preparation until the scope or candidate is explicitly resolved.
+
+## Bounded capacity at the current scale
+
+The optional `capacity` input of the existing CI workflow runs only when manually
+dispatched. It runs storage/HTTP scenarios at 100 records / 1 worker, 1,000 / 8,
+and 5,000 / 16, followed by 450 synthetic records with 29,952 measured embedding
+chunks. The large bodies are repetitive capacity fixtures; their six repeated
+questions do not measure representative relevance.
+
+The semantic harness uses four concurrent workers and three batches of 100
+measured calls, retaining all three p95 values plus their median and worst tail.
+It declares 900 seconds for indexing and 900 seconds per query batch. One
+disposable systemd unit bounds the harness and every descendant process to
+2 GiB without swap and 3,900 seconds total. The receipt reads actual cgroup limits
+and peak use, and rejects OOM events. Timeout, wrong chunk counts, operation errors,
+incomplete indexing or fulltext fallback fail the run. The unit kills all remaining processes in its
+cgroup on exit and is collected; these are test-host units, not deployment services.
+
+Run the equivalent semantic measurement on an authorized isolated Linux host:
+
+```sh
+uv run --locked --no-sync python scripts/stress_semantic.py --model-dir /absolute/private/prepared-model --records 450 --chunks-per-record 67 --workers 4 --queries 100 --runs 3 --index-timeout 900 --query-timeout 900 --output "$EVALUATION_DIR/capacity.json"
+```
+
+That direct command does not install a memory limit; use the reviewed CI unit or
+an equivalent enforced whole-cgroup limit for the release comparison.
+Retain the resource receipt and all raw synthetic reports outside Git. Candidate
+hybrid p95 must not exceed its matched baseline by more than 20%; never infer
+semantic performance from a fallback run. Artifact receipts bind actual results;
+the presence of this harness alone is not a capacity or release pass.
 
 ## Interpret the reports
 
