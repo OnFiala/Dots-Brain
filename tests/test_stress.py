@@ -18,25 +18,37 @@ def test_bounded_stress_cleans_up_its_winning_revision():
 
 
 @pytest.mark.parametrize(
-    ("status_update", "search_update", "error"),
+    ("status_update", "search_update", "error", "late_ready"),
     [
-        ({}, {}, None),
-        ({"state": "degraded"}, {}, "Semantic index"),
-        ({"indexed": 0}, {}, "Semantic index"),
-        ({}, {"mode": "fulltext"}, "hybrid"),
-        ({}, {"semantic": "degraded"}, "hybrid"),
-        ({}, {"mode": "fulltext", "semantic": "degraded"}, "hybrid"),
+        ({}, {}, None, False),
+        ({"state": "degraded"}, {}, "Semantic index", False),
+        ({"indexed": 0}, {}, "Semantic index", False),
+        ({}, {"mode": "fulltext"}, "hybrid", False),
+        ({}, {"semantic": "degraded"}, "hybrid", False),
+        ({}, {"mode": "fulltext", "semantic": "degraded"}, "hybrid", False),
+        ({}, {}, "declared budget", True),
     ],
-    ids=["ready", "degraded-index", "empty-index", "fulltext", "degraded-search", "fallback"],
+    ids=[
+        "ready",
+        "degraded-index",
+        "empty-index",
+        "fulltext",
+        "degraded-search",
+        "fallback",
+        "late-ready",
+    ],
 )
+@pytest.mark.parametrize("runs", [1, 3])
 def test_semantic_stress_rejects_fallback_with_correct_hits(
-    tmp_path, monkeypatch, status_update, search_update, error
+    tmp_path, monkeypatch, status_update, search_update, error, runs, late_ready
 ):
     scripts = Path(__file__).resolve().parents[1] / "scripts"
     monkeypatch.syspath_prepend(str(scripts))
     run = runpy.run_path(str(scripts / "stress_semantic.py"))["run"]
     namespace = run.__globals__
     rows, stopped, calls = [], [], []
+    clock = [0.0]
+    monkeypatch.setitem(namespace, "time", SimpleNamespace(monotonic=lambda: clock[0]))
 
     def start(store, **kwargs):
         with store.connection() as db:
@@ -46,13 +58,14 @@ def test_semantic_stress_rejects_fallback_with_correct_hits(
     class Session:
         async def call_tool(self, name, arguments):
             if name == "memory_status":
+                clock[0] = 901.0 if late_ready else 1.0
                 payload = {
                     "semantic": {"state": "ready", "indexed": 3, "pending": 0, **status_update}
                 }
             else:
                 calls.append(name)
                 payload = {"mode": "hybrid", "semantic": "enabled", "results": rows}
-                if len(calls) == 2:
+                if len(calls) == (2 if runs == 1 else 8):
                     payload.update(search_update)
             return SimpleNamespace(isError=False, structuredContent=payload)
 
@@ -74,13 +87,16 @@ def test_semantic_stress_rejects_fallback_with_correct_hits(
         return read_text(path, *args, **kwargs)
 
     monkeypatch.setattr(Path, "read_text", read_status)
-    if error:
-        with pytest.raises(AssertionError, match=error):
-            run(tmp_path, records=3, workers=2, queries=6)
+    if error or late_ready:
+        with pytest.raises(AssertionError, match="declared budget" if late_ready else error):
+            run(tmp_path, records=3, workers=2, queries=6, runs=runs, index_timeout=900)
     else:
-        report = run(tmp_path, records=3, workers=2, queries=6)
+        report = run(tmp_path, records=3, workers=2, queries=6, runs=runs, index_timeout=900)
         assert report["state"] == "passed"
         assert report["queries"]["count"] == 6
         assert report["synthetic_recall_at_3"] == 1
+        assert len(report["runs"]) == runs
+        assert all(row["queries"]["count"] == 6 for row in report["runs"])
+        assert len(calls) == 6 * runs
     assert len(stopped) == 1
     assert not stopped[0].exists()

@@ -6,6 +6,12 @@ versions, commands, failures and skips for each candidate. Keep private runtime
 and recovery evidence outside the repository; old test counts do not verify a
 new artifact.
 
+Retrieval changes additionally use the frozen development/held-out protocol and
+bounded capacity measurements in [performance checks](stress-tests.md).
+Independent oracle review precedes tuning; held-out acceptance follows an
+immutable candidate. Source-test success alone is not retrieval-quality or
+latency acceptance.
+
 ## Source checks
 
 From a clean checkout of the reviewed commit:

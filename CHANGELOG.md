@@ -1,5 +1,15 @@
 # Changelog
 
+**Unreleased**
+
+- Extend the existing synthetic retrieval runner with separate development and
+  held-out fixtures, three deterministic seeds, current-revision/source/passage
+  guards and explicit no-answer metrics. Keep held-out execution outside automatic
+  CI and preserve the original small baseline.
+- Add optional bounded Linux capacity measurement with 450 synthetic records,
+  approximately 30,000 chunks, three query batches and an enforced 2 GiB test-unit
+  budget. These are measurement tools; retrieval behavior remains unchanged.
+
 ## 1.0.2
 
 - Read canonical memory totals, source groups and semantic index counts from one

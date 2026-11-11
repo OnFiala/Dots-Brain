@@ -1,0 +1,3431 @@
+{
+  "version": "cz-en-holdout-v2",
+  "split": "holdout",
+  "fixture_id_seeds": [
+    11,
+    29,
+    47
+  ],
+  "scope": [
+    "garden"
+  ],
+  "description": "Independent fictional CZ/EN held-out retrieval corpus. No personal data. Fifty independent positive fact topics, four distinct questions per topic, fifty cross-language positives. Eight multi-paragraph notes place the answer after three distinct contextual paragraphs. Fifty negatives comprise thirty absent named topics, ten deleted-only sources, and ten workshop-only sources. Garden is only a synthetic scope label. All defensibly answer-bearing current visible alternatives are included; irrelevant topical proximity alone does not establish relevance. Candidate awaits independent oracle review; author has not run retrieval or inspected a development corpus.",
+  "records": [
+    {
+      "event_id": "holdout-h01-cave-layers",
+      "project": "garden",
+      "title": "Vesper cave: the interrupted band",
+      "content": "This fictional field note concerns the Vesper cave specimen VL-8. A rust-colored stripe inside its calcite column is the marker of a pause in mineral growth caused by windblown iron dust. It is not a record of a flood. The pale rings on either side resumed growing after the cave entrance narrowed. The note makes no estimate of the stripe's age.",
+      "topic": "h01-cave-layers",
+      "language": "en"
+    },
+    {
+      "event_id": "holdout-h02-parchment-mount",
+      "project": "garden",
+      "title": "Atlas Runa: napětí pergamenu",
+      "content": "Ve fiktivním restaurátorském souboru Runa se zvlněný pergamen připevňuje na rám pomocí širokých pásků z japonského papíru. Úzké šňůry byly opuštěny, protože vytrhávaly okraje. Pásky mají rozkládat tah do větší plochy. Pro tento atlas není stanovena ani uvedena cílová relativní vlhkost.",
+      "topic": "h02-parchment-mount",
+      "language": "cs"
+    },
+    {
+      "event_id": "holdout-h03-variable-star",
+      "project": "garden",
+      "title": "Elnor observatory: ECV-3 comparison",
+      "content": "In the fictional Elnor observing exercise, ECV means eclipse comparison variable. The star ECV-3 is checked against the amber reference star Sola Minor, rather than the blue reference Fen. Sola Minor was selected because its brightness remains steady throughout the exercise; its color is not the selection criterion. The log contains no distance measurement.",
+      "topic": "h03-variable-star",
+      "language": "en"
+    },
+    {
+      "event_id": "holdout-h04-reed-acoustics",
+      "project": "garden",
+      "title": "Síň Dravín: měření dozvuku",
+      "content": "Fiktivní akustická síň Dravín používá pro měření dozvuku krátké tlesknutí dřevěných klapek. Měřicí mikrofon stojí za závěsem, aby přímý úder nepřetížil jeho vstup. Závěs se při každém měření nechává na stejném místě. Tato poznámka neudává žádnou naměřenou délku dozvuku.",
+      "topic": "h04-reed-acoustics",
+      "language": "cs"
+    },
+    {
+      "event_id": "holdout-h05-lantern-jelly",
+      "project": "garden",
+      "title": "Pelagic tank: Lumen veil",
+      "content": "The imaginary jellyfish Lumen veil drifts in the Pelagic teaching tank. Its green flashes begin when the water changes from still to gently rotating. A light pulse alone does not trigger the flashes. The observer records the start of rotation rather than the time the lamps come on. No reproduction cycle is described.",
+      "topic": "h05-lantern-jelly",
+      "language": "en"
+    },
+    {
+      "event_id": "holdout-h06-felt-fulling",
+      "project": "garden",
+      "title": "Sukno Běla: kontrola valchování",
+      "content": "Fiktivní tkalcovna Běla posuzuje dokončení valchování podle toho, zda se na zkušebním řezu přestaly rozestupovat jednotlivé příze. Barva sukna ani počet úderů nejsou rozhodovacím kritériem. Řez se prohlíží pod lupou bez natahování vzorku. Hmotnost hotového sukna nebyla zaznamenána.",
+      "topic": "h06-felt-fulling",
+      "language": "cs"
+    },
+    {
+      "event_id": "holdout-h07-silt-gate",
+      "project": "garden",
+      "title": "Orrel flume: SGV setting",
+      "content": "The fictional Orrel flume uses an SGV, a sediment guard vane. During the amber-silt demonstration the vane is held half open to send floating leaves into a side tray while allowing suspended clay to continue downstream. Closing it entirely would stop both materials. The experiment records no total water volume.",
+      "topic": "h07-silt-gate",
+      "language": "en"
+    },
+    {
+      "event_id": "holdout-h08-prism-face",
+      "project": "garden",
+      "title": "Hranol Jasna: značka orientace",
+      "content": "Ve fiktivní optické sadě Jasna označuje trojúhelníková ryska vstupní plochu hranolu. Při ukázce rozkladu bílého světla má tato plocha směřovat ke štěrbině. Kruhová ryska označuje pouze místo pro úchop a k orientaci paprsku neslouží. Index lomu materiálu sada neuvádí.",
+      "topic": "h08-prism-face",
+      "language": "cs"
+    },
+    {
+      "event_id": "holdout-h09-kiln-cooling",
+      "project": "garden",
+      "title": "Kiln Nacre: revised lid rule",
+      "content": "Current instruction for the fictional Nacre pottery kiln: keep the lid closed until the ceramic witness bead turns matte white. The older instruction to open it when the bead was pale pink has been withdrawn after hairline cracks appeared in test cups. The bead is observed through the side port. This instruction specifies a visual cue, not a temperature.",
+      "topic": "h09-kiln-cooling",
+      "language": "en",
+      "previous": [
+        {
+          "title": "Kiln Nacre: lid rule",
+          "content": "Open the lid when the witness bead is pale pink. This is the fictional initial instruction."
+        }
+      ]
+    },
+    {
+      "event_id": "holdout-h10-wax-seal",
+      "project": "garden",
+      "title": "Pečeť Koruna: čtení bez otisku",
+      "content": "Fiktivní archiv Koruna čte poškozenou voskovou pečeť bočním světlem přes mléčný rozptylovač. Nový otisk se nepořizuje, protože by na křehké ploše odlomil hrot znaku. Rozptylovač tlumí ostré odlesky a nemění pečeť. Záznam neobsahuje jméno původního rytce.",
+      "topic": "h10-wax-seal",
+      "language": "cs"
+    },
+    {
+      "event_id": "holdout-h11-torsion-racket",
+      "project": "garden",
+      "title": "Torsion court: racket edge rule",
+      "content": "Torsion is a fictional racket sport. Its equipment rule TR-6 permits a soft fabric edge strip but forbids exposed metal around the striking frame. Inspectors run a cotton loop around the frame; a caught loop requires the strip to be replaced before play. The rule does not regulate handle color or give court dimensions.",
+      "topic": "h11-torsion-racket",
+      "language": "en"
+    },
+    {
+      "event_id": "holdout-h12-isotope-vials",
+      "project": "garden",
+      "title": "Laboratoř Vějíř: označení slepého vzorku",
+      "content": "Ve fiktivním laboratorním cvičení Vějíř znamená zkratka SVK slepá validační kontrola. Taková lahvička nese fialový prstenec na hrdle, nikoli na víčku, aby označení zůstalo u vzorku při výměně uzávěru. Červený prstenec označuje cvičný odpad. Chemické složení slepého vzorku není popsáno.",
+      "topic": "h12-isotope-vials",
+      "language": "cs"
+    },
+    {
+      "event_id": "holdout-h13-desert-varnish",
+      "project": "garden",
+      "title": "Damar transect: dark stone faces",
+      "content": "In the fictional Damar transect, dark varnish is sampled from the shaded north face of each stone. The sunlit face is photographed but not scraped, because its varnish has already flaked away. Each scrape goes into a folded paper packet. The field note does not identify the mineral responsible for the dark color.",
+      "topic": "h13-desert-varnish",
+      "language": "en"
+    },
+    {
+      "event_id": "holdout-h14-shell-hinge",
+      "project": "garden",
+      "title": "Muzeum Ulita: rozlišení kopií",
+      "content": "Fiktivní muzeum Ulita rozlišuje sádrovou kopii lastury od originálu podle dvou drobných důlků pod zámkem. Důlky se vyrážejí pouze do kopie před barvením. Návštěvnické cedulky se mohou zaměnit, proto samy nejsou důkazem pravosti. Rok zhotovení kopie není uveden.",
+      "topic": "h14-shell-hinge",
+      "language": "cs"
+    },
+    {
+      "event_id": "holdout-h15-moon-crater",
+      "project": "garden",
+      "title": "Aster moon chart: crater Nilo",
+      "content": "The imaginary moon Aster has a crater named Nilo. Chart readers use Nilo's broken eastern rim to distinguish it from the complete circular crater Nira. Both have bright floors, so floor brightness cannot distinguish them. This chart exercise provides no latitude or longitude.",
+      "topic": "h15-moon-crater",
+      "language": "en"
+    },
+    {
+      "event_id": "holdout-h16-bell-damping",
+      "project": "garden",
+      "title": "Zvonařská dílna Hlas: tlumení modelu",
+      "content": "Fiktivní zvonařská dílna Hlas nyní tlumí zkušební zvon vložením plstěného jazýčku mezi srdce a stěnu. Původní kožená objímka na závěsu byla zrušena, protože měnila i kývání zvonu. Plstěný jazýček má zastavit úder bez změny zavěšení. Hmotnost zvonu není zapsána.",
+      "topic": "h16-bell-damping",
+      "language": "cs",
+      "previous": [
+        {
+          "title": "Hlas: původní tlumení",
+          "content": "Zkušební zvon se tlumí koženou objímkou na závěsu."
+        }
+      ]
+    },
+    {
+      "event_id": "holdout-h17-sponge-flow",
+      "project": "garden",
+      "title": "Meral reef model: sponge channels",
+      "content": "In the fictional Meral reef model, blue dye exits the sponge replica through its single broad upper chimney. The many small side pores admit water rather than expelling it. An arrow beside the chimney records the direction of flow. The model note gives no living sponge species or Latin name.",
+      "topic": "h17-sponge-flow",
+      "language": "en"
+    },
+    {
+      "event_id": "holdout-h18-indigo-rinse",
+      "project": "garden",
+      "title": "Modrotisk Vlnka: poslední lázeň",
+      "content": "Ve fiktivní dílně Vlnka se po barvení indigem odstraňuje přebytečná povrchová barva oplachem v čiré vodě, dokud bílý zkušební proužek zůstává čistý. Čirost odtékající vody sama nestačí. Proužek se přitiskne k mokré látce a posoudí po odklopení. Záznam neudává délku jednotlivého oplachu.",
+      "topic": "h18-indigo-rinse",
+      "language": "cs"
+    },
+    {
+      "event_id": "holdout-h19-weir-float",
+      "project": "garden",
+      "title": "Harrow teaching weir: revised float",
+      "content": "The fictional Harrow teaching weir now measures surface travel with a hollow cork ring. The earlier solid wax disk was abandoned because it lodged against reeds. Timing begins when the ring crosses the engraved start line, not when it is released. The record contains no measured current speed.",
+      "topic": "h19-weir-float",
+      "language": "en",
+      "previous": [
+        {
+          "title": "Harrow float trial",
+          "content": "Use a solid wax disk as the surface-travel float."
+        }
+      ]
+    },
+    {
+      "event_id": "holdout-h20-diffraction-mask",
+      "project": "garden",
+      "title": "Optická lavice Síto: potlačení obrazce",
+      "content": "Fiktivní lavice Síto používá clonu DPM, což znamená dvojitá průchodová maska. Chce-li demonstrátor potlačit vedlejší světlý pruh, zakryje užší ze dvou štěrbin neprůsvitnou kartou. Širší štěrbina musí zůstat volná. Šířky štěrbin nejsou číselně stanoveny.",
+      "topic": "h20-diffraction-mask",
+      "language": "cs"
+    },
+    {
+      "event_id": "holdout-h21-clay-slip",
+      "project": "garden",
+      "title": "Boreal clay: slip joint",
+      "content": "For the fictional Boreal clay demonstration, a scored handle is joined to the cup while both pieces feel equally cool to the wrist. A warm handle is set aside until it cools; adding more slip is not the remedy. Matching the moisture state prevents a gap along the attachment. The recipe lists no firing temperature.",
+      "topic": "h21-clay-slip",
+      "language": "en"
+    },
+    {
+      "event_id": "holdout-h22-photograph-sleeve",
+      "project": "garden",
+      "title": "Fotoarchiv Mlžná: obal negativu",
+      "content": "Fiktivní fotoarchiv Mlžná nyní ukládá skleněný negativ do čtyřklopového papírového obalu. Těsná plastová kapsa byla opuštěna, protože při vytahování třela emulzi. Obal se otevírá naplocho a negativ se neposouvá po jeho povrchu. Záznam neudává rok expozice snímku.",
+      "topic": "h22-photograph-sleeve",
+      "language": "cs",
+      "previous": [
+        {
+          "title": "Mlžná: kapsa",
+          "content": "Negativ ukládej do těsné plastové kapsy a vysuň jej při prohlížení."
+        }
+      ]
+    },
+    {
+      "event_id": "holdout-h23-stone-disk-sport",
+      "project": "garden",
+      "title": "Ledgeball: boundary disk",
+      "content": "Ledgeball is a fictional precision sport played with stone disks. Rule LB-2 counts a disk touching the raised boundary cord as outside, even if most of the disk lies inside. A disk touching only the painted stripe remains in play. The cord, rather than the paint, is the decisive boundary. No match duration is specified.",
+      "topic": "h23-stone-disk-sport",
+      "language": "en"
+    },
+    {
+      "event_id": "holdout-h24-crystal-seeding",
+      "project": "garden",
+      "title": "Krystalárium Pírko: závěs zárodku",
+      "content": "Ve fiktivním krystaláriu Pírko se krystalový zárodek zavěšuje na hladký vlas uprostřed nádoby, aby se nedotýkal stěn ani dna. Uzlík má být nad hladinou; ponořený uzlík by vytvářel další růstová místa. Návod neuvádí chemický vzorec roztoku.",
+      "topic": "h24-crystal-seeding",
+      "language": "cs"
+    },
+    {
+      "event_id": "holdout-h25-fossil-track",
+      "project": "garden",
+      "title": "Isen slab: track sequence",
+      "content": "On the fictional Isen fossil slab, the walking direction is inferred from a small sediment ridge pushed up behind each footprint. Toe shape is unreliable because the toes are eroded. The ridge points back along the path already traveled. The slab record does not name the animal that made the tracks.",
+      "topic": "h25-fossil-track",
+      "language": "en"
+    },
+    {
+      "event_id": "holdout-h26-snow-pit",
+      "project": "garden",
+      "title": "Sněhová jáma Závěj: protokol vrstev",
+      "content": "Fiktivní terénní škola Závěj vyřezala profil sněhu na zastíněném svahu. Na náčrtu jsou zakresleny tři vrstvy: čerstvý prachový sníh nahoře, pod ním zaoblená zrna a u země tenká tvrdá krusta. Tyto názvy popisují vzhled v řezu a samy neurčují soudržnost vrstev. Pozorovatelé si nejprve ověřili, že na stěnu jámy nedopadá slunce a že řez nezasypává vítr.\n\nPři popisu povrchu se nepoužívá otisk rukavice, protože by smíchal sousední vrstvy. Pozorovací karta má oddělené kolonky pro velikost zrn a odpor proti jemnému tlaku. Lesk krusty se kreslí šrafováním, nikoli barevnou výplní, aby zůstal odlišitelný i na černobílé kopii. Každý tým popisuje celý profil, ne pouze nápadnou vrchní vrstvu.\n\nV druhé části cvičení se zkoumá, kde se malý izolovaný sloupek uvolní. Pod sloupkem je zachytná deska a obsluha stojí bokem. Zkouška nepredikuje bezpečnost skutečného svahu; jde pouze o popis vymyšleného vzorku. Červená tužka označuje pozorovanou lomovou plochu a modrá původní rozhraní vrstev.\n\nRozhodující pozorování pro jámu Závěj je toto: sloupek se oddělil na styku zaoblených zrn s dolní tvrdou krustou. Slabým místem tedy nebyla čerstvá prachová vrstva nahoře. Do výsledné karty se jako místo odlomení zapisuje rozhraní zrn a spodní krusty.",
+      "topic": "h26-snow-pit",
+      "language": "cs"
+    },
+    {
+      "event_id": "holdout-h27-tapestry-weight",
+      "project": "garden",
+      "title": "Ardent tapestry: support examination",
+      "content": "This fictional conservation record describes the Ardent tapestry during an examination laid flat on a padded table. The image has a river at its center and woven towers near the top edge. The pale margin is wider on the left than on the right. Those visual features are used to orient the examination drawing; they are not evidence for a particular treatment. A soft screen separates the work surface from visitors.\n\nConservators first mapped old stitch holes under raking light. They used dotted lines for empty holes and solid marks where thread survived. Several dark stitches proved to be later repairs, so their color alone could not date a structural alteration. The reverse was photographed in sections with a neutral scale, and each section was matched to the same area on the face.\n\nA small sample of support cloth was tested away from the decorated area. Its weave is intentionally more open than the tapestry's own weave so that inspection remains possible. The test established no rule about washing or dye removal. The present decision concerns only how hanging weight is carried while the tapestry is displayed vertically.\n\nThe approved support is a continuous linen band sewn across the reverse along the upper border. Weight is spread across the whole band instead of being concentrated in isolated metal rings. The rings are retained as historical objects in a separate study tray and no longer carry the tapestry.",
+      "topic": "h27-tapestry-weight",
+      "language": "en"
+    },
+    {
+      "event_id": "holdout-h28-meteor-radio",
+      "project": "garden",
+      "title": "Stanice Jiskra: rozpoznání meteorického odrazu",
+      "content": "Fiktivní radioastronomické cvičení stanice Jiskra používá zvukové záznamy označené písmeny, nikoli kalendářními daty. Účastníci slyší stálý šum, krátké tónové úseky a pomalé kolísání přijímače. Záznamy nejsou skutečnými měřeními oblohy. Jejich účelem je rozlišit různé tvary signálu bez znalosti vysílací stanice.\n\nÚvodní list vysvětluje rozdíl mezi úrovní signálu a výškou slyšitelného tónu. Hlasitější zvuk nemusí znamenat delší trvání odrazu. Pozorovatelé kreslí obálku na průsvitný papír a kladou ji na předtištěnou časovou osu. Úsek před zkoumaným jevem musí zůstat součástí kresby, protože ukazuje úroveň pozadí.\n\nDruhá stránka upozorňuje na cvičnou rušivou událost, která má opakované stejné pulzy. Tento obrazec se hodnotí jako místní rušení. Pomalé zesilování a zeslabování patří nestabilitě přijímače. Ani jeden z těchto jevů nesmí být zaměněn za krátký nepravidelný odraz, přestože všechny mohou být chvíli výraznější než šum.\n\nJiskra označuje meteorický kandidát značkou MOK, tedy meteorický odrazový kandidát, pouze když tón prudce naskočí a pak plynule slábne bez pravidelného opakování. Rozhodující je náhlý začátek s postupným dozněním; samotná hlasitost nestačí.",
+      "topic": "h28-meteor-radio",
+      "language": "cs"
+    },
+    {
+      "event_id": "holdout-h29-conch-pitch",
+      "project": "garden",
+      "title": "Morrow shell horn: mouthpiece study",
+      "content": "The fictional Morrow shell horn belongs to an acoustic teaching collection. It is a cast replica with a spiral body and a removable mouthpiece. Its surface is painted to resemble a shell, but the paint has no role in the exercise. The collection label describes appearance and handling only; pitch judgments come from a separate listening card. A padded cradle prevents the spiral from rolling across the table.\n\nAt the beginning of the study, participants compare a steady tone with a noisy burst. They are asked to distinguish pitch stability from loudness. A loud burst is not recorded as a lower note simply because it contains more air noise. The horn is held at the same angle for each trial, while the player rests between attempts so that breath fatigue does not become the intended variable.\n\nThe removable mouthpieces have different rim widths but identical exterior colors. A small engraved notch identifies the narrow-rim piece by touch. The wide rim is easier for beginners to seal, yet ease of sealing is not the final comparison. The card also asks participants to note whether the tone starts cleanly before they judge the sustained note.\n\nThe recorded result is that fitting the narrow-rim mouthpiece produces the higher sustained pitch on the Morrow horn. The wide-rim mouthpiece yields the lower pitch. Changing rim width is the stated cause in this imaginary comparison; blowing harder is not the prescribed adjustment.",
+      "topic": "h29-conch-pitch",
+      "language": "en"
+    },
+    {
+      "event_id": "holdout-h30-plankton-depth",
+      "project": "garden",
+      "title": "Nádrž Modrá: plankton ve sloupci",
+      "content": "Fiktivní mořská učebna Modrá sleduje průhledné modelové organismy v úzké nádrži. Jednotlivé vrstvy vodního sloupce jsou na vnější stěně označeny matnými proužky, aby neodrážely lampu. Horní část je osvětlena shora, spodní část má tmavé pozadí. Jde o vymyšlený ekosystém a návod se nesmí číst jako tvrzení o skutečném druhu planktonu.\n\nStudenti zaznamenávají výšku každé světelné tečky v pravidelných okamžicích. Nejprve si ověří, že se voda nehýbe působením promíchání; teprve pak přepnou osvětlení. Větší jas tečky sám o sobě neznamená, že tečka vystoupala. Polohu určuje vztah k proužkům na stěně, nikoli množství světla v obraze.\n\nV pracovní kresbě se stopa jednoho organismu spojuje tenkou linkou. Pokud se dvě stopy překříží, záznam se přeruší, aby nebyla předstírána jistota identity. Pomocná tabulka odděluje okamžik změny světla od okamžiku změny směru pohybu. Zpráva neobsahuje rychlosti ani koncentraci soli.\n\nVýsledek cvičení říká, že modelový plankton Zora po zhasnutí horní lampy stoupá do horní třetiny sloupce. Po rozsvícení klesá ke dnu. Zora tedy mění vertikální polohu podle změny osvětlení, nikoli podle pohybu vody.",
+      "topic": "h30-plankton-depth",
+      "language": "cs"
+    },
+    {
+      "event_id": "holdout-h31-rope-core",
+      "project": "garden",
+      "title": "Helix cord: braiding inspection",
+      "content": "This fictional textile exercise follows the manufacture of Helix cord from undyed strands. The outer braid has alternating broad and narrow crossings, which make it easy to see a skipped strand. The finished sample is intended for a display of construction methods, not for load-bearing use. Its ends are kept in removable paper collars while the structure is examined under a lamp.\n\nThe first inspection compares the appearance of adjacent crossings. A shiny crossing does not prove tighter tension because the strands have slightly different surface finishes. The examiner records overlap order rather than judging color or gloss. A diagram shows the path of one marked strand through the braid without assuming that every strand has the same twist.\n\nA separate bending check is performed around a smooth wooden arc. This check reveals how the outer braid slides over the central material. The arc has no scale, so it cannot yield a bend-radius specification. Earlier practice used a stiff paper rod at the center, but that rod created a sharp crease and was removed from the current method. The outer braid pattern has not changed.\n\nThe current Helix core is a loosely twisted wool bundle. Its purpose is to let the cord bend without a permanent flat crease. A rigid rod is not part of the accepted construction, and tightening the outer braid is not the chosen way to solve the crease problem.",
+      "topic": "h31-rope-core",
+      "language": "en",
+      "previous": [
+        {
+          "title": "Helix initial core",
+          "content": "The Helix practice cord is braided around a stiff paper rod."
+        }
+      ]
+    },
+    {
+      "event_id": "holdout-h32-air-lock-channel",
+      "project": "garden",
+      "title": "Kanál Člun: odvzdušňovací komora",
+      "content": "Fiktivní hydrotechnický model Člun má průhledný kryt, pod kterým lze sledovat bubliny zachycené na stropě kanálu. Boční měrka je určena pouze pro výšku hladiny v otevřené nádržce a neukazuje tlak v uzavřené části. Při demonstraci je model položen vodorovně na stole a studenti jej nesmějí naklánět, aby zrychlili pohyb bublin.\n\nNejprve se do náčrtu zakreslí, která část je zcela zaplněná vodou a kde zůstává vzduch. Šikmé šrafování značí plyn, svislé vodu. Tyto značky se používají i na kopii bez barev. Samotný zvuk bublání se nepovažuje za důkaz prázdné komory, protože malé bubliny mohou proudit i při trvající velké kapse u stropu.\n\nDruhá část návodu popisuje bezpečnou polohu cvičné rukojeti: obsluha ji drží za plochý konec a nepřenáší přes ni model. Tento pokyn nemění hydraulickou funkci rukojeti. Přesná síla na rukojeť ani tlak kapaliny nejsou měřeny. Účelem pokusu je zjistit správnou cestu odchodu zachyceného vzduchu.\n\nVzduchová kapsa v modelu Člun se vypouští otevřením horního jehlového ventilu, zatímco dolní výpust zůstává zavřená. Otevření dolní výpusti by odvedlo vodu a kapsu by nevyřešilo. Horní ventil se zavře v okamžiku, kdy z něj začne vytékat souvislý proud vody.",
+      "topic": "h32-air-lock-channel",
+      "language": "cs"
+    },
+    {
+      "event_id": "holdout-h33-polarizer-pair",
+      "project": "garden",
+      "title": "Obsidian optics: paired filters",
+      "content": "The fictional Obsidian optics kit contains two gray disks mounted in square cardboard holders. A white corner mark identifies the front of each holder. Students begin by viewing a printed grid through one disk at a time. The grid remains upright, which helps separate a change in brightness from a change in image orientation. Neither disk is intended to magnify the grid.\n\nThe demonstration then places both holders in a slot ahead of a frosted lamp. The frosted surface is used so that small scratches on the disks are not mistaken for marks on the grid. Students draw the brightness they observe using a sequence of shaded boxes. They do not measure transmitted power or attempt to calculate a material constant from the sketches.\n\nOne holder is clamped and the other rotates in a paper bearing. The clamped holder's corner mark stays upright throughout the comparison. At first the movable mark also points up, and the central patch is bright. The task is to find the darkest position by rotation alone, without covering the lamp or adding an extra disk. The ring is inspected for blockage before recording a result.\n\nThe darkest patch occurs when the movable corner mark points sideways, at a right angle to the upright mark on the fixed holder. This crossed orientation is called PXO, paired extinction orientation, in the Obsidian kit. The instruction is to turn one filter through a quarter turn relative to the other.",
+      "topic": "h33-polarizer-pair",
+      "language": "en"
+    },
+    {
+      "event_id": "holdout-h34-plaster-mold",
+      "project": "garden",
+      "title": "Forma Šál: oddělení keramického odlitku",
+      "content": "Ve fiktivní keramické dílně Šál se odlitá miska vyjímá ze sádrové formy, teprve když se podél celého okraje objeví úzká suchá mezera. Dřívější pokyn čekat pevně deset minut byl zrušen, protože různé kusy vysychaly různě. Formu je třeba rozevřít, nikoli misku páčit nožem.",
+      "topic": "h34-plaster-mold",
+      "language": "cs",
+      "previous": [
+        {
+          "title": "Šál: čas vyjmutí",
+          "content": "Misku vyjměte ze sádrové formy přesně deset minut po nalití."
+        }
+      ]
+    },
+    {
+      "event_id": "holdout-h35-book-sewing",
+      "project": "garden",
+      "title": "Vellum codex Orin: binding thread",
+      "content": "In the fictional Orin codex, a loose middle gathering is secured by passing new linen thread through existing sewing holes. New holes must not be punched, because the fold has already become brittle. The thread is left slightly slack while the book is closed so that opening does not tear the fold. Cover color is irrelevant to this repair.",
+      "topic": "h35-book-sewing",
+      "language": "en"
+    },
+    {
+      "event_id": "holdout-h36-fencing-mask",
+      "project": "garden",
+      "title": "Šerm Sokolí kruh: kontrola masky",
+      "content": "Sokolí kruh je fiktivní šermířská disciplína. Předpis SKM vyžaduje, aby ochranná maska držela na hlavě při mírném předklonu bez přidržování rukou. Posouvá-li se přes obočí, musí se před vstupem do cvičného kruhu upravit zadní pásek. Barva síťoviny není kontrolním kritériem. SKM znamená stabilita kontaktní masky.",
+      "topic": "h36-fencing-mask",
+      "language": "cs"
+    },
+    {
+      "event_id": "holdout-h37-pumice-density",
+      "project": "garden",
+      "title": "Dorin rock tray: pore comparison",
+      "content": "The fictional Dorin rock tray compares two equal-sized pumice replicas. The lighter replica has more connected air pores, as shown by blue dye entering from one cut face and emerging at the opposite face. The heavier replica has mostly sealed cavities. Surface roughness is deliberately matched so it does not explain the difference.",
+      "topic": "h37-pumice-density",
+      "language": "en"
+    },
+    {
+      "event_id": "holdout-h38-resin-cure",
+      "project": "garden",
+      "title": "Muzejní model Jantar: konec vytvrzení",
+      "content": "Fiktivní model Jantar je odlitý z cvičné pryskyřice. Vytvrzení se nyní uznává, až když přiložený kontrolní proužek po ohnutí nelepí na hladkou skleněnou destičku. Původní zkouška dotykem prstu byla zrušena kvůli mastným otiskům. Zkouší se proužek odlitý zároveň s modelem, nikoli povrch exponátu.",
+      "topic": "h38-resin-cure",
+      "language": "cs",
+      "previous": [
+        {
+          "title": "Jantar: prstový test",
+          "content": "Vytvrzení modelu Jantar ověřte dotykem prstu na povrchu odlitku."
+        }
+      ]
+    },
+    {
+      "event_id": "holdout-h39-fantasy-map",
+      "project": "garden",
+      "title": "Map of Varo: dry ford symbol",
+      "content": "On the fictional Map of Varo, a broken double line across a stream marks a ford passable only while the streambed is dry. A solid double line marks a permanent bridge. The breaks indicate a seasonal limitation, not damage to the map. A tiny circle nearby denotes a survey marker and does not change the crossing symbol.",
+      "topic": "h39-fantasy-map",
+      "language": "en"
+    },
+    {
+      "event_id": "holdout-h40-bronze-patina",
+      "project": "garden",
+      "title": "Bronzová figurka Říza: aktivní povlak",
+      "content": "Ve fiktivní konzervátorské sbírce Říza se sypký světlezelený povlak na bronzové figurce označuje k dalšímu sledování. Hladká tmavohnědá patina se ponechává beze změny. Rozhodující je sypkost a nově se objevující prášek; samotná zelená barva není důvodem k odstranění všeho povrchu.",
+      "topic": "h40-bronze-patina",
+      "language": "cs"
+    },
+    {
+      "event_id": "holdout-h41-lichen-chart",
+      "project": "garden",
+      "title": "Orris tundra: lichen photo rule",
+      "content": "In the fictional Orris tundra study, the photographed lichen patch is located by the forked black vein in the neighboring rock. A loose white pebble formerly used as the marker was abandoned because wind moved it. Every photograph must include the fixed forked vein and the whole patch; the pebble is no longer a reference.",
+      "topic": "h41-lichen-chart",
+      "language": "en",
+      "previous": [
+        {
+          "title": "Orris initial locator",
+          "content": "Place the loose white pebble beside the lichen patch as the photograph reference."
+        }
+      ]
+    },
+    {
+      "event_id": "holdout-h42-gnomon-notch",
+      "project": "garden",
+      "title": "Sluneční model Stín: polední směr",
+      "content": "Fiktivní model slunečních hodin Stín používá nejkratší denní stín k vyznačení poledního směru. Konec stínu se neznačí jednou v předem určenou hodinu; sleduje se jeho zkracování a následné prodlužování. Do podložky se udělá zářez tam, kde ležel konec nejkratšího stínu. Model neudává zeměpisnou polohu.",
+      "topic": "h42-gnomon-notch",
+      "language": "cs"
+    },
+    {
+      "event_id": "holdout-h43-reed-fingering",
+      "project": "garden",
+      "title": "Bram reed pipe: vent hole",
+      "content": "The fictional Bram reed pipe has a small thumb vent separate from the row of melody holes. Opening only that vent while leaving the melody fingers fixed shifts the sound into the upper register. It does not select a new melody fingering. A square mark identifies the thumb vent to prevent confusion with the larger cleaning opening.",
+      "topic": "h43-reed-fingering",
+      "language": "en"
+    },
+    {
+      "event_id": "holdout-h44-fish-sensing",
+      "project": "garden",
+      "title": "Výuková ryba Čára: boční kanálek",
+      "content": "Ve fiktivním biologickém modelu Čára nese boční kanálek pružné terčíky, které se vychýlí při pohybu vody podél těla. Barevná změna terčíků ukazuje směr proudění. Oko modelu je zakryté, aby bylo zřejmé, že ukázka nepotřebuje zrakový podnět. Model se nevztahuje ke skutečnému rybímu druhu.",
+      "topic": "h44-fish-sensing",
+      "language": "cs"
+    },
+    {
+      "event_id": "holdout-h45-sailcloth-seam",
+      "project": "garden",
+      "title": "Kestrel fabric: diagonal tear",
+      "content": "In the fictional Kestrel sailcloth test, a diagonal tear is arrested by a crescent-shaped patch with rounded ends. A rectangular patch previously used in the exercise was withdrawn because its corners started new tears. The long arc spans the tear and its rounded ends lie beyond both tips. The note concerns a bench specimen, not a sailing instruction.",
+      "topic": "h45-sailcloth-seam",
+      "language": "en",
+      "previous": [
+        {
+          "title": "Kestrel initial patch",
+          "content": "Repair the test tear with a rectangular patch having square corners."
+        }
+      ]
+    },
+    {
+      "event_id": "holdout-h46-tidepool-viewer",
+      "project": "garden",
+      "title": "Přílivová miska Perla: pozorovací dno",
+      "content": "Fiktivní přílivová miska Perla umožňuje sledovat spodní stranu modelové hvězdice přes čiré dno. Pod dnem je šikmo postavené zrcátko, které odvádí obraz k bočnímu průzoru. Pozorovatel tedy nemusí hvězdici otáčet ani zdvihat z podložky. Bílé víčko nahoře slouží pouze proti oslnění.",
+      "topic": "h46-tidepool-viewer",
+      "language": "cs"
+    },
+    {
+      "event_id": "holdout-h47-river-island",
+      "project": "garden",
+      "title": "Eris sand table: braided channel",
+      "content": "In the fictional Eris sand table, a gravel island survives a flow pulse because its coarse upstream nose splits the current into two channels. A nearby fine-sand island washes away. The demonstration attributes survival to grain size at the upstream nose, not to island height: both islands begin at equal height.",
+      "topic": "h47-river-island",
+      "language": "en"
+    },
+    {
+      "event_id": "holdout-h48-glass-anneal",
+      "project": "garden",
+      "title": "Skleněná kapka Vitra: kontrola napětí",
+      "content": "Ve fiktivním sklářském cvičení Vitra se vnitřní napětí kapky hodnotí mezi dvěma zkříženými filtry. Přetrvávající barevné pruhy znamenají, že vzorek ještě neprošel přijatelným žíháním. Bezbarvé rovnoměrně tmavé pole je přijatý výsledek. Záznam neurčuje časový ani teplotní program pece.",
+      "topic": "h48-glass-anneal",
+      "language": "cs"
+    },
+    {
+      "event_id": "holdout-h49-print-register",
+      "project": "garden",
+      "title": "Juniper print: alignment marks",
+      "content": "The fictional Juniper two-color print uses a split diamond at opposite sheet corners as its registration mark. The halves form one complete diamond only when both impressions align. A cross in the center is part of the illustration and must not be used for registration. Inspect both corner diamonds before approving a sheet.",
+      "topic": "h49-print-register",
+      "language": "en"
+    },
+    {
+      "event_id": "holdout-h50-ice-sweep",
+      "project": "garden",
+      "title": "Ledová hra Dráha: koště před kamenem",
+      "content": "Dráha je fiktivní ledová hra. Pravidlo KPS, koště před skluzem, povoluje zametat pouze před pohybujícím se kamenem a nikdy se koštětem dotknout kamene. Rozhodčí při dotyku zastaví pokus a kámen vyřadí z daného kola. Zametání za kamenem žádný oprávněný účinek nemá.",
+      "topic": "h50-ice-sweep",
+      "language": "cs"
+    },
+    {
+      "event_id": "holdout-gone-mosaic",
+      "project": "garden",
+      "title": "Mosaic Mirabel: grout tint",
+      "content": "The fictional Mirabel mosaic uses violet grout to distinguish the reconstructed border from original stones.",
+      "topic": "gone-mosaic",
+      "language": "en",
+      "deleted": true
+    },
+    {
+      "event_id": "holdout-gone-beetle-wing",
+      "project": "garden",
+      "title": "Brouk Jantarín: pouzdro křídel",
+      "content": "Fiktivní brouk Jantarín ukrývá zadní křídla pod dvěma měkkými stříbrnými štítky.",
+      "topic": "gone-beetle-wing",
+      "language": "cs",
+      "deleted": true
+    },
+    {
+      "event_id": "holdout-gone-puppet-joint",
+      "project": "garden",
+      "title": "Puppet Ravik: elbow stop",
+      "content": "The fictional Ravik puppet has a cork wedge that prevents its elbow from bending backward.",
+      "topic": "gone-puppet-joint",
+      "language": "en",
+      "deleted": true
+    },
+    {
+      "event_id": "holdout-gone-smoke-ring",
+      "project": "garden",
+      "title": "Komora Kruh: dýmový prstenec",
+      "content": "Ve fiktivní komoře Kruh vytváří dýmový prstenec krátké stlačení pružné membrány na zadní stěně.",
+      "topic": "gone-smoke-ring",
+      "language": "cs",
+      "deleted": true
+    },
+    {
+      "event_id": "holdout-gone-shell-dye",
+      "project": "garden",
+      "title": "Nerissa shell dye",
+      "content": "The fictional Nerissa shell pigment turns orange when mixed with the designated chalk binder.",
+      "topic": "gone-shell-dye",
+      "language": "en",
+      "deleted": true
+    },
+    {
+      "event_id": "holdout-gone-resonator",
+      "project": "garden",
+      "title": "Rezonátor Hruška: přepážka",
+      "content": "Fiktivní rezonátor Hruška má prohnutou přepážku z tenkého korku.",
+      "topic": "gone-resonator",
+      "language": "cs",
+      "deleted": true
+    },
+    {
+      "event_id": "holdout-gone-snowflake",
+      "project": "garden",
+      "title": "Ivren snow crystal model",
+      "content": "The fictional Ivren crystal model has nine radial arms to signal that it is an invented shape.",
+      "topic": "gone-snowflake",
+      "language": "en",
+      "deleted": true
+    },
+    {
+      "event_id": "holdout-gone-amber-inclusion",
+      "project": "garden",
+      "title": "Jantar Ostruha: uzavřenina",
+      "content": "Ve fiktivním jantaru Ostruha je uzavřeno namodralé ptačí pero, nikoli hmyz.",
+      "topic": "gone-amber-inclusion",
+      "language": "cs",
+      "deleted": true
+    },
+    {
+      "event_id": "holdout-gone-lens-case",
+      "project": "garden",
+      "title": "Lens Selene: protective insert",
+      "content": "The imaginary Selene lens rests on a triangular suede insert inside its case.",
+      "topic": "gone-lens-case",
+      "language": "en",
+      "deleted": true
+    },
+    {
+      "event_id": "holdout-gone-bone-flute",
+      "project": "garden",
+      "title": "Píšťala Kostra: záslepka",
+      "content": "Fiktivní kostěná píšťala Kostra má spodní konec uzavřený včelím voskem.",
+      "topic": "gone-bone-flute",
+      "language": "cs",
+      "deleted": true
+    },
+    {
+      "event_id": "holdout-scoped-mica",
+      "project": "workshop",
+      "title": "Talven mica: splitting support",
+      "content": "The fictional Talven mica sheet is split on a cushion of fine felt to avoid a hard point beneath the sheet.",
+      "topic": "scoped-mica",
+      "language": "en"
+    },
+    {
+      "event_id": "holdout-scoped-lacquer",
+      "project": "workshop",
+      "title": "Lak Červeň: štětec",
+      "content": "Fiktivní lak Červeň se nanáší plochým štětcem ze syntetických vláken.",
+      "topic": "scoped-lacquer",
+      "language": "cs"
+    },
+    {
+      "event_id": "holdout-scoped-coral-model",
+      "project": "workshop",
+      "title": "Ravin coral model: night color",
+      "content": "The imaginary Ravin coral model changes to purple during its simulated night phase.",
+      "topic": "scoped-coral-model",
+      "language": "en"
+    },
+    {
+      "event_id": "holdout-scoped-meteorite-box",
+      "project": "workshop",
+      "title": "Meteorit Orelis: lůžko",
+      "content": "Fiktivní meteorit Orelis se opírá o tři zaoblené keramické kolíky.",
+      "topic": "scoped-meteorite-box",
+      "language": "cs"
+    },
+    {
+      "event_id": "holdout-scoped-broach",
+      "project": "workshop",
+      "title": "Elmet brooch: clasp direction",
+      "content": "The clasp of the fictional Elmet brooch opens toward the engraved leaf, away from the pearl.",
+      "topic": "scoped-broach",
+      "language": "en"
+    },
+    {
+      "event_id": "holdout-scoped-sound-plate",
+      "project": "workshop",
+      "title": "Deska Zvln: uzlové linie",
+      "content": "Na fiktivní vibrující desce Zvln se drobná černá semínka hromadí v uzlových liniích.",
+      "topic": "scoped-sound-plate",
+      "language": "cs"
+    },
+    {
+      "event_id": "holdout-scoped-crystal-lamp",
+      "project": "workshop",
+      "title": "Urven lamp: diffusing shell",
+      "content": "The imaginary Urven lamp uses a frosted quartz shell to spread light evenly across a specimen.",
+      "topic": "scoped-crystal-lamp",
+      "language": "en"
+    },
+    {
+      "event_id": "holdout-scoped-braid-sport",
+      "project": "workshop",
+      "title": "Hra Cop: vítězný uzel",
+      "content": "Ve fiktivní hře Cop vítězí hráč, který dokončí volný trojitý uzel bez dotažení.",
+      "topic": "scoped-braid-sport",
+      "language": "cs"
+    },
+    {
+      "event_id": "holdout-scoped-ink-stone",
+      "project": "workshop",
+      "title": "Saren ink stone: drainage groove",
+      "content": "The fictional Saren ink stone drains through a spiral groove cut toward the left corner.",
+      "topic": "scoped-ink-stone",
+      "language": "en"
+    },
+    {
+      "event_id": "holdout-scoped-fossil-fern",
+      "project": "workshop",
+      "title": "Kapradina Mžil: otisk",
+      "content": "Fiktivní fosilní kapradina Mžil se poznává podle čtyř řad kulatých výtrusnic na rubu listu.",
+      "topic": "scoped-fossil-fern",
+      "language": "cs"
+    },
+    {
+      "event_id": "holdout-d01-lava",
+      "project": "garden",
+      "title": "Cavern Ilex: flood stripe",
+      "content": "In the fictional Ilex lava tube, a pale floor stripe marks the highest flood level. It is unrelated to any calcite column or interruption of mineral growth.",
+      "topic": "d01-lava",
+      "language": "en"
+    },
+    {
+      "event_id": "holdout-d02-board",
+      "project": "garden",
+      "title": "Deska Velin: úchyt",
+      "content": "Fiktivní výstavní deska Velin se zavěšuje úzkou koženou smyčkou. Jde o pevnou desku bez pergamenu; smyčka rozkládání tahu nezajišťuje.",
+      "topic": "d02-board",
+      "language": "cs"
+    },
+    {
+      "event_id": "holdout-d03-comparison",
+      "project": "garden",
+      "title": "Fen reference lamp",
+      "content": "In the fictional Fen lamp exercise, the blue lamp is selected for its saturated color. It is not a star and its intensity is deliberately variable.",
+      "topic": "d03-comparison",
+      "language": "en"
+    },
+    {
+      "event_id": "holdout-d04-instrument",
+      "project": "garden",
+      "title": "Síň Tón: kontrolní zvuk",
+      "content": "Fiktivní síň Tón používá jako kontrolní zdroj drnknutí struny. Mikrofon je před odkrytou deskou. Tato zkouška neurčuje dozvuk místnosti.",
+      "topic": "d04-instrument",
+      "language": "cs"
+    },
+    {
+      "event_id": "holdout-d05-model-jelly",
+      "project": "garden",
+      "title": "Mira veil projection",
+      "content": "The imaginary Mira veil wall projection begins flashing red when its lamp is pulsed. It has no water tank or rotating flow.",
+      "topic": "d05-model-jelly",
+      "language": "en"
+    },
+    {
+      "event_id": "holdout-d06-fabric",
+      "project": "garden",
+      "title": "Sukno Nora: odstín",
+      "content": "Fiktivní sukno Nora se porovnává s barevnou kartou kvůli odstínu. Hustota ani valchování nejsou předmětem tohoto hodnocení.",
+      "topic": "d06-fabric",
+      "language": "cs"
+    },
+    {
+      "event_id": "holdout-d07-float",
+      "project": "garden",
+      "title": "Lorn canal: bed movement",
+      "content": "The fictional Lorn canal uses a heavy wax cylinder to follow motion along the bottom. It is not a surface float and timing begins at release.",
+      "topic": "d07-float",
+      "language": "en"
+    },
+    {
+      "event_id": "holdout-d08-clay",
+      "project": "garden",
+      "title": "Hlína Tuha: držadlo",
+      "content": "Ve fiktivním pokusu Tuha se teplé suché držadlo úmyslně přikládá k chladnému hrnku, aby vznikl ukázkový defekt. Nejde o přijatou opravu.",
+      "topic": "d08-clay",
+      "language": "cs"
+    },
+    {
+      "event_id": "holdout-d09-prints",
+      "project": "garden",
+      "title": "Rowan print: corner crosses",
+      "content": "The fictional Rowan three-color print uses corner crosses for registration. A central diamond is decoration. This print is a different artifact from Juniper.",
+      "topic": "d09-prints",
+      "language": "en"
+    },
+    {
+      "event_id": "holdout-d10-filters",
+      "project": "garden",
+      "title": "Filtry Čir: krytka",
+      "content": "Fiktivní sada Čir zhasne obraz nasazením neprůsvitné krytky. Nevyužívá vzájemné otočení dvojice filtrů ani polarizaci.",
+      "topic": "d10-filters",
+      "language": "cs"
+    },
+    {
+      "event_id": "holdout-alt-h03-variable-star",
+      "project": "garden",
+      "title": "Elnor comparator card",
+      "content": "In the fictional Elnor exercise ECV expands to eclipse comparison variable. ECV-3 is compared with Sola Minor because that amber reference star stays steady; Fen is not the comparator.",
+      "topic": "h03-variable-star",
+      "language": "en"
+    },
+    {
+      "event_id": "holdout-alt-h18-indigo-rinse",
+      "project": "garden",
+      "title": "Vlnka: kontrolní karta přenosu",
+      "content": "Konec oplachu indigové látky Vlnka se pozná přitisknutím bílého proužku k mokré látce. Proužek musí zůstat čistý; pouhá čirá odtékající voda není důkazem.",
+      "topic": "h18-indigo-rinse",
+      "language": "cs"
+    },
+    {
+      "event_id": "holdout-alt-h23-stone-disk-sport",
+      "project": "garden",
+      "title": "LB-2 inspector card",
+      "content": "For fictional Ledgeball LB-2, touching the raised boundary cord puts a stone disk outside regardless of how much is inside. Touching only the painted stripe leaves it in play.",
+      "topic": "h23-stone-disk-sport",
+      "language": "en"
+    },
+    {
+      "event_id": "holdout-alt-h36-fencing-mask",
+      "project": "garden",
+      "title": "Sokolí kruh: karta SKM",
+      "content": "SKM znamená stabilita kontaktní masky. V Sokolím kruhu maska musí při mírném předklonu držet bez rukou. Posun přes obočí vyžaduje úpravu zadního pásku před vstupem do kruhu.",
+      "topic": "h36-fencing-mask",
+      "language": "cs"
+    },
+    {
+      "event_id": "holdout-alt-h49-print-register",
+      "project": "garden",
+      "title": "Juniper inspector card",
+      "content": "Approve the fictional Juniper two-color sheet only when the split diamonds at both opposite corners join into complete diamonds. The central illustration cross is not a registration cue.",
+      "topic": "h49-print-register",
+      "language": "en"
+    }
+  ],
+  "queries": [
+    {
+      "id": "h01-cave-layers-p1",
+      "topic": "h01-cave-layers",
+      "category": "exact",
+      "language": "en",
+      "cross_language": false,
+      "text": "What does the rust stripe in VL-8 represent?",
+      "relevant": [
+        "holdout-h01-cave-layers"
+      ]
+    },
+    {
+      "id": "h01-cave-layers-p2",
+      "topic": "h01-cave-layers",
+      "category": "paraphrase",
+      "language": "en",
+      "cross_language": false,
+      "text": "Why did the Vesper column stop depositing calcite at the colored band?",
+      "relevant": [
+        "holdout-h01-cave-layers"
+      ]
+    },
+    {
+      "id": "h01-cave-layers-p3",
+      "topic": "h01-cave-layers",
+      "category": "cross_language",
+      "language": "cs",
+      "cross_language": true,
+      "text": "Co znamená rezavý proužek ve vesperském krápníku?",
+      "relevant": [
+        "holdout-h01-cave-layers"
+      ]
+    },
+    {
+      "id": "h01-cave-layers-p4",
+      "topic": "h01-cave-layers",
+      "category": "short",
+      "language": "en",
+      "cross_language": false,
+      "text": "Vesper interrupted growth cause?",
+      "relevant": [
+        "holdout-h01-cave-layers"
+      ]
+    },
+    {
+      "id": "h02-parchment-mount-p1",
+      "topic": "h02-parchment-mount",
+      "category": "inflection",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Čím restaurátoři připevňují zvlněné pergameny atlasu Runa?",
+      "relevant": [
+        "holdout-h02-parchment-mount"
+      ]
+    },
+    {
+      "id": "h02-parchment-mount-p2",
+      "topic": "h02-parchment-mount",
+      "category": "paraphrase",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Jak se u Runy brání vytržení okrajů při napínání?",
+      "relevant": [
+        "holdout-h02-parchment-mount"
+      ]
+    },
+    {
+      "id": "h02-parchment-mount-p3",
+      "topic": "h02-parchment-mount",
+      "category": "cross_language",
+      "language": "en",
+      "cross_language": true,
+      "text": "Why are broad paper tabs used to mount the Runa parchment?",
+      "relevant": [
+        "holdout-h02-parchment-mount"
+      ]
+    },
+    {
+      "id": "h02-parchment-mount-p4",
+      "topic": "h02-parchment-mount",
+      "category": "diacritics",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Runa pergamen rozlozeni tahu do okraju?",
+      "relevant": [
+        "holdout-h02-parchment-mount"
+      ]
+    },
+    {
+      "id": "h03-variable-star-p1",
+      "topic": "h03-variable-star",
+      "category": "acronym",
+      "language": "en",
+      "cross_language": false,
+      "text": "What does ECV mean in the Elnor exercise?",
+      "relevant": [
+        "holdout-h03-variable-star",
+        "holdout-alt-h03-variable-star"
+      ]
+    },
+    {
+      "id": "h03-variable-star-p2",
+      "topic": "h03-variable-star",
+      "category": "paraphrase",
+      "language": "en",
+      "cross_language": false,
+      "text": "Which steady star is used to judge the changing brightness of ECV-3?",
+      "relevant": [
+        "holdout-h03-variable-star",
+        "holdout-alt-h03-variable-star"
+      ]
+    },
+    {
+      "id": "h03-variable-star-p3",
+      "topic": "h03-variable-star",
+      "category": "cross_language",
+      "language": "cs",
+      "cross_language": true,
+      "text": "Proč je při sledování proměnné hvězdy ECV-3 zvolena Sola Minor?",
+      "relevant": [
+        "holdout-h03-variable-star",
+        "holdout-alt-h03-variable-star"
+      ]
+    },
+    {
+      "id": "h03-variable-star-p4",
+      "topic": "h03-variable-star",
+      "category": "short",
+      "language": "en",
+      "cross_language": false,
+      "text": "Elnor comparison star?",
+      "relevant": [
+        "holdout-h03-variable-star",
+        "holdout-alt-h03-variable-star"
+      ]
+    },
+    {
+      "id": "h04-reed-acoustics-p1",
+      "topic": "h04-reed-acoustics",
+      "category": "exact",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Kde stojí mikrofon při měření dozvuku síně Dravín?",
+      "relevant": [
+        "holdout-h04-reed-acoustics"
+      ]
+    },
+    {
+      "id": "h04-reed-acoustics-p2",
+      "topic": "h04-reed-acoustics",
+      "category": "paraphrase",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Co v Dravíně chrání mikrofon před příliš silným přímým úderem?",
+      "relevant": [
+        "holdout-h04-reed-acoustics"
+      ]
+    },
+    {
+      "id": "h04-reed-acoustics-p3",
+      "topic": "h04-reed-acoustics",
+      "category": "cross_language",
+      "language": "en",
+      "cross_language": true,
+      "text": "Why is the microphone placed behind a curtain in Dravin hall?",
+      "relevant": [
+        "holdout-h04-reed-acoustics"
+      ]
+    },
+    {
+      "id": "h04-reed-acoustics-p4",
+      "topic": "h04-reed-acoustics",
+      "category": "diacritics",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Dravin mereni dozvuku zdroj zvuku?",
+      "relevant": [
+        "holdout-h04-reed-acoustics"
+      ]
+    },
+    {
+      "id": "h05-lantern-jelly-p1",
+      "topic": "h05-lantern-jelly",
+      "category": "exact",
+      "language": "en",
+      "cross_language": false,
+      "text": "What starts the green flashes of Lumen veil?",
+      "relevant": [
+        "holdout-h05-lantern-jelly"
+      ]
+    },
+    {
+      "id": "h05-lantern-jelly-p2",
+      "topic": "h05-lantern-jelly",
+      "category": "paraphrase",
+      "language": "en",
+      "cross_language": false,
+      "text": "Which change in the teaching tank makes the imaginary jellyfish glow?",
+      "relevant": [
+        "holdout-h05-lantern-jelly"
+      ]
+    },
+    {
+      "id": "h05-lantern-jelly-p3",
+      "topic": "h05-lantern-jelly",
+      "category": "cross_language",
+      "language": "cs",
+      "cross_language": true,
+      "text": "Rozbliká se Lumen veil po rozsvícení, nebo po roztočení vody?",
+      "relevant": [
+        "holdout-h05-lantern-jelly"
+      ]
+    },
+    {
+      "id": "h05-lantern-jelly-p4",
+      "topic": "h05-lantern-jelly",
+      "category": "short",
+      "language": "en",
+      "cross_language": false,
+      "text": "Lumen veil flashing trigger?",
+      "relevant": [
+        "holdout-h05-lantern-jelly"
+      ]
+    },
+    {
+      "id": "h06-felt-fulling-p1",
+      "topic": "h06-felt-fulling",
+      "category": "inflection",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Podle čeho v Běle poznají, že jsou sukna dostatečně zvalchovaná?",
+      "relevant": [
+        "holdout-h06-felt-fulling"
+      ]
+    },
+    {
+      "id": "h06-felt-fulling-p2",
+      "topic": "h06-felt-fulling",
+      "category": "paraphrase",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Jaká změna jednotlivých přízí ukončuje valchování sukna Běla?",
+      "relevant": [
+        "holdout-h06-felt-fulling"
+      ]
+    },
+    {
+      "id": "h06-felt-fulling-p3",
+      "topic": "h06-felt-fulling",
+      "category": "cross_language",
+      "language": "en",
+      "cross_language": true,
+      "text": "What observation determines that fulling is complete at Bela mill?",
+      "relevant": [
+        "holdout-h06-felt-fulling"
+      ]
+    },
+    {
+      "id": "h06-felt-fulling-p4",
+      "topic": "h06-felt-fulling",
+      "category": "diacritics",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Bela sukno kontrola rezu lupou?",
+      "relevant": [
+        "holdout-h06-felt-fulling"
+      ]
+    },
+    {
+      "id": "h07-silt-gate-p1",
+      "topic": "h07-silt-gate",
+      "category": "acronym",
+      "language": "en",
+      "cross_language": false,
+      "text": "What is SGV in the Orrel flume?",
+      "relevant": [
+        "holdout-h07-silt-gate"
+      ]
+    },
+    {
+      "id": "h07-silt-gate-p2",
+      "topic": "h07-silt-gate",
+      "category": "paraphrase",
+      "language": "en",
+      "cross_language": false,
+      "text": "How does the Orrel demonstration separate leaves from suspended clay?",
+      "relevant": [
+        "holdout-h07-silt-gate"
+      ]
+    },
+    {
+      "id": "h07-silt-gate-p3",
+      "topic": "h07-silt-gate",
+      "category": "cross_language",
+      "language": "cs",
+      "cross_language": true,
+      "text": "Jak má být v Orrelu nastavena ochranná lopatka, aby listí skončilo ve vedlejší misce?",
+      "relevant": [
+        "holdout-h07-silt-gate"
+      ]
+    },
+    {
+      "id": "h07-silt-gate-p4",
+      "topic": "h07-silt-gate",
+      "category": "short",
+      "language": "en",
+      "cross_language": false,
+      "text": "Orrel amber silt vane position?",
+      "relevant": [
+        "holdout-h07-silt-gate"
+      ]
+    },
+    {
+      "id": "h08-prism-face-p1",
+      "topic": "h08-prism-face",
+      "category": "exact",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Která značka označuje vstupní plochu hranolu Jasna?",
+      "relevant": [
+        "holdout-h08-prism-face"
+      ]
+    },
+    {
+      "id": "h08-prism-face-p2",
+      "topic": "h08-prism-face",
+      "category": "paraphrase",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Jak natočit hranol Jasna vůči světelné štěrbině?",
+      "relevant": [
+        "holdout-h08-prism-face"
+      ]
+    },
+    {
+      "id": "h08-prism-face-p3",
+      "topic": "h08-prism-face",
+      "category": "cross_language",
+      "language": "en",
+      "cross_language": true,
+      "text": "Does the round mark or the triangle identify the incoming-light face on the Jasna prism?",
+      "relevant": [
+        "holdout-h08-prism-face"
+      ]
+    },
+    {
+      "id": "h08-prism-face-p4",
+      "topic": "h08-prism-face",
+      "category": "diacritics",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Jasna hranol vstupni plocha smer ke sterbine?",
+      "relevant": [
+        "holdout-h08-prism-face"
+      ]
+    },
+    {
+      "id": "h09-kiln-cooling-p1",
+      "topic": "h09-kiln-cooling",
+      "category": "revision",
+      "language": "en",
+      "cross_language": false,
+      "text": "What is the current cue for opening the Nacre kiln lid?",
+      "relevant": [
+        "holdout-h09-kiln-cooling"
+      ]
+    },
+    {
+      "id": "h09-kiln-cooling-p2",
+      "topic": "h09-kiln-cooling",
+      "category": "paraphrase",
+      "language": "en",
+      "cross_language": false,
+      "text": "Which bead appearance now indicates safe lid opening after the cup cracking trial?",
+      "relevant": [
+        "holdout-h09-kiln-cooling"
+      ]
+    },
+    {
+      "id": "h09-kiln-cooling-p3",
+      "topic": "h09-kiln-cooling",
+      "category": "cross_language",
+      "language": "cs",
+      "cross_language": true,
+      "text": "Má se nyní pec Nacre otevírat při růžové, nebo matně bílé barvě kontrolního korálku?",
+      "relevant": [
+        "holdout-h09-kiln-cooling"
+      ]
+    },
+    {
+      "id": "h09-kiln-cooling-p4",
+      "topic": "h09-kiln-cooling",
+      "category": "short",
+      "language": "en",
+      "cross_language": false,
+      "text": "Nacre current cooling cue?",
+      "relevant": [
+        "holdout-h09-kiln-cooling"
+      ]
+    },
+    {
+      "id": "h10-wax-seal-p1",
+      "topic": "h10-wax-seal",
+      "category": "inflection",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Jak archiv Koruna čte poškozené voskové pečetě bez nového otisku?",
+      "relevant": [
+        "holdout-h10-wax-seal"
+      ]
+    },
+    {
+      "id": "h10-wax-seal-p2",
+      "topic": "h10-wax-seal",
+      "category": "paraphrase",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Proč se na křehké pečeti Koruna nedělá další otisk?",
+      "relevant": [
+        "holdout-h10-wax-seal"
+      ]
+    },
+    {
+      "id": "h10-wax-seal-p3",
+      "topic": "h10-wax-seal",
+      "category": "cross_language",
+      "language": "en",
+      "cross_language": true,
+      "text": "How are glare and damage avoided while reading the Koruna wax seal?",
+      "relevant": [
+        "holdout-h10-wax-seal"
+      ]
+    },
+    {
+      "id": "h10-wax-seal-p4",
+      "topic": "h10-wax-seal",
+      "category": "diacritics",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Koruna pecet bocni svetlo rozptylovac?",
+      "relevant": [
+        "holdout-h10-wax-seal"
+      ]
+    },
+    {
+      "id": "h11-torsion-racket-p1",
+      "topic": "h11-torsion-racket",
+      "category": "exact",
+      "language": "en",
+      "cross_language": false,
+      "text": "What does equipment rule TR-6 forbid around the racket frame?",
+      "relevant": [
+        "holdout-h11-torsion-racket"
+      ]
+    },
+    {
+      "id": "h11-torsion-racket-p2",
+      "topic": "h11-torsion-racket",
+      "category": "paraphrase",
+      "language": "en",
+      "cross_language": false,
+      "text": "When must a Torsion racket edge strip be replaced after inspection?",
+      "relevant": [
+        "holdout-h11-torsion-racket"
+      ]
+    },
+    {
+      "id": "h11-torsion-racket-p3",
+      "topic": "h11-torsion-racket",
+      "category": "cross_language",
+      "language": "cs",
+      "cross_language": true,
+      "text": "Jak se při kontrole rakety pro Torsion zjišťuje poškozený okraj?",
+      "relevant": [
+        "holdout-h11-torsion-racket"
+      ]
+    },
+    {
+      "id": "h11-torsion-racket-p4",
+      "topic": "h11-torsion-racket",
+      "category": "short",
+      "language": "en",
+      "cross_language": false,
+      "text": "Torsion allowed frame edging?",
+      "relevant": [
+        "holdout-h11-torsion-racket"
+      ]
+    },
+    {
+      "id": "h12-isotope-vials-p1",
+      "topic": "h12-isotope-vials",
+      "category": "acronym",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Co znamená SVK v laboratorním cvičení Vějíř?",
+      "relevant": [
+        "holdout-h12-isotope-vials"
+      ]
+    },
+    {
+      "id": "h12-isotope-vials-p2",
+      "topic": "h12-isotope-vials",
+      "category": "paraphrase",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Proč se fialový kroužek slepé kontroly dává na hrdlo lahvičky?",
+      "relevant": [
+        "holdout-h12-isotope-vials"
+      ]
+    },
+    {
+      "id": "h12-isotope-vials-p3",
+      "topic": "h12-isotope-vials",
+      "category": "cross_language",
+      "language": "en",
+      "cross_language": true,
+      "text": "Which marking identifies a blind validation control in the Vejir exercise?",
+      "relevant": [
+        "holdout-h12-isotope-vials"
+      ]
+    },
+    {
+      "id": "h12-isotope-vials-p4",
+      "topic": "h12-isotope-vials",
+      "category": "diacritics",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Vejir slepa kontrola fialovy prstenec kde?",
+      "relevant": [
+        "holdout-h12-isotope-vials"
+      ]
+    },
+    {
+      "id": "h13-desert-varnish-p1",
+      "topic": "h13-desert-varnish",
+      "category": "exact",
+      "language": "en",
+      "cross_language": false,
+      "text": "Which face of each Damar stone is scraped for varnish?",
+      "relevant": [
+        "holdout-h13-desert-varnish"
+      ]
+    },
+    {
+      "id": "h13-desert-varnish-p2",
+      "topic": "h13-desert-varnish",
+      "category": "paraphrase",
+      "language": "en",
+      "cross_language": false,
+      "text": "Why do Damar fieldworkers photograph the sunny face but sample the shaded side?",
+      "relevant": [
+        "holdout-h13-desert-varnish"
+      ]
+    },
+    {
+      "id": "h13-desert-varnish-p3",
+      "topic": "h13-desert-varnish",
+      "category": "cross_language",
+      "language": "cs",
+      "cross_language": true,
+      "text": "Ze které strany kamenů se na transektu Damar odebírá tmavý povlak?",
+      "relevant": [
+        "holdout-h13-desert-varnish"
+      ]
+    },
+    {
+      "id": "h13-desert-varnish-p4",
+      "topic": "h13-desert-varnish",
+      "category": "short",
+      "language": "en",
+      "cross_language": false,
+      "text": "Damar varnish sampling side?",
+      "relevant": [
+        "holdout-h13-desert-varnish"
+      ]
+    },
+    {
+      "id": "h14-shell-hinge-p1",
+      "topic": "h14-shell-hinge",
+      "category": "inflection",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Jak v muzeu Ulita rozpoznávají sádrové kopie lastur?",
+      "relevant": [
+        "holdout-h14-shell-hinge"
+      ]
+    },
+    {
+      "id": "h14-shell-hinge-p2",
+      "topic": "h14-shell-hinge",
+      "category": "paraphrase",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Který fyzický znak prokáže kopii lastury i při záměně cedulek?",
+      "relevant": [
+        "holdout-h14-shell-hinge"
+      ]
+    },
+    {
+      "id": "h14-shell-hinge-p3",
+      "topic": "h14-shell-hinge",
+      "category": "cross_language",
+      "language": "en",
+      "cross_language": true,
+      "text": "Where are the identifying dents placed on Ulita shell replicas?",
+      "relevant": [
+        "holdout-h14-shell-hinge"
+      ]
+    },
+    {
+      "id": "h14-shell-hinge-p4",
+      "topic": "h14-shell-hinge",
+      "category": "diacritics",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Ulita lastura kopie dva dulky pod zamkem?",
+      "relevant": [
+        "holdout-h14-shell-hinge"
+      ]
+    },
+    {
+      "id": "h15-moon-crater-p1",
+      "topic": "h15-moon-crater",
+      "category": "exact",
+      "language": "en",
+      "cross_language": false,
+      "text": "How can Nilo be distinguished from Nira on the Aster moon chart?",
+      "relevant": [
+        "holdout-h15-moon-crater"
+      ]
+    },
+    {
+      "id": "h15-moon-crater-p2",
+      "topic": "h15-moon-crater",
+      "category": "paraphrase",
+      "language": "en",
+      "cross_language": false,
+      "text": "Which visible rim feature identifies Nilo when both crater floors look bright?",
+      "relevant": [
+        "holdout-h15-moon-crater"
+      ]
+    },
+    {
+      "id": "h15-moon-crater-p3",
+      "topic": "h15-moon-crater",
+      "category": "cross_language",
+      "language": "cs",
+      "cross_language": true,
+      "text": "Která část okraje odlišuje kráter Nilo od podobného kráteru Nira?",
+      "relevant": [
+        "holdout-h15-moon-crater"
+      ]
+    },
+    {
+      "id": "h15-moon-crater-p4",
+      "topic": "h15-moon-crater",
+      "category": "short",
+      "language": "en",
+      "cross_language": false,
+      "text": "Nilo identifying rim?",
+      "relevant": [
+        "holdout-h15-moon-crater"
+      ]
+    },
+    {
+      "id": "h16-bell-damping-p1",
+      "topic": "h16-bell-damping",
+      "category": "revision",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Čím se nyní v dílně Hlas tlumí zkušební zvon?",
+      "relevant": [
+        "holdout-h16-bell-damping"
+      ]
+    },
+    {
+      "id": "h16-bell-damping-p2",
+      "topic": "h16-bell-damping",
+      "category": "paraphrase",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Proč už se k umlčení modelu zvonu Hlas nepoužívá kožená objímka?",
+      "relevant": [
+        "holdout-h16-bell-damping"
+      ]
+    },
+    {
+      "id": "h16-bell-damping-p3",
+      "topic": "h16-bell-damping",
+      "category": "cross_language",
+      "language": "en",
+      "cross_language": true,
+      "text": "Where is the felt tongue inserted under the current Hlas bell procedure?",
+      "relevant": [
+        "holdout-h16-bell-damping"
+      ]
+    },
+    {
+      "id": "h16-bell-damping-p4",
+      "topic": "h16-bell-damping",
+      "category": "diacritics",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Hlas zvon aktualni tlumeni plsteny jazycek?",
+      "relevant": [
+        "holdout-h16-bell-damping"
+      ]
+    },
+    {
+      "id": "h17-sponge-flow-p1",
+      "topic": "h17-sponge-flow",
+      "category": "exact",
+      "language": "en",
+      "cross_language": false,
+      "text": "Where does dye leave the Meral sponge replica?",
+      "relevant": [
+        "holdout-h17-sponge-flow"
+      ]
+    },
+    {
+      "id": "h17-sponge-flow-p2",
+      "topic": "h17-sponge-flow",
+      "category": "paraphrase",
+      "language": "en",
+      "cross_language": false,
+      "text": "Do the small side pores in the Meral demonstration take water in or let it out?",
+      "relevant": [
+        "holdout-h17-sponge-flow"
+      ]
+    },
+    {
+      "id": "h17-sponge-flow-p3",
+      "topic": "h17-sponge-flow",
+      "category": "cross_language",
+      "language": "cs",
+      "cross_language": true,
+      "text": "Kudy odtéká modré barvivo z modelu houby na útesu Meral?",
+      "relevant": [
+        "holdout-h17-sponge-flow"
+      ]
+    },
+    {
+      "id": "h17-sponge-flow-p4",
+      "topic": "h17-sponge-flow",
+      "category": "short",
+      "language": "en",
+      "cross_language": false,
+      "text": "Meral sponge outlet?",
+      "relevant": [
+        "holdout-h17-sponge-flow"
+      ]
+    },
+    {
+      "id": "h18-indigo-rinse-p1",
+      "topic": "h18-indigo-rinse",
+      "category": "inflection",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Podle čeho ve Vlnce ukončují oplachy indigových látek?",
+      "relevant": [
+        "holdout-h18-indigo-rinse",
+        "holdout-alt-h18-indigo-rinse"
+      ]
+    },
+    {
+      "id": "h18-indigo-rinse-p2",
+      "topic": "h18-indigo-rinse",
+      "category": "paraphrase",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Proč nestačí, že po modrotisku odtéká čirá voda?",
+      "relevant": [
+        "holdout-h18-indigo-rinse",
+        "holdout-alt-h18-indigo-rinse"
+      ]
+    },
+    {
+      "id": "h18-indigo-rinse-p3",
+      "topic": "h18-indigo-rinse",
+      "category": "cross_language",
+      "language": "en",
+      "cross_language": true,
+      "text": "What test shows that the Vlnka indigo fabric no longer sheds surface dye?",
+      "relevant": [
+        "holdout-h18-indigo-rinse",
+        "holdout-alt-h18-indigo-rinse"
+      ]
+    },
+    {
+      "id": "h18-indigo-rinse-p4",
+      "topic": "h18-indigo-rinse",
+      "category": "diacritics",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Vlnka indigo bily zkusebni prouzek oplach?",
+      "relevant": [
+        "holdout-h18-indigo-rinse",
+        "holdout-alt-h18-indigo-rinse"
+      ]
+    },
+    {
+      "id": "h19-weir-float-p1",
+      "topic": "h19-weir-float",
+      "category": "revision",
+      "language": "en",
+      "cross_language": false,
+      "text": "Which float is currently used at the Harrow teaching weir?",
+      "relevant": [
+        "holdout-h19-weir-float"
+      ]
+    },
+    {
+      "id": "h19-weir-float-p2",
+      "topic": "h19-weir-float",
+      "category": "paraphrase",
+      "language": "en",
+      "cross_language": false,
+      "text": "At what point does the Harrow surface-travel timing start?",
+      "relevant": [
+        "holdout-h19-weir-float"
+      ]
+    },
+    {
+      "id": "h19-weir-float-p3",
+      "topic": "h19-weir-float",
+      "category": "cross_language",
+      "language": "cs",
+      "cross_language": true,
+      "text": "Proč byl u výukového jezu Harrow voskový kotouč nahrazen korkovým kroužkem?",
+      "relevant": [
+        "holdout-h19-weir-float"
+      ]
+    },
+    {
+      "id": "h19-weir-float-p4",
+      "topic": "h19-weir-float",
+      "category": "short",
+      "language": "en",
+      "cross_language": false,
+      "text": "Harrow current float material?",
+      "relevant": [
+        "holdout-h19-weir-float"
+      ]
+    },
+    {
+      "id": "h20-diffraction-mask-p1",
+      "topic": "h20-diffraction-mask",
+      "category": "acronym",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Co znamená DPM na optické lavici Síto?",
+      "relevant": [
+        "holdout-h20-diffraction-mask"
+      ]
+    },
+    {
+      "id": "h20-diffraction-mask-p2",
+      "topic": "h20-diffraction-mask",
+      "category": "paraphrase",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Kterou štěrbinu má demonstrátor zakrýt, aby zmizel vedlejší světlý pruh?",
+      "relevant": [
+        "holdout-h20-diffraction-mask"
+      ]
+    },
+    {
+      "id": "h20-diffraction-mask-p3",
+      "topic": "h20-diffraction-mask",
+      "category": "cross_language",
+      "language": "en",
+      "cross_language": true,
+      "text": "What remains uncovered when the Sito diffraction demonstration suppresses the side stripe?",
+      "relevant": [
+        "holdout-h20-diffraction-mask"
+      ]
+    },
+    {
+      "id": "h20-diffraction-mask-p4",
+      "topic": "h20-diffraction-mask",
+      "category": "diacritics",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Sito potlaceni vedlejsiho pruhu uzsi sterbina?",
+      "relevant": [
+        "holdout-h20-diffraction-mask"
+      ]
+    },
+    {
+      "id": "h21-clay-slip-p1",
+      "topic": "h21-clay-slip",
+      "category": "exact",
+      "language": "en",
+      "cross_language": false,
+      "text": "What condition must the Boreal handle and cup share before joining?",
+      "relevant": [
+        "holdout-h21-clay-slip"
+      ]
+    },
+    {
+      "id": "h21-clay-slip-p2",
+      "topic": "h21-clay-slip",
+      "category": "paraphrase",
+      "language": "en",
+      "cross_language": false,
+      "text": "What should a potter do with a warm Boreal handle rather than adding extra joining slip?",
+      "relevant": [
+        "holdout-h21-clay-slip"
+      ]
+    },
+    {
+      "id": "h21-clay-slip-p3",
+      "topic": "h21-clay-slip",
+      "category": "cross_language",
+      "language": "cs",
+      "cross_language": true,
+      "text": "Jak se při spojování hrnku Boreal ověřuje srovnatelná vlhkost obou částí?",
+      "relevant": [
+        "holdout-h21-clay-slip"
+      ]
+    },
+    {
+      "id": "h21-clay-slip-p4",
+      "topic": "h21-clay-slip",
+      "category": "short",
+      "language": "en",
+      "cross_language": false,
+      "text": "Boreal handle joining wrist test?",
+      "relevant": [
+        "holdout-h21-clay-slip"
+      ]
+    },
+    {
+      "id": "h22-photograph-sleeve-p1",
+      "topic": "h22-photograph-sleeve",
+      "category": "revision",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Jaký obal se nyní používá pro skleněný negativ Mlžná?",
+      "relevant": [
+        "holdout-h22-photograph-sleeve"
+      ]
+    },
+    {
+      "id": "h22-photograph-sleeve-p2",
+      "topic": "h22-photograph-sleeve",
+      "category": "paraphrase",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Jak se v Mlžné zabrání odření emulze při vyjímání negativu?",
+      "relevant": [
+        "holdout-h22-photograph-sleeve"
+      ]
+    },
+    {
+      "id": "h22-photograph-sleeve-p3",
+      "topic": "h22-photograph-sleeve",
+      "category": "cross_language",
+      "language": "en",
+      "cross_language": true,
+      "text": "Why was the tight plastic sleeve withdrawn from the Mlzna photograph procedure?",
+      "relevant": [
+        "holdout-h22-photograph-sleeve"
+      ]
+    },
+    {
+      "id": "h22-photograph-sleeve-p4",
+      "topic": "h22-photograph-sleeve",
+      "category": "diacritics",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Mlzna negativ ctyrklopovy papirovy obal?",
+      "relevant": [
+        "holdout-h22-photograph-sleeve"
+      ]
+    },
+    {
+      "id": "h23-stone-disk-sport-p1",
+      "topic": "h23-stone-disk-sport",
+      "category": "exact",
+      "language": "en",
+      "cross_language": false,
+      "text": "Under LB-2, is a disk touching the raised cord in or out?",
+      "relevant": [
+        "holdout-h23-stone-disk-sport",
+        "holdout-alt-h23-stone-disk-sport"
+      ]
+    },
+    {
+      "id": "h23-stone-disk-sport-p2",
+      "topic": "h23-stone-disk-sport",
+      "category": "paraphrase",
+      "language": "en",
+      "cross_language": false,
+      "text": "Which boundary contact disqualifies a Ledgeball disk despite most of it remaining inside?",
+      "relevant": [
+        "holdout-h23-stone-disk-sport",
+        "holdout-alt-h23-stone-disk-sport"
+      ]
+    },
+    {
+      "id": "h23-stone-disk-sport-p3",
+      "topic": "h23-stone-disk-sport",
+      "category": "cross_language",
+      "language": "cs",
+      "cross_language": true,
+      "text": "Rozhoduje u hraničního disku v Ledgeballu malovaný pruh, nebo vyvýšená šňůra?",
+      "relevant": [
+        "holdout-h23-stone-disk-sport",
+        "holdout-alt-h23-stone-disk-sport"
+      ]
+    },
+    {
+      "id": "h23-stone-disk-sport-p4",
+      "topic": "h23-stone-disk-sport",
+      "category": "short",
+      "language": "en",
+      "cross_language": false,
+      "text": "Ledgeball painted stripe contact?",
+      "relevant": [
+        "holdout-h23-stone-disk-sport",
+        "holdout-alt-h23-stone-disk-sport"
+      ]
+    },
+    {
+      "id": "h24-crystal-seeding-p1",
+      "topic": "h24-crystal-seeding",
+      "category": "inflection",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Jak v krystaláriu Pírko zavěšují zárodky, aby nerostly na stěně?",
+      "relevant": [
+        "holdout-h24-crystal-seeding"
+      ]
+    },
+    {
+      "id": "h24-crystal-seeding-p2",
+      "topic": "h24-crystal-seeding",
+      "category": "paraphrase",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Proč musí uzlík závěsu krystalu Pírko zůstat nad hladinou?",
+      "relevant": [
+        "holdout-h24-crystal-seeding"
+      ]
+    },
+    {
+      "id": "h24-crystal-seeding-p3",
+      "topic": "h24-crystal-seeding",
+      "category": "cross_language",
+      "language": "en",
+      "cross_language": true,
+      "text": "Where should the seed and the knot sit in the Pirko crystal vessel?",
+      "relevant": [
+        "holdout-h24-crystal-seeding"
+      ]
+    },
+    {
+      "id": "h24-crystal-seeding-p4",
+      "topic": "h24-crystal-seeding",
+      "category": "diacritics",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Pirko krystal hladky vlas uzlik nad hladinou?",
+      "relevant": [
+        "holdout-h24-crystal-seeding"
+      ]
+    },
+    {
+      "id": "h25-fossil-track-p1",
+      "topic": "h25-fossil-track",
+      "category": "exact",
+      "language": "en",
+      "cross_language": false,
+      "text": "Which feature reveals walking direction on the Isen slab?",
+      "relevant": [
+        "holdout-h25-fossil-track"
+      ]
+    },
+    {
+      "id": "h25-fossil-track-p2",
+      "topic": "h25-fossil-track",
+      "category": "paraphrase",
+      "language": "en",
+      "cross_language": false,
+      "text": "How can direction be read from the fossil footprints when the toes have eroded?",
+      "relevant": [
+        "holdout-h25-fossil-track"
+      ]
+    },
+    {
+      "id": "h25-fossil-track-p3",
+      "topic": "h25-fossil-track",
+      "category": "cross_language",
+      "language": "cs",
+      "cross_language": true,
+      "text": "Co na desce Isen ukazuje směr chůze, když nejsou zachované prsty?",
+      "relevant": [
+        "holdout-h25-fossil-track"
+      ]
+    },
+    {
+      "id": "h25-fossil-track-p4",
+      "topic": "h25-fossil-track",
+      "category": "short",
+      "language": "en",
+      "cross_language": false,
+      "text": "Isen sediment ridge direction?",
+      "relevant": [
+        "holdout-h25-fossil-track"
+      ]
+    },
+    {
+      "id": "h26-snow-pit-p1",
+      "topic": "h26-snow-pit",
+      "category": "long_passage",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Na kterém rozhraní se při zkoušce Závěj oddělil sněhový sloupek?",
+      "relevant": [
+        "holdout-h26-snow-pit"
+      ]
+    },
+    {
+      "id": "h26-snow-pit-p2",
+      "topic": "h26-snow-pit",
+      "category": "paraphrase",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Kde se v profilu Závěj ukázalo slabé spojení vrstev?",
+      "relevant": [
+        "holdout-h26-snow-pit"
+      ]
+    },
+    {
+      "id": "h26-snow-pit-p3",
+      "topic": "h26-snow-pit",
+      "category": "cross_language",
+      "language": "en",
+      "cross_language": true,
+      "text": "Did the Zavej snow column fail in the fresh powder or against the bottom crust?",
+      "relevant": [
+        "holdout-h26-snow-pit"
+      ]
+    },
+    {
+      "id": "h26-snow-pit-p4",
+      "topic": "h26-snow-pit",
+      "category": "diacritics",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Zavej snehova jama misto odlomeni sloupku?",
+      "relevant": [
+        "holdout-h26-snow-pit"
+      ]
+    },
+    {
+      "id": "h27-tapestry-weight-p1",
+      "topic": "h27-tapestry-weight",
+      "category": "long_passage",
+      "language": "en",
+      "cross_language": false,
+      "text": "How is the Ardent tapestry weight distributed in its approved display support?",
+      "relevant": [
+        "holdout-h27-tapestry-weight"
+      ]
+    },
+    {
+      "id": "h27-tapestry-weight-p2",
+      "topic": "h27-tapestry-weight",
+      "category": "paraphrase",
+      "language": "en",
+      "cross_language": false,
+      "text": "What carries Ardent during vertical display now that the metal rings are retired?",
+      "relevant": [
+        "holdout-h27-tapestry-weight"
+      ]
+    },
+    {
+      "id": "h27-tapestry-weight-p3",
+      "topic": "h27-tapestry-weight",
+      "category": "cross_language",
+      "language": "cs",
+      "cross_language": true,
+      "text": "Co nyní nese váhu tapisérie Ardent a proč už nezávisí na jednotlivých kroužcích?",
+      "relevant": [
+        "holdout-h27-tapestry-weight"
+      ]
+    },
+    {
+      "id": "h27-tapestry-weight-p4",
+      "topic": "h27-tapestry-weight",
+      "category": "short",
+      "language": "en",
+      "cross_language": false,
+      "text": "Ardent hanging support material?",
+      "relevant": [
+        "holdout-h27-tapestry-weight"
+      ]
+    },
+    {
+      "id": "h28-meteor-radio-p1",
+      "topic": "h28-meteor-radio",
+      "category": "acronym",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Co znamená MOK ve cvičení stanice Jiskra?",
+      "relevant": [
+        "holdout-h28-meteor-radio"
+      ]
+    },
+    {
+      "id": "h28-meteor-radio-p2",
+      "topic": "h28-meteor-radio",
+      "category": "long_passage",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Jaký průběh tónu je v Jiskře označen jako meteorický kandidát?",
+      "relevant": [
+        "holdout-h28-meteor-radio"
+      ]
+    },
+    {
+      "id": "h28-meteor-radio-p3",
+      "topic": "h28-meteor-radio",
+      "category": "cross_language",
+      "language": "en",
+      "cross_language": true,
+      "text": "What distinguishes the Jiskra meteor candidate from regularly pulsing interference?",
+      "relevant": [
+        "holdout-h28-meteor-radio"
+      ]
+    },
+    {
+      "id": "h28-meteor-radio-p4",
+      "topic": "h28-meteor-radio",
+      "category": "diacritics",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Jiskra nahly zacatek postupne dozneni tonu?",
+      "relevant": [
+        "holdout-h28-meteor-radio"
+      ]
+    },
+    {
+      "id": "h29-conch-pitch-p1",
+      "topic": "h29-conch-pitch",
+      "category": "long_passage",
+      "language": "en",
+      "cross_language": false,
+      "text": "Which mouthpiece raises the sustained pitch of the Morrow shell horn?",
+      "relevant": [
+        "holdout-h29-conch-pitch"
+      ]
+    },
+    {
+      "id": "h29-conch-pitch-p2",
+      "topic": "h29-conch-pitch",
+      "category": "paraphrase",
+      "language": "en",
+      "cross_language": false,
+      "text": "How should the Morrow player change the mouthpiece to get the higher note?",
+      "relevant": [
+        "holdout-h29-conch-pitch"
+      ]
+    },
+    {
+      "id": "h29-conch-pitch-p3",
+      "topic": "h29-conch-pitch",
+      "category": "cross_language",
+      "language": "cs",
+      "cross_language": true,
+      "text": "Dává u rohu Morrow vyšší ustálený tón úzký, nebo široký okraj náustku?",
+      "relevant": [
+        "holdout-h29-conch-pitch"
+      ]
+    },
+    {
+      "id": "h29-conch-pitch-p4",
+      "topic": "h29-conch-pitch",
+      "category": "short",
+      "language": "en",
+      "cross_language": false,
+      "text": "Morrow high pitch mouthpiece?",
+      "relevant": [
+        "holdout-h29-conch-pitch"
+      ]
+    },
+    {
+      "id": "h30-plankton-depth-p1",
+      "topic": "h30-plankton-depth",
+      "category": "long_passage",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Kam se přesune plankton Zora po zhasnutí horní lampy v nádrži Modrá?",
+      "relevant": [
+        "holdout-h30-plankton-depth"
+      ]
+    },
+    {
+      "id": "h30-plankton-depth-p2",
+      "topic": "h30-plankton-depth",
+      "category": "paraphrase",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Jak se liší svislý pohyb Zory při zhasnutí a rozsvícení?",
+      "relevant": [
+        "holdout-h30-plankton-depth"
+      ]
+    },
+    {
+      "id": "h30-plankton-depth-p3",
+      "topic": "h30-plankton-depth",
+      "category": "cross_language",
+      "language": "en",
+      "cross_language": true,
+      "text": "What happens to Zora plankton after the upper lamp is switched off?",
+      "relevant": [
+        "holdout-h30-plankton-depth"
+      ]
+    },
+    {
+      "id": "h30-plankton-depth-p4",
+      "topic": "h30-plankton-depth",
+      "category": "diacritics",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Zora plankton zhasnuti horni tretina sloupce?",
+      "relevant": [
+        "holdout-h30-plankton-depth"
+      ]
+    },
+    {
+      "id": "h31-rope-core-p1",
+      "topic": "h31-rope-core",
+      "category": "revision",
+      "language": "en",
+      "cross_language": false,
+      "text": "What core is used in the current Helix cord construction?",
+      "relevant": [
+        "holdout-h31-rope-core"
+      ]
+    },
+    {
+      "id": "h31-rope-core-p2",
+      "topic": "h31-rope-core",
+      "category": "long_passage",
+      "language": "en",
+      "cross_language": false,
+      "text": "How does Helix avoid the lasting crease caused by its earlier core?",
+      "relevant": [
+        "holdout-h31-rope-core"
+      ]
+    },
+    {
+      "id": "h31-rope-core-p3",
+      "topic": "h31-rope-core",
+      "category": "cross_language",
+      "language": "cs",
+      "cross_language": true,
+      "text": "Čím se nyní nahrazuje tuhý papírový střed šňůry Helix a k čemu to slouží?",
+      "relevant": [
+        "holdout-h31-rope-core"
+      ]
+    },
+    {
+      "id": "h31-rope-core-p4",
+      "topic": "h31-rope-core",
+      "category": "short",
+      "language": "en",
+      "cross_language": false,
+      "text": "Helix flexible core?",
+      "relevant": [
+        "holdout-h31-rope-core"
+      ]
+    },
+    {
+      "id": "h32-air-lock-channel-p1",
+      "topic": "h32-air-lock-channel",
+      "category": "long_passage",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Který ventil se otevírá při odstranění vzduchové kapsy v modelu Člun?",
+      "relevant": [
+        "holdout-h32-air-lock-channel"
+      ]
+    },
+    {
+      "id": "h32-air-lock-channel-p2",
+      "topic": "h32-air-lock-channel",
+      "category": "paraphrase",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Jak poznat okamžik, kdy má být horní ventil kanálu Člun znovu zavřen?",
+      "relevant": [
+        "holdout-h32-air-lock-channel"
+      ]
+    },
+    {
+      "id": "h32-air-lock-channel-p3",
+      "topic": "h32-air-lock-channel",
+      "category": "cross_language",
+      "language": "en",
+      "cross_language": true,
+      "text": "Why must the lower drain stay closed while the Clun channel is vented?",
+      "relevant": [
+        "holdout-h32-air-lock-channel"
+      ]
+    },
+    {
+      "id": "h32-air-lock-channel-p4",
+      "topic": "h32-air-lock-channel",
+      "category": "diacritics",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Clun vzduchova kapsa horni jehlovy ventil?",
+      "relevant": [
+        "holdout-h32-air-lock-channel"
+      ]
+    },
+    {
+      "id": "h33-polarizer-pair-p1",
+      "topic": "h33-polarizer-pair",
+      "category": "acronym",
+      "language": "en",
+      "cross_language": false,
+      "text": "What does PXO mean in the Obsidian optics kit?",
+      "relevant": [
+        "holdout-h33-polarizer-pair"
+      ]
+    },
+    {
+      "id": "h33-polarizer-pair-p2",
+      "topic": "h33-polarizer-pair",
+      "category": "long_passage",
+      "language": "en",
+      "cross_language": false,
+      "text": "How should the two Obsidian filter marks be oriented for the darkest patch?",
+      "relevant": [
+        "holdout-h33-polarizer-pair"
+      ]
+    },
+    {
+      "id": "h33-polarizer-pair-p3",
+      "topic": "h33-polarizer-pair",
+      "category": "cross_language",
+      "language": "cs",
+      "cross_language": true,
+      "text": "O kolik se má vůči pevnému filtru otočit pohyblivý filtr Obsidian, aby obraz nejvíce ztmavl?",
+      "relevant": [
+        "holdout-h33-polarizer-pair"
+      ]
+    },
+    {
+      "id": "h33-polarizer-pair-p4",
+      "topic": "h33-polarizer-pair",
+      "category": "short",
+      "language": "en",
+      "cross_language": false,
+      "text": "Obsidian paired filter extinction angle?",
+      "relevant": [
+        "holdout-h33-polarizer-pair"
+      ]
+    },
+    {
+      "id": "h34-plaster-mold-p1",
+      "topic": "h34-plaster-mold",
+      "category": "revision",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Jaké je aktuální kritérium pro vyjmutí misky z formy Šál?",
+      "relevant": [
+        "holdout-h34-plaster-mold"
+      ]
+    },
+    {
+      "id": "h34-plaster-mold-p2",
+      "topic": "h34-plaster-mold",
+      "category": "paraphrase",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Proč už dílna Šál nečeká před vyjmutím každého odlitku stejných deset minut?",
+      "relevant": [
+        "holdout-h34-plaster-mold"
+      ]
+    },
+    {
+      "id": "h34-plaster-mold-p3",
+      "topic": "h34-plaster-mold",
+      "category": "cross_language",
+      "language": "en",
+      "cross_language": true,
+      "text": "What visual sign now permits removing the Sal bowl from its plaster mold?",
+      "relevant": [
+        "holdout-h34-plaster-mold"
+      ]
+    },
+    {
+      "id": "h34-plaster-mold-p4",
+      "topic": "h34-plaster-mold",
+      "category": "diacritics",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Sal forma sucha mezera po celem okraji?",
+      "relevant": [
+        "holdout-h34-plaster-mold"
+      ]
+    },
+    {
+      "id": "h35-book-sewing-p1",
+      "topic": "h35-book-sewing",
+      "category": "exact",
+      "language": "en",
+      "cross_language": false,
+      "text": "Which holes should be used to secure the loose Orin gathering?",
+      "relevant": [
+        "holdout-h35-book-sewing"
+      ]
+    },
+    {
+      "id": "h35-book-sewing-p2",
+      "topic": "h35-book-sewing",
+      "category": "paraphrase",
+      "language": "en",
+      "cross_language": false,
+      "text": "Why does the Orin binding repair avoid punching additional holes?",
+      "relevant": [
+        "holdout-h35-book-sewing"
+      ]
+    },
+    {
+      "id": "h35-book-sewing-p3",
+      "topic": "h35-book-sewing",
+      "category": "cross_language",
+      "language": "cs",
+      "cross_language": true,
+      "text": "Jak se upevňuje uvolněná prostřední složka kodexu Orin, aby se neprotrhl křehký lom?",
+      "relevant": [
+        "holdout-h35-book-sewing"
+      ]
+    },
+    {
+      "id": "h35-book-sewing-p4",
+      "topic": "h35-book-sewing",
+      "category": "short",
+      "language": "en",
+      "cross_language": false,
+      "text": "Orin new sewing thread tension?",
+      "relevant": [
+        "holdout-h35-book-sewing"
+      ]
+    },
+    {
+      "id": "h36-fencing-mask-p1",
+      "topic": "h36-fencing-mask",
+      "category": "acronym",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Co v Sokolím kruhu znamená SKM?",
+      "relevant": [
+        "holdout-h36-fencing-mask",
+        "holdout-alt-h36-fencing-mask"
+      ]
+    },
+    {
+      "id": "h36-fencing-mask-p2",
+      "topic": "h36-fencing-mask",
+      "category": "paraphrase",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Kdy je potřeba před šermem upravit zadní pásek ochranné masky?",
+      "relevant": [
+        "holdout-h36-fencing-mask",
+        "holdout-alt-h36-fencing-mask"
+      ]
+    },
+    {
+      "id": "h36-fencing-mask-p3",
+      "topic": "h36-fencing-mask",
+      "category": "cross_language",
+      "language": "en",
+      "cross_language": true,
+      "text": "How is mask stability tested in the fictional Sokoli kruh fencing discipline?",
+      "relevant": [
+        "holdout-h36-fencing-mask",
+        "holdout-alt-h36-fencing-mask"
+      ]
+    },
+    {
+      "id": "h36-fencing-mask-p4",
+      "topic": "h36-fencing-mask",
+      "category": "inflection",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Jak se kontroluje držení šermířských masek při předklonu?",
+      "relevant": [
+        "holdout-h36-fencing-mask",
+        "holdout-alt-h36-fencing-mask"
+      ]
+    },
+    {
+      "id": "h37-pumice-density-p1",
+      "topic": "h37-pumice-density",
+      "category": "exact",
+      "language": "en",
+      "cross_language": false,
+      "text": "Which Dorin pumice replica has more connected pores?",
+      "relevant": [
+        "holdout-h37-pumice-density"
+      ]
+    },
+    {
+      "id": "h37-pumice-density-p2",
+      "topic": "h37-pumice-density",
+      "category": "paraphrase",
+      "language": "en",
+      "cross_language": false,
+      "text": "What does blue dye passing all the way through the lighter Dorin sample show?",
+      "relevant": [
+        "holdout-h37-pumice-density"
+      ]
+    },
+    {
+      "id": "h37-pumice-density-p3",
+      "topic": "h37-pumice-density",
+      "category": "cross_language",
+      "language": "cs",
+      "cross_language": true,
+      "text": "Proč je lehčí vzorek pemzy Dorin lehčí, když oba mají stejnou velikost a drsnost?",
+      "relevant": [
+        "holdout-h37-pumice-density"
+      ]
+    },
+    {
+      "id": "h37-pumice-density-p4",
+      "topic": "h37-pumice-density",
+      "category": "short",
+      "language": "en",
+      "cross_language": false,
+      "text": "Dorin lighter replica pore network?",
+      "relevant": [
+        "holdout-h37-pumice-density"
+      ]
+    },
+    {
+      "id": "h38-resin-cure-p1",
+      "topic": "h38-resin-cure",
+      "category": "revision",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Jak se nyní ověřuje vytvrzení pryskyřičného modelu Jantar?",
+      "relevant": [
+        "holdout-h38-resin-cure"
+      ]
+    },
+    {
+      "id": "h38-resin-cure-p2",
+      "topic": "h38-resin-cure",
+      "category": "paraphrase",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Proč se k testování modelu Jantar už nepoužívá prst?",
+      "relevant": [
+        "holdout-h38-resin-cure"
+      ]
+    },
+    {
+      "id": "h38-resin-cure-p3",
+      "topic": "h38-resin-cure",
+      "category": "cross_language",
+      "language": "en",
+      "cross_language": true,
+      "text": "Which object is tested against glass to verify that the Jantar resin has cured?",
+      "relevant": [
+        "holdout-h38-resin-cure"
+      ]
+    },
+    {
+      "id": "h38-resin-cure-p4",
+      "topic": "h38-resin-cure",
+      "category": "diacritics",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Jantar pryskyrice kontrolni prouzek nelepi na sklo?",
+      "relevant": [
+        "holdout-h38-resin-cure"
+      ]
+    },
+    {
+      "id": "h39-fantasy-map-p1",
+      "topic": "h39-fantasy-map",
+      "category": "exact",
+      "language": "en",
+      "cross_language": false,
+      "text": "What does a broken double line across a stream mean on the Map of Varo?",
+      "relevant": [
+        "holdout-h39-fantasy-map"
+      ]
+    },
+    {
+      "id": "h39-fantasy-map-p2",
+      "topic": "h39-fantasy-map",
+      "category": "paraphrase",
+      "language": "en",
+      "cross_language": false,
+      "text": "How does the Varo map distinguish a dry-only ford from a permanent bridge?",
+      "relevant": [
+        "holdout-h39-fantasy-map"
+      ]
+    },
+    {
+      "id": "h39-fantasy-map-p3",
+      "topic": "h39-fantasy-map",
+      "category": "cross_language",
+      "language": "cs",
+      "cross_language": true,
+      "text": "Lze podle mapy Varo přejít brod se značkou přerušované dvojčáry i za tekoucí vody?",
+      "relevant": [
+        "holdout-h39-fantasy-map"
+      ]
+    },
+    {
+      "id": "h39-fantasy-map-p4",
+      "topic": "h39-fantasy-map",
+      "category": "short",
+      "language": "en",
+      "cross_language": false,
+      "text": "Varo broken double crossing line?",
+      "relevant": [
+        "holdout-h39-fantasy-map"
+      ]
+    },
+    {
+      "id": "h40-bronze-patina-p1",
+      "topic": "h40-bronze-patina",
+      "category": "inflection",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Které povlaky bronzových figurek Říza vyžadují další sledování?",
+      "relevant": [
+        "holdout-h40-bronze-patina"
+      ]
+    },
+    {
+      "id": "h40-bronze-patina-p2",
+      "topic": "h40-bronze-patina",
+      "category": "paraphrase",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Proč nestačí zelená barva k rozhodnutí odstranit povrch figurky Říza?",
+      "relevant": [
+        "holdout-h40-bronze-patina"
+      ]
+    },
+    {
+      "id": "h40-bronze-patina-p3",
+      "topic": "h40-bronze-patina",
+      "category": "cross_language",
+      "language": "en",
+      "cross_language": true,
+      "text": "Which surface behavior flags the Riza bronze for monitoring?",
+      "relevant": [
+        "holdout-h40-bronze-patina"
+      ]
+    },
+    {
+      "id": "h40-bronze-patina-p4",
+      "topic": "h40-bronze-patina",
+      "category": "diacritics",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Riza bronz sypky svetlezeleny prasek?",
+      "relevant": [
+        "holdout-h40-bronze-patina"
+      ]
+    },
+    {
+      "id": "h41-lichen-chart-p1",
+      "topic": "h41-lichen-chart",
+      "category": "revision",
+      "language": "en",
+      "cross_language": false,
+      "text": "What fixed feature now locates the Orris lichen patch in photographs?",
+      "relevant": [
+        "holdout-h41-lichen-chart"
+      ]
+    },
+    {
+      "id": "h41-lichen-chart-p2",
+      "topic": "h41-lichen-chart",
+      "category": "paraphrase",
+      "language": "en",
+      "cross_language": false,
+      "text": "Why was the white pebble rejected as the Orris photo marker?",
+      "relevant": [
+        "holdout-h41-lichen-chart"
+      ]
+    },
+    {
+      "id": "h41-lichen-chart-p3",
+      "topic": "h41-lichen-chart",
+      "category": "cross_language",
+      "language": "cs",
+      "cross_language": true,
+      "text": "Co nyní musí být na fotografii lišejníku Orris místo pohyblivého bílého oblázku?",
+      "relevant": [
+        "holdout-h41-lichen-chart"
+      ]
+    },
+    {
+      "id": "h41-lichen-chart-p4",
+      "topic": "h41-lichen-chart",
+      "category": "short",
+      "language": "en",
+      "cross_language": false,
+      "text": "Orris current lichen locator?",
+      "relevant": [
+        "holdout-h41-lichen-chart"
+      ]
+    },
+    {
+      "id": "h42-gnomon-notch-p1",
+      "topic": "h42-gnomon-notch",
+      "category": "inflection",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Jak se na modelech Stín hledají konce nejkratších denních stínů?",
+      "relevant": [
+        "holdout-h42-gnomon-notch"
+      ]
+    },
+    {
+      "id": "h42-gnomon-notch-p2",
+      "topic": "h42-gnomon-notch",
+      "category": "paraphrase",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Proč nelze u modelu Stín určit polední směr jedinou značkou v předem stanovenou hodinu?",
+      "relevant": [
+        "holdout-h42-gnomon-notch"
+      ]
+    },
+    {
+      "id": "h42-gnomon-notch-p3",
+      "topic": "h42-gnomon-notch",
+      "category": "cross_language",
+      "language": "en",
+      "cross_language": true,
+      "text": "Which shadow position is notched into the base of the Stin sundial model?",
+      "relevant": [
+        "holdout-h42-gnomon-notch"
+      ]
+    },
+    {
+      "id": "h42-gnomon-notch-p4",
+      "topic": "h42-gnomon-notch",
+      "category": "diacritics",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Stin poledni smer nejkratsi denni stin?",
+      "relevant": [
+        "holdout-h42-gnomon-notch"
+      ]
+    },
+    {
+      "id": "h43-reed-fingering-p1",
+      "topic": "h43-reed-fingering",
+      "category": "exact",
+      "language": "en",
+      "cross_language": false,
+      "text": "What happens when only the Bram thumb vent is opened?",
+      "relevant": [
+        "holdout-h43-reed-fingering"
+      ]
+    },
+    {
+      "id": "h43-reed-fingering-p2",
+      "topic": "h43-reed-fingering",
+      "category": "paraphrase",
+      "language": "en",
+      "cross_language": false,
+      "text": "How can a Bram player change register without moving the melody fingers?",
+      "relevant": [
+        "holdout-h43-reed-fingering"
+      ]
+    },
+    {
+      "id": "h43-reed-fingering-p3",
+      "topic": "h43-reed-fingering",
+      "category": "cross_language",
+      "language": "cs",
+      "cross_language": true,
+      "text": "K čemu slouží malý palcový otvor se čtvercovou značkou na píšťale Bram?",
+      "relevant": [
+        "holdout-h43-reed-fingering"
+      ]
+    },
+    {
+      "id": "h43-reed-fingering-p4",
+      "topic": "h43-reed-fingering",
+      "category": "short",
+      "language": "en",
+      "cross_language": false,
+      "text": "Bram upper register control?",
+      "relevant": [
+        "holdout-h43-reed-fingering"
+      ]
+    },
+    {
+      "id": "h44-fish-sensing-p1",
+      "topic": "h44-fish-sensing",
+      "category": "inflection",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Na co reagují pružné terčíky v bočních kanálcích modelů Čára?",
+      "relevant": [
+        "holdout-h44-fish-sensing"
+      ]
+    },
+    {
+      "id": "h44-fish-sensing-p2",
+      "topic": "h44-fish-sensing",
+      "category": "paraphrase",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Co má ukázat zakrytí oka při demonstraci ryby Čára?",
+      "relevant": [
+        "holdout-h44-fish-sensing"
+      ]
+    },
+    {
+      "id": "h44-fish-sensing-p3",
+      "topic": "h44-fish-sensing",
+      "category": "cross_language",
+      "language": "en",
+      "cross_language": true,
+      "text": "How does the Cara fish model indicate water movement without visual input?",
+      "relevant": [
+        "holdout-h44-fish-sensing"
+      ]
+    },
+    {
+      "id": "h44-fish-sensing-p4",
+      "topic": "h44-fish-sensing",
+      "category": "diacritics",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Cara ryba bocni kanalek smer proudu?",
+      "relevant": [
+        "holdout-h44-fish-sensing"
+      ]
+    },
+    {
+      "id": "h45-sailcloth-seam-p1",
+      "topic": "h45-sailcloth-seam",
+      "category": "revision",
+      "language": "en",
+      "cross_language": false,
+      "text": "What patch shape is currently used for the Kestrel diagonal tear?",
+      "relevant": [
+        "holdout-h45-sailcloth-seam"
+      ]
+    },
+    {
+      "id": "h45-sailcloth-seam-p2",
+      "topic": "h45-sailcloth-seam",
+      "category": "paraphrase",
+      "language": "en",
+      "cross_language": false,
+      "text": "Why were sharp-cornered repair patches abandoned in the Kestrel fabric test?",
+      "relevant": [
+        "holdout-h45-sailcloth-seam"
+      ]
+    },
+    {
+      "id": "h45-sailcloth-seam-p3",
+      "topic": "h45-sailcloth-seam",
+      "category": "cross_language",
+      "language": "cs",
+      "cross_language": true,
+      "text": "Jak mají být konce současné záplaty Kestrel umístěny vůči koncům trhliny?",
+      "relevant": [
+        "holdout-h45-sailcloth-seam"
+      ]
+    },
+    {
+      "id": "h45-sailcloth-seam-p4",
+      "topic": "h45-sailcloth-seam",
+      "category": "short",
+      "language": "en",
+      "cross_language": false,
+      "text": "Kestrel current tear patch outline?",
+      "relevant": [
+        "holdout-h45-sailcloth-seam"
+      ]
+    },
+    {
+      "id": "h46-tidepool-viewer-p1",
+      "topic": "h46-tidepool-viewer",
+      "category": "inflection",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Jak se v miskách Perla pozorují spodní strany modelových hvězdic?",
+      "relevant": [
+        "holdout-h46-tidepool-viewer"
+      ]
+    },
+    {
+      "id": "h46-tidepool-viewer-p2",
+      "topic": "h46-tidepool-viewer",
+      "category": "paraphrase",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Co umožňuje vidět spodek hvězdice Perla bez jejího otáčení?",
+      "relevant": [
+        "holdout-h46-tidepool-viewer"
+      ]
+    },
+    {
+      "id": "h46-tidepool-viewer-p3",
+      "topic": "h46-tidepool-viewer",
+      "category": "cross_language",
+      "language": "en",
+      "cross_language": true,
+      "text": "What redirects the view of the model starfish underside to the Perla side window?",
+      "relevant": [
+        "holdout-h46-tidepool-viewer"
+      ]
+    },
+    {
+      "id": "h46-tidepool-viewer-p4",
+      "topic": "h46-tidepool-viewer",
+      "category": "diacritics",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Perla hvezdice cire dno sikme zrcatko?",
+      "relevant": [
+        "holdout-h46-tidepool-viewer"
+      ]
+    },
+    {
+      "id": "h47-river-island-p1",
+      "topic": "h47-river-island",
+      "category": "exact",
+      "language": "en",
+      "cross_language": false,
+      "text": "Why does the gravel island survive the Eris flow pulse?",
+      "relevant": [
+        "holdout-h47-river-island"
+      ]
+    },
+    {
+      "id": "h47-river-island-p2",
+      "topic": "h47-river-island",
+      "category": "paraphrase",
+      "language": "en",
+      "cross_language": false,
+      "text": "Which feature diverts the current around the surviving Eris island?",
+      "relevant": [
+        "holdout-h47-river-island"
+      ]
+    },
+    {
+      "id": "h47-river-island-p3",
+      "topic": "h47-river-island",
+      "category": "cross_language",
+      "language": "cs",
+      "cross_language": true,
+      "text": "Co u ostrova Eris rozděluje proud a proč jeho přežití nevysvětluje výška?",
+      "relevant": [
+        "holdout-h47-river-island"
+      ]
+    },
+    {
+      "id": "h47-river-island-p4",
+      "topic": "h47-river-island",
+      "category": "short",
+      "language": "en",
+      "cross_language": false,
+      "text": "Eris surviving island upstream nose?",
+      "relevant": [
+        "holdout-h47-river-island"
+      ]
+    },
+    {
+      "id": "h48-glass-anneal-p1",
+      "topic": "h48-glass-anneal",
+      "category": "inflection",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Jak se ve Vitře poznají nevyžíhané skleněné kapky mezi filtry?",
+      "relevant": [
+        "holdout-h48-glass-anneal"
+      ]
+    },
+    {
+      "id": "h48-glass-anneal-p2",
+      "topic": "h48-glass-anneal",
+      "category": "paraphrase",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Jaký obraz je v kontrole Vitra přijatelný po odstranění vnitřního napětí?",
+      "relevant": [
+        "holdout-h48-glass-anneal"
+      ]
+    },
+    {
+      "id": "h48-glass-anneal-p3",
+      "topic": "h48-glass-anneal",
+      "category": "cross_language",
+      "language": "en",
+      "cross_language": true,
+      "text": "What do persistent colored bands indicate in the Vitra glass-drop check?",
+      "relevant": [
+        "holdout-h48-glass-anneal"
+      ]
+    },
+    {
+      "id": "h48-glass-anneal-p4",
+      "topic": "h48-glass-anneal",
+      "category": "diacritics",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Vitra sklo vnitrni napeti barevne pruhy?",
+      "relevant": [
+        "holdout-h48-glass-anneal"
+      ]
+    },
+    {
+      "id": "h49-print-register-p1",
+      "topic": "h49-print-register",
+      "category": "exact",
+      "language": "en",
+      "cross_language": false,
+      "text": "Which marks align the two impressions of the Juniper print?",
+      "relevant": [
+        "holdout-h49-print-register",
+        "holdout-alt-h49-print-register"
+      ]
+    },
+    {
+      "id": "h49-print-register-p2",
+      "topic": "h49-print-register",
+      "category": "paraphrase",
+      "language": "en",
+      "cross_language": false,
+      "text": "How can an examiner tell that both colors of Juniper are correctly registered?",
+      "relevant": [
+        "holdout-h49-print-register",
+        "holdout-alt-h49-print-register"
+      ]
+    },
+    {
+      "id": "h49-print-register-p3",
+      "topic": "h49-print-register",
+      "category": "cross_language",
+      "language": "cs",
+      "cross_language": true,
+      "text": "Proč se při soutisku Juniper kontrolují oba rohové kosočtverce místo prostředního kříže?",
+      "relevant": [
+        "holdout-h49-print-register",
+        "holdout-alt-h49-print-register"
+      ]
+    },
+    {
+      "id": "h49-print-register-p4",
+      "topic": "h49-print-register",
+      "category": "short",
+      "language": "en",
+      "cross_language": false,
+      "text": "Juniper two-color registration cue?",
+      "relevant": [
+        "holdout-h49-print-register",
+        "holdout-alt-h49-print-register"
+      ]
+    },
+    {
+      "id": "h50-ice-sweep-p1",
+      "topic": "h50-ice-sweep",
+      "category": "acronym",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Co znamená KPS ve hře Dráha?",
+      "relevant": [
+        "holdout-h50-ice-sweep"
+      ]
+    },
+    {
+      "id": "h50-ice-sweep-p2",
+      "topic": "h50-ice-sweep",
+      "category": "paraphrase",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Co rozhodčí udělá, když se koště při zametání dotkne kamene?",
+      "relevant": [
+        "holdout-h50-ice-sweep"
+      ]
+    },
+    {
+      "id": "h50-ice-sweep-p3",
+      "topic": "h50-ice-sweep",
+      "category": "cross_language",
+      "language": "en",
+      "cross_language": true,
+      "text": "Where may sweeping take place in Draha, and may the broom touch the moving stone?",
+      "relevant": [
+        "holdout-h50-ice-sweep"
+      ]
+    },
+    {
+      "id": "h50-ice-sweep-p4",
+      "topic": "h50-ice-sweep",
+      "category": "diacritics",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Draha koste zametani pred kamenem?",
+      "relevant": [
+        "holdout-h50-ice-sweep"
+      ]
+    },
+    {
+      "id": "negative-01",
+      "topic": "absent-semaphore",
+      "category": "no_answer",
+      "language": "en",
+      "cross_language": false,
+      "text": "Which flag position means dense fog in the fictional Nembor semaphore code?",
+      "relevant": []
+    },
+    {
+      "id": "negative-02",
+      "topic": "absent-knotted-game",
+      "category": "no_answer",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Jak se ve fiktivní uzlové hře Tkanička rozhoduje nerozhodný výsledek?",
+      "relevant": []
+    },
+    {
+      "id": "negative-03",
+      "topic": "absent-perfume",
+      "category": "no_answer",
+      "language": "en",
+      "cross_language": false,
+      "text": "What ingredient gives the imaginary perfume Olvia its bitter opening scent?",
+      "relevant": []
+    },
+    {
+      "id": "negative-04",
+      "topic": "absent-script",
+      "category": "no_answer",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Kterým tahem začíná znak pro déšť ve vymyšleném písmu Evara?",
+      "relevant": []
+    },
+    {
+      "id": "negative-05",
+      "topic": "absent-marquetry",
+      "category": "no_answer",
+      "language": "en",
+      "cross_language": false,
+      "text": "Which wood forms the pale border of the fictional Seldo marquetry panel?",
+      "relevant": []
+    },
+    {
+      "id": "negative-06",
+      "topic": "absent-leather-stamp",
+      "category": "no_answer",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Jaká raznice vytváří hvězdicový vzor na fiktivním koženém pouzdře Vran?",
+      "relevant": []
+    },
+    {
+      "id": "negative-07",
+      "topic": "absent-gem-facet",
+      "category": "no_answer",
+      "language": "en",
+      "cross_language": false,
+      "text": "How many crown facets are specified for the imaginary Velor gemstone cut?",
+      "relevant": []
+    },
+    {
+      "id": "negative-08",
+      "topic": "absent-marionette",
+      "category": "no_answer",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Které vodicí vlákno zvedá levé zápěstí fiktivní loutky Iksa?",
+      "relevant": []
+    },
+    {
+      "id": "negative-09",
+      "topic": "absent-origami",
+      "category": "no_answer",
+      "language": "en",
+      "cross_language": false,
+      "text": "Which fold locks the tail of the fictional paper bird Neru?",
+      "relevant": []
+    },
+    {
+      "id": "negative-10",
+      "topic": "absent-shadow-theatre",
+      "category": "no_answer",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Z jakého materiálu je průsvitné oko fiktivní stínové loutky Okoř?",
+      "relevant": []
+    },
+    {
+      "id": "negative-11",
+      "topic": "absent-magnet-maze",
+      "category": "no_answer",
+      "language": "en",
+      "cross_language": false,
+      "text": "What polarity opens the north barrier of the imaginary Peldo magnetic maze?",
+      "relevant": []
+    },
+    {
+      "id": "negative-12",
+      "topic": "absent-coin-trick",
+      "category": "no_answer",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Kde je skrytý kloub ve fiktivní iluzionistické krabičce Lom?",
+      "relevant": []
+    },
+    {
+      "id": "negative-13",
+      "topic": "absent-scent-navigation",
+      "category": "no_answer",
+      "language": "en",
+      "cross_language": false,
+      "text": "Which scent marks a left turn in the fictional Ivara sensory maze?",
+      "relevant": []
+    },
+    {
+      "id": "negative-14",
+      "topic": "absent-paper-grain",
+      "category": "no_answer",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Jak se určuje směr vláken fiktivního papíru Rákos bez trhání archu?",
+      "relevant": []
+    },
+    {
+      "id": "negative-15",
+      "topic": "absent-dance",
+      "category": "no_answer",
+      "language": "en",
+      "cross_language": false,
+      "text": "Which foot leads the final turn in the imaginary Valna ribbon dance?",
+      "relevant": []
+    },
+    {
+      "id": "negative-16",
+      "topic": "absent-stencil",
+      "category": "no_answer",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Jak se vymyšlená šablona Rondo uzamyká proti pootočení?",
+      "relevant": []
+    },
+    {
+      "id": "negative-17",
+      "topic": "absent-dice",
+      "category": "no_answer",
+      "language": "en",
+      "cross_language": false,
+      "text": "Which face is opposite the spiral on the fictional Kelm seven-sided die?",
+      "relevant": []
+    },
+    {
+      "id": "negative-18",
+      "topic": "absent-domino",
+      "category": "no_answer",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Kolik bodů dává prázdný dílek ve fiktivní hře Nulté domino?",
+      "relevant": []
+    },
+    {
+      "id": "negative-19",
+      "topic": "absent-bridge-puzzle",
+      "category": "no_answer",
+      "language": "en",
+      "cross_language": false,
+      "text": "Which bridge must be crossed last in the imaginary Four Lanterns puzzle?",
+      "relevant": []
+    },
+    {
+      "id": "negative-20",
+      "topic": "absent-woodwind-case",
+      "category": "no_answer",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Jaká podšívka chrání vymyšlený nástroj Tera v jeho kufříku?",
+      "relevant": []
+    },
+    {
+      "id": "negative-21",
+      "topic": "absent-hat-block",
+      "category": "no_answer",
+      "language": "en",
+      "cross_language": false,
+      "text": "What shape is the crown block for the fictional Merrow felt hat?",
+      "relevant": []
+    },
+    {
+      "id": "negative-22",
+      "topic": "absent-sandglass",
+      "category": "no_answer",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Jaký barevný písek ukazuje polovinu intervalu fiktivních hodin Otoč?",
+      "relevant": []
+    },
+    {
+      "id": "negative-23",
+      "topic": "absent-mechanical-bird",
+      "category": "no_answer",
+      "language": "en",
+      "cross_language": false,
+      "text": "Which cam makes the imaginary automaton bird Pavo open its beak?",
+      "relevant": []
+    },
+    {
+      "id": "negative-24",
+      "topic": "absent-tessellation",
+      "category": "no_answer",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Které dva mnohoúhelníky tvoří fiktivní dlažbu Žebro bez mezer?",
+      "relevant": []
+    },
+    {
+      "id": "negative-25",
+      "topic": "absent-sculpture-balance",
+      "category": "no_answer",
+      "language": "en",
+      "cross_language": false,
+      "text": "Where is the hidden counterweight in the imaginary Nessa mobile sculpture?",
+      "relevant": []
+    },
+    {
+      "id": "negative-26",
+      "topic": "absent-draughts",
+      "category": "no_answer",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Smí ve vymyšlené hře Oboustranná dáma obyčejný kámen přeskakovat dozadu?",
+      "relevant": []
+    },
+    {
+      "id": "negative-27",
+      "topic": "absent-fan-fold",
+      "category": "no_answer",
+      "language": "en",
+      "cross_language": false,
+      "text": "How is the central rib attached in the fictional Leto folding fan?",
+      "relevant": []
+    },
+    {
+      "id": "negative-28",
+      "topic": "absent-labyrinth",
+      "category": "no_answer",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Jaká značka určuje výchozí směr ve vymyšleném hmatovém labyrintu Hrot?",
+      "relevant": []
+    },
+    {
+      "id": "negative-29",
+      "topic": "absent-whistle-code",
+      "category": "no_answer",
+      "language": "en",
+      "cross_language": false,
+      "text": "What does a long-short-long signal mean in the fictional Omi whistle code?",
+      "relevant": []
+    },
+    {
+      "id": "negative-30",
+      "topic": "absent-woven-basket",
+      "category": "no_answer",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Který prut se u fiktivního košíku Pramen zasouvá jako poslední do obruby?",
+      "relevant": []
+    },
+    {
+      "id": "negative-31",
+      "topic": "gone-mosaic",
+      "category": "deletion",
+      "language": "en",
+      "cross_language": false,
+      "text": "Which grout color distinguishes the reconstructed Mirabel mosaic border?",
+      "relevant": []
+    },
+    {
+      "id": "negative-32",
+      "topic": "gone-beetle-wing",
+      "category": "deletion",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Pod čím ukrývá fiktivní brouk Jantarín zadní křídla?",
+      "relevant": []
+    },
+    {
+      "id": "negative-33",
+      "topic": "gone-puppet-joint",
+      "category": "deletion",
+      "language": "en",
+      "cross_language": false,
+      "text": "What prevents the Ravik puppet elbow from bending backward?",
+      "relevant": []
+    },
+    {
+      "id": "negative-34",
+      "topic": "gone-smoke-ring",
+      "category": "deletion",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Co v komoře Kruh vytváří dýmový prstenec?",
+      "relevant": []
+    },
+    {
+      "id": "negative-35",
+      "topic": "gone-shell-dye",
+      "category": "deletion",
+      "language": "en",
+      "cross_language": false,
+      "text": "What color appears when Nerissa shell pigment is mixed with its chalk binder?",
+      "relevant": []
+    },
+    {
+      "id": "negative-36",
+      "topic": "gone-resonator",
+      "category": "deletion",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Z čeho je prohnutá přepážka rezonátoru Hruška?",
+      "relevant": []
+    },
+    {
+      "id": "negative-37",
+      "topic": "gone-snowflake",
+      "category": "deletion",
+      "language": "en",
+      "cross_language": false,
+      "text": "How many radial arms does the invented Ivren snow crystal model have?",
+      "relevant": []
+    },
+    {
+      "id": "negative-38",
+      "topic": "gone-amber-inclusion",
+      "category": "deletion",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Jaká uzavřenina je ve fiktivním jantaru Ostruha?",
+      "relevant": []
+    },
+    {
+      "id": "negative-39",
+      "topic": "gone-lens-case",
+      "category": "deletion",
+      "language": "en",
+      "cross_language": false,
+      "text": "What supports the Selene lens inside its protective case?",
+      "relevant": []
+    },
+    {
+      "id": "negative-40",
+      "topic": "gone-bone-flute",
+      "category": "deletion",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Čím je uzavřen spodní konec píšťaly Kostra?",
+      "relevant": []
+    },
+    {
+      "id": "negative-41",
+      "topic": "scoped-mica",
+      "category": "project_boundary",
+      "language": "en",
+      "cross_language": false,
+      "text": "What support is used when splitting the Talven mica sheet?",
+      "relevant": []
+    },
+    {
+      "id": "negative-42",
+      "topic": "scoped-lacquer",
+      "category": "project_boundary",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Jakým štětcem se nanáší lak Červeň?",
+      "relevant": []
+    },
+    {
+      "id": "negative-43",
+      "topic": "scoped-coral-model",
+      "category": "project_boundary",
+      "language": "en",
+      "cross_language": false,
+      "text": "What color does the Ravin coral model take during simulated night?",
+      "relevant": []
+    },
+    {
+      "id": "negative-44",
+      "topic": "scoped-meteorite-box",
+      "category": "project_boundary",
+      "language": "cs",
+      "cross_language": false,
+      "text": "O co se opírá meteorit Orelis ve svém lůžku?",
+      "relevant": []
+    },
+    {
+      "id": "negative-45",
+      "topic": "scoped-broach",
+      "category": "project_boundary",
+      "language": "en",
+      "cross_language": false,
+      "text": "In which direction does the Elmet brooch clasp open?",
+      "relevant": []
+    },
+    {
+      "id": "negative-46",
+      "topic": "scoped-sound-plate",
+      "category": "project_boundary",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Čím se na desce Zvln zviditelňují uzlové linie?",
+      "relevant": []
+    },
+    {
+      "id": "negative-47",
+      "topic": "scoped-crystal-lamp",
+      "category": "project_boundary",
+      "language": "en",
+      "cross_language": false,
+      "text": "What shell diffuses the light in the Urven lamp?",
+      "relevant": []
+    },
+    {
+      "id": "negative-48",
+      "topic": "scoped-braid-sport",
+      "category": "project_boundary",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Jaký uzel musí hráč dokončit, aby vyhrál hru Cop?",
+      "relevant": []
+    },
+    {
+      "id": "negative-49",
+      "topic": "scoped-ink-stone",
+      "category": "project_boundary",
+      "language": "en",
+      "cross_language": false,
+      "text": "What shape of groove drains the Saren ink stone?",
+      "relevant": []
+    },
+    {
+      "id": "negative-50",
+      "topic": "scoped-fossil-fern",
+      "category": "project_boundary",
+      "language": "cs",
+      "cross_language": false,
+      "text": "Podle jakých výtrusnic se pozná fosilní kapradina Mžil?",
+      "relevant": []
+    }
+  ]
+}
