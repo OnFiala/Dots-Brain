@@ -95,7 +95,7 @@ The dedicated `semantic-baseline` CI job prepares and verifies the pinned model
 even on a cache hit, then performs inference offline. It runs the existing real
 model test and checks its JUnit receipt: a missing, failed or skipped test fails
 the job. Regular matrix jobs retain the opt-in skip. CI publishes only the
-synthetic baseline/development JSON and JUnit as `semantic-retrieval-baseline`, retained for
+synthetic baseline/development/challenge JSON and JUnit as `semantic-retrieval-baseline`, retained for
 14 days; model weights and stores are not uploaded.
 
 ## Development and held-out evaluation
@@ -137,12 +137,55 @@ time, report Hit@3, MRR@3, no-answer rates, categories, cross-language results a
 query p95, and retain the exact corpus, scoring, runtime, lock and model hashes.
 Changing measured source or fixture bytes during execution fails the run.
 
-Only the development fixture runs automatically in CI. Held-out execution needs
+Only development fixtures run automatically in CI. Held-out execution needs
 explicit `--allow-holdout` on an immutable candidate after ranking/abstention
 selection. The flag is a guard, not proof of independent custody. Keep an evaluator
 receipt identifying the candidate, fixture, labels, seeds and any prior exposure.
 After results are inspected, that slice becomes regression evidence; do not tune
 against it and continue describing it as an unseen acceptance set.
+
+### Development field diagnostics
+
+The additional [challenge](../tests/fixtures/retrieval/cz-en-challenge-v1.json)
+contains 25 positive and 25 no-answer questions over 28 fictional records, with
+26 current visible records, one deleted record and one excluded record. Every
+negative shares a visible name, identifier or nearby vocabulary with an unrelated
+source. Its independent oracle review precedes measurement; once inspected, its
+results are development evidence, never unseen release acceptance. The original
+v1 and v2 fixture bytes remain unchanged.
+
+Use `--field-diagnostics` with either development fixture to collect the actual
+unchanged hybrid lists at limits 1, 3, 20 and 50 and actual context output with the
+default 6,000-character budget. Context is backed by search at limit 20 but may
+include fewer sources; the report keeps both lists. Per-result evidence separates
+title, body and overall similarity, the current model/revision, and exact source
+offsets. Missing current indexing is explicit, not inferred from a bounded list.
+Pending diagnostics remain separate from ready quality evidence.
+
+```sh
+uv run --locked --no-sync python scripts/retrieval_baseline.py --model-dir /absolute/private/prepared-model --corpus tests/fixtures/retrieval/cz-en-challenge-v1.json --field-diagnostics --output "$EVALUATION_DIR/challenge.json"
+```
+
+The diagnostic collector uses extra query embeddings and a complete current
+vector scan, and checks scores against canonical semantic search over at most
+50 visible sources. It is a bounded synthetic diagnostic, not a product search
+implementation or latency benchmark. It fails when scope coverage or current
+source/passages disagree. The opt-in flag does not change product behavior or
+ordinary baseline outputs. CI collects diagnostics for both development slices;
+it neither chooses a relevance threshold nor executes the heldout.
+
+The bounded query-gate experiment compares only overall versus body evidence.
+Each rule either preserves the complete ranked list or returns an empty list;
+it retains the declared whole-input identifier/acronym exception. Use one cutoff
+per rule across both slices, all seeds and limits. Require no baseline positive
+hit or MRR loss and at most two false positives among each slice's 25 negatives,
+separately for every seed and search limit and for actual context output. Context
+gate evidence comes from its full search-20 list, while its metrics use only the
+emitted sources. The original 100 development hits at limit 3 remain required.
+Freeze the formula and all labels before measurement; retain rejected thresholds
+and independent recomputation. A development pass only permits candidate review
+and the separate release acceptance below. If neither rule qualifies, keep the
+existing product behavior rather than weakening these requirements.
 
 Release acceptance is not implemented as a hidden runner threshold. The approved
 candidate protocol requires, on every seed, positive Hit@3 at least 95%,

@@ -3,7 +3,10 @@
 import copy
 import importlib.util
 import json
+import math
+import struct
 import uuid
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -623,7 +626,8 @@ def test_previous_revision_uri_is_explicitly_unsupported(v2_corpus, tmp_path):
         baseline.load_corpus(fixture)
 
 
-def test_index_timing_excludes_pending_query_probe(v2_corpus, tmp_path, monkeypatch):
+@pytest.mark.parametrize("diagnostics", [False, True])
+def test_index_timing_excludes_pending_query_probe(v2_corpus, tmp_path, monkeypatch, diagnostics):
     clock = [0.0]
 
     class FixtureIndex:
@@ -654,13 +658,304 @@ def test_index_timing_excludes_pending_query_probe(v2_corpus, tmp_path, monkeypa
         clock[0] += 0.1
         return {"summary": {}} if kwargs.get("score", True) else {"quality_measured": False}
 
+    def diagnosed(*args):
+        clock[0] += 0.3
+        return {"quality_measured": False}
+
     monkeypatch.setattr(baseline, "FILES", {})
     monkeypatch.setattr(baseline, "SemanticIndex", FixtureIndex)
     monkeypatch.setattr(baseline, "measure", measured)
+    monkeypatch.setattr(baseline, "field_diagnostics", diagnosed)
     monkeypatch.setattr(baseline.time, "perf_counter", lambda: clock[0])
-    report = baseline.run_seed(tmp_path, v2_corpus, 11)
+    report = baseline.run_seed(tmp_path, v2_corpus, 11, diagnostics=diagnostics)
     assert report["pending_probe"]["index"]["pending"] == 1
     assert report["pending_probe"]["elapsed_ms"] == 200
     assert report["initial_model_loading_and_index_ms"] == 30
     assert report["reindex_ms"] == 20
     assert report["model_loading_and_index_ms"] == 50
+    assert ("diagnostics" in report) is diagnostics
+
+
+@pytest.fixture
+def diagnostic_case(tmp_path):
+    """Real source store; fake read-only vector service avoids model/dependency execution."""
+    corpus = {
+        "version": "diagnostic-unit",
+        "records": [
+            {
+                "event_id": f"source-{i}",
+                "project": "garden",
+                "title": f"Record {i}",
+                "content": "cedar " + "extraordinarilylongsyntheticword " * 80,
+            }
+            for i in range(12)
+        ],
+        "queries": [
+            {
+                "id": "query",
+                "text": "cedar",
+                "category": "paraphrase",
+                "language": "en",
+                "relevant": ["source-0"],
+            }
+        ],
+    }
+    actual = Store(tmp_path / "memory")
+    actual.initialize()
+    baseline.seed_store(actual, corpus)
+    rows = []
+    for record in corpus["records"]:
+        key = str(baseline.fixture_id(corpus, record))
+        for field, score in (("title", 0.75), ("content", 0.5)):
+            rows.append(
+                {
+                    "id": key,
+                    "revision": 1,
+                    "model": baseline.MODEL_ID,
+                    "field": field,
+                    "dimension": 2,
+                    "vector": struct.pack("<ff", score, math.sqrt(1 - score**2)),
+                    "start_char": 0,
+                    "end_char": len(record[field]),
+                }
+            )
+
+    class ChunkStore:
+        def __getattr__(self, name):
+            return getattr(actual, name)
+
+        @contextmanager
+        def connection(self):
+            class Read:
+                def execute(self, sql, args=()):
+                    if sql == "BEGIN":
+                        return []
+                    assert "v.revision=m.current_revision" in sql
+                    assert args == [baseline.MODEL_ID, "garden"]
+                    return rows
+
+            yield Read()
+
+    class Numpy:
+        @staticmethod
+        def frombuffer(data, *, dtype):
+            assert dtype == "<f4"
+            return struct.unpack("<" + "f" * (len(data) // 4), data)
+
+        @staticmethod
+        def dot(left, right):
+            return sum(a * b for a, b in zip(left, right, strict=True))
+
+        @staticmethod
+        def isfinite(vector):
+            class Finite:
+                def all(self):
+                    return all(math.isfinite(value) for value in vector)
+
+            return Finite()
+
+    class Semantic:
+        np = Numpy
+        score_bias = 0
+        forged_source = False
+
+        def __init__(self):
+            self.store = ChunkStore()
+            self.calls = []
+            self.embedded = []
+
+        def _chunks(self, text):
+            return [(0, len(text))]
+
+        def _embed(self, text):
+            self.embedded.append(text)
+            return (1.0, 0.0)
+
+        def status(self, *, projects=None):
+            count = len({row["id"] for row in rows})
+            return {
+                "state": "ready" if count == 12 else "pending_index",
+                "indexed": count,
+                "pending": 12 - count,
+                "model": baseline.MODEL_ID,
+            }
+
+        def search(self, query, *, projects, limit, project=None):
+            self.calls.append((query, projects, limit, project))
+            hits = []
+            for key in sorted({row["id"] for row in rows}):
+                record = actual.get(key, projects=projects)
+                excerpt = record.pop("content")[:800]
+                record.update(
+                    excerpt=excerpt,
+                    semantic_score=0.75 + self.score_bias,
+                    match_field="title",
+                    passage={"field": "content"},
+                )
+                if self.forged_source:
+                    record["source"] = "forged"
+                hits.append(record)
+            return hits[:limit]
+
+    semantic = Semantic()
+    return corpus, actual, rows, semantic, MemoryService(semantic.store, semantic)
+
+
+def test_field_diagnostics_preserve_limits_fields_and_actual_context_prefix(diagnostic_case):
+    corpus, _, _, semantic, service = diagnostic_case
+    report = baseline.field_diagnostics(service, corpus, None)
+    assert report["quality_measured"] is report["product_latency_measured"] is False
+    query = report["queries"][0]
+    assert set(query["limits"]) == {"1", "3", "20", "50"}
+    assert [len(query["limits"][str(n)]["results"]) for n in (1, 3, 20, 50)] == [1, 3, 12, 12]
+    hit = query["limits"]["3"]["results"][0]
+    assert hit["evidence"]["overall"] == hit["evidence"]["title"]
+    assert hit["evidence"]["title"]["score"] == 0.75
+    assert hit["evidence"]["content"]["score"] == 0.5
+    assert hit["evidence"]["content"]["excerpt"] == corpus["records"][0]["content"][:800]
+    context = query["context"]
+    assert 0 < len(context["included"]) < len(context["search_returned"])
+    assert context["included"] == context["search_returned"][: context["memories"]]
+    assert context["characters"] == len(context["context"]) <= 6000
+    assert context["max_chars"] == 6000 and context["search_limit"] == 20
+    assert semantic.embedded == ["cedar"]
+    assert all(call[0] == "cedar" and call[1] == ("garden",) for call in semantic.calls)
+
+
+def test_field_diagnostics_keep_actual_pending_unknown_distinct_from_low_scores(diagnostic_case):
+    corpus, _, rows, _, service = diagnostic_case
+    missing = str(baseline.fixture_id(corpus, corpus["records"][0]))
+    rows[:] = [row for row in rows if row["id"] != missing]
+    report = baseline.field_diagnostics(service, corpus, None)
+    assert report["index"]["state"] == "pending_index" and report["index"]["pending"] == 1
+    results = report["queries"][0]["limits"]["50"]["results"]
+    unknown = next(hit for hit in results if hit["id"] == missing)["evidence"]
+    assert unknown == {
+        "model": baseline.MODEL_ID,
+        "current_indexed": False,
+        "overall": None,
+        "title": None,
+        "content": None,
+    }
+    assert report["quality_measured"] is False
+
+
+@pytest.mark.parametrize(
+    "failure", ["vector", "nonfinite", "model", "score", "offset", "provenance"]
+)
+def test_field_diagnostics_fail_on_invalid_scoring_or_source(diagnostic_case, failure):
+    corpus, _, rows, semantic, service = diagnostic_case
+    if failure == "vector":
+        rows[0]["dimension"] = 3
+    elif failure == "nonfinite":
+        rows[0]["vector"] = struct.pack("<ff", math.nan, 0)
+    elif failure == "model":
+        rows[0]["model"] = "wrong-model"
+    elif failure == "score":
+        semantic.score_bias = 0.125
+    elif failure == "offset":
+        rows[0]["start_char"] = 1
+    elif failure == "provenance":
+        semantic.forged_source = True
+    with pytest.raises(RuntimeError):
+        baseline.field_diagnostics(service, corpus, None)
+
+
+def test_field_diagnostics_deadline_and_context_corruption_are_failures(
+    diagnostic_case, monkeypatch
+):
+    corpus, _, _, semantic, service = diagnostic_case
+    with pytest.raises(RuntimeError, match="declared time budget"):
+        baseline.field_diagnostics(service, corpus, None, timeout_seconds=0)
+    assert semantic.calls == []
+    original = service.context
+
+    def corrupted(*args, **kwargs):
+        response = original(*args, **kwargs)
+        return dict(response, context=response["context"] + "forged header")
+
+    monkeypatch.setattr(service, "context", corrupted)
+    with pytest.raises(RuntimeError, match="emitted headers/excerpts"):
+        baseline.field_diagnostics(service, corpus, None)
+
+
+def test_field_diagnostics_reject_changed_baseline_order(diagnostic_case, monkeypatch):
+    corpus, _, _, _, service = diagnostic_case
+    original = service.search
+    count = 0
+
+    def reordered(query, *, limit, **kwargs):
+        nonlocal count
+        result = original(query, limit=limit, **kwargs)
+        if limit == 3:
+            count += 1
+            if count > 1:
+                result["results"].reverse()
+        return result
+
+    monkeypatch.setattr(service, "search", reordered)
+    with pytest.raises(RuntimeError, match="IDs/order/evidence changed"):
+        baseline.field_diagnostics(service, corpus, None)
+
+
+def test_field_diagnostics_reject_known_score_disagreement_and_scope_overflow(
+    diagnostic_case, monkeypatch
+):
+    corpus, _, _, semantic, service = diagnostic_case
+    original = semantic.search
+
+    def inconsistent(query, *, limit, **kwargs):
+        hits = original(query, limit=limit, **kwargs)
+        if limit < 50:
+            for hit in hits:
+                hit["semantic_score"] += 0.125
+        return hits
+
+    monkeypatch.setattr(semantic, "search", inconsistent)
+    with pytest.raises(RuntimeError, match="previously known baseline score"):
+        baseline.field_diagnostics(service, corpus, None)
+    monkeypatch.setattr(semantic, "search", original)
+    monkeypatch.setattr(semantic, "status", lambda **kwargs: {"state": "ready", "indexed": 51})
+    with pytest.raises(RuntimeError, match="at most 50"):
+        baseline.field_diagnostics(service, corpus, None)
+
+
+def test_challenge_role_is_the_only_exact_25_25_exception(v2_corpus, tmp_path):
+    challenge = copy.deepcopy(v2_corpus)
+    challenge.update(version="cz-en-challenge-v1", evaluation_role="challenge")
+    challenge["queries"] = challenge["queries"][:25] + challenge["queries"][-25:]
+    path = tmp_path / "challenge.json"
+    path.write_text(json.dumps(challenge))
+    assert baseline.load_corpus(path)["evaluation_role"] == "challenge"
+    for change in (
+        {"evaluation_role": None},
+        {"evaluation_role": "ordinary"},
+        {"version": "other"},
+        {"split": "holdout"},
+    ):
+        bad = dict(challenge, **change)
+        path.write_text(json.dumps(bad))
+        with pytest.raises(ValueError):
+            baseline.load_corpus(path)
+    for remove in (0, -1):
+        bad = copy.deepcopy(challenge)
+        del bad["queries"][remove]
+        path.write_text(json.dumps(bad))
+        with pytest.raises(ValueError, match="exactly 25/25"):
+            baseline.load_corpus(path)
+    bad = copy.deepcopy(challenge)
+    bad["queries"].append(dict(bad["queries"][-1], id="extra-negative"))
+    path.write_text(json.dumps(bad))
+    with pytest.raises(ValueError, match="exactly 25/25"):
+        baseline.load_corpus(path)
+    ordinary = dict(challenge, version="ordinary-v2")
+    del ordinary["evaluation_role"]
+    path.write_text(json.dumps(ordinary))
+    with pytest.raises(ValueError, match="insufficient"):
+        baseline.load_corpus(path)
+
+
+def test_field_diagnostics_are_explicit_and_development_only(monkeypatch):
+    monkeypatch.setattr(baseline, "run_seed", lambda *args, **kwargs: pytest.fail("No model setup"))
+    with pytest.raises(ValueError, match="development-only"):
+        baseline.run(Path("not-used"), baseline.CORPUS, diagnostics=True)
