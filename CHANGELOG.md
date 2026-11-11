@@ -9,6 +9,18 @@
   retain standalone component status calls and semantic-disabled operation.
 - Retain schema v2, dependency versions, model artifacts, search behavior and
   existing credentials. No data migration or index rebuild is required.
+- Run the pinned real embedding model in a dedicated CI job with verified model
+  caching and a receipt that rejects skipped tests. Publish a frozen synthetic
+  CZ/EN full-text/hybrid relevance baseline with source and environment hashes.
+  Retrieval behavior, dependencies and schema remain unchanged.
+
+- Accept technical URL usernames, explicit credential placeholders and lowercase
+  `sk-learn` references without weakening recognized credential rejection. Return
+  safe detection categories alongside field labels on rejected writes.
+- Preserve unrelated URL query pairs and fragments during minimization, and make
+  supported redacted values stable on recheck. Add synthetic Store, audit and MCP
+  regressions. Capture and CORTEX modules remain disabled; no schema or dependency
+  changes are required.
 
 ## 1.0.1 — 2026-11-08
 

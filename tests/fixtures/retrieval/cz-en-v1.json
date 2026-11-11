@@ -1,0 +1,207 @@
+{
+  "version": "cz-en-v1",
+  "description": "Frozen fictional notes and human-declared relevance judgments; no personal or production data.",
+  "records": [
+    {
+      "event_id": "storage",
+      "project": "garden",
+      "title": "Local storage",
+      "content": "The fictional Garden application stores project notes in a local SQLite database. It does not use a hosted database."
+    },
+    {
+      "event_id": "architecture",
+      "project": "garden",
+      "title": "Návrh systému",
+      "content": "V architektuře aplikace Garden oddělujeme ukládání poznámek od síťového rozhraní. Každá část má jednu odpovědnost."
+    },
+    {
+      "event_id": "decision",
+      "project": "garden",
+      "title": "Zápis rozhodnutí",
+      "content": "Poslední rozhodnutí týmu Garden zavádí synchronní zápis změn. Potvrzení přijde až po dokončení transakce."
+    },
+    {
+      "event_id": "food",
+      "project": "garden",
+      "title": "Fictional visitor meal",
+      "content": "A fictional visitor has a peanut allergy. The kitchen must avoid peanuts and peanut butter in this visitor's food."
+    },
+    {
+      "event_id": "travel",
+      "project": "garden",
+      "title": "Týmový výlet",
+      "content": "Fiktivní tým Garden pojede v pátek do Brna. V sobotu navštíví vilu Tugendhat."
+    },
+    {
+      "event_id": "deployment",
+      "project": "garden",
+      "title": "Preview approval",
+      "content": "Preview builds run in staging. Publishing a production version requires explicit approval from the project owner."
+    },
+    {
+      "event_id": "backup",
+      "project": "garden",
+      "title": "Recovery copies",
+      "content": "Encrypted database snapshots are copied to a separate test host each night. Recovery exercises use a disposable directory."
+    },
+    {
+      "event_id": "naming",
+      "project": "garden",
+      "title": "Pravidla pojmenování",
+      "content": "Názvy pracovních větví projektu Garden začínají slovem feature. Popis změny má být stručný a konkrétní."
+    },
+    {
+      "event_id": "workshop-telescope",
+      "project": "workshop",
+      "title": "Telescope calibration",
+      "content": "The Workshop telescope uses an azimuth calibration table. The observatory opens at midnight."
+    },
+    {
+      "event_id": "workshop-storage",
+      "project": "workshop",
+      "title": "Workshop database",
+      "content": "The Workshop application stores project notes in PostgreSQL. This decision applies only to Workshop."
+    }
+  ],
+  "queries": [
+    {
+      "id": "en-storage",
+      "category": "exact",
+      "language": "en",
+      "text": "SQLite database",
+      "relevant": [
+        "storage"
+      ]
+    },
+    {
+      "id": "cz-decision",
+      "category": "exact",
+      "language": "cs",
+      "text": "rozhodnutí synchronní zápis",
+      "relevant": [
+        "decision"
+      ]
+    },
+    {
+      "id": "cz-diacritics",
+      "category": "diacritics",
+      "language": "cs",
+      "text": "nazvy pracovnich vetvi",
+      "relevant": [
+        "naming"
+      ]
+    },
+    {
+      "id": "cz-architecture-inflection",
+      "category": "inflection",
+      "language": "cs",
+      "text": "architektura",
+      "relevant": [
+        "architecture"
+      ]
+    },
+    {
+      "id": "cz-decision-inflection",
+      "category": "inflection",
+      "language": "cs",
+      "text": "rozhodnutim",
+      "relevant": [
+        "decision"
+      ]
+    },
+    {
+      "id": "cz-food",
+      "category": "cross_language",
+      "language": "cs",
+      "text": "Kterému jídlu se má návštěvník kvůli alergii vyhnout?",
+      "relevant": [
+        "food"
+      ]
+    },
+    {
+      "id": "cz-storage",
+      "category": "cross_language",
+      "language": "cs",
+      "text": "Kde jsou uložené poznámky aplikace?",
+      "relevant": [
+        "storage"
+      ]
+    },
+    {
+      "id": "en-travel",
+      "category": "cross_language",
+      "language": "en",
+      "text": "Which city will the team visit on Friday?",
+      "relevant": [
+        "travel"
+      ]
+    },
+    {
+      "id": "en-naming",
+      "category": "cross_language",
+      "language": "en",
+      "text": "How should the team name a new working branch?",
+      "relevant": [
+        "naming"
+      ]
+    },
+    {
+      "id": "cz-production",
+      "category": "cross_language",
+      "language": "cs",
+      "text": "Kdo schvaluje zveřejnění produkční verze?",
+      "relevant": [
+        "deployment"
+      ]
+    },
+    {
+      "id": "en-backup",
+      "category": "paraphrase",
+      "language": "en",
+      "text": "How are recovery copies kept away from the original machine?",
+      "relevant": [
+        "backup"
+      ]
+    },
+    {
+      "id": "en-database-recovery",
+      "category": "multiple_relevant",
+      "language": "en",
+      "text": "database storage and recovery snapshots",
+      "relevant": [
+        "storage",
+        "backup"
+      ]
+    },
+    {
+      "id": "short-cz",
+      "category": "short",
+      "language": "cs",
+      "text": "Brno",
+      "relevant": [
+        "travel"
+      ]
+    },
+    {
+      "id": "unrelated-physics",
+      "category": "negative",
+      "language": "en",
+      "text": "What is the mass of a neutrino?",
+      "relevant": []
+    },
+    {
+      "id": "unrelated-cz",
+      "category": "negative",
+      "language": "cs",
+      "text": "Jaké je složení atmosféry Neptunu?",
+      "relevant": []
+    },
+    {
+      "id": "excluded-project",
+      "category": "project_isolation",
+      "language": "en",
+      "text": "azimuth telescope calibration observatory",
+      "relevant": []
+    }
+  ]
+}
