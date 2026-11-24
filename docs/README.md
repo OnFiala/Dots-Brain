@@ -1,9 +1,14 @@
 # Documentation
 
-Dots Brain 1.0.1 documents the Linux core: explicitly saved notes, source
-references, revisions, full-text search and optional local CPU embeddings.
+These source documents describe the Linux core in the unreleased 1.0.2 default
+branch: explicitly saved notes, source references, revisions, full-text search and optional local CPU embeddings.
 Capture and CORTEX remain disabled; individual assistant behavior requires its
 own verification.
+
+The latest published release is **[1.0.1](https://github.com/OnFiala/Dots-Brain/releases/tag/v1.0.1)**.
+Use its [versioned documentation index](https://github.com/OnFiala/Dots-Brain/blob/v1.0.1/docs/README.md)
+for that installation. The installation page below targets 1.0.1; the remaining
+local links describe current source and do not establish a 1.0.2 publication.
 
 ## Start here
 
