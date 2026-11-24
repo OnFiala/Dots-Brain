@@ -5,9 +5,9 @@ stores source metadata and revisions in one SQLite database, supports full-text
 search, and can add local CPU embeddings. It does not automatically collect
 assistant conversations.
 
-The stable Linux core supports explicit notes,
-source references, revisions, full-text search and optional local CPU embeddings.
-Publication and acceptance on your own host remain separate steps.
+The latest published Linux core release is **[1.0.1](https://github.com/OnFiala/Dots-Brain/releases/tag/v1.0.1)**.
+It supports explicit notes, source references, revisions, full-text search and
+optional local CPU embeddings. Acceptance on your own host remains a separate step.
 
 A **Dot** means an AI assistant or client using this shared service. It is a
 product term, not a separate database or a grant of access.
@@ -17,23 +17,26 @@ MCP tools and offline maintenance. Capture and CORTEX modules are disabled and
 excluded from the core distribution. Stability applies to the documented core;
 it does not guarantee that every assistant uses memory in every conversation.
 
+The default branch contains unreleased 1.0.2 changes. The installation below
+uses published 1.0.1; its [versioned documentation](https://github.com/OnFiala/Dots-Brain/blob/v1.0.1/docs/README.md)
+owns that release's commands and behavior. Source version metadata and passing CI
+do not establish publication.
+
 ## Quick start on Linux
 
 Use Python **3.11 or 3.12** with SQLite **3.42 or newer and FTS5**,
 [uv](https://docs.astral.sh/uv/), `curl`, `unzip` and `sha256sum`.
 Install the versioned source/plugin ZIP from the
-[1.0.2 release](https://github.com/OnFiala/Dots-Brain/releases/tag/v1.0.2) once it is
-published with its verified assets. A source checkout or PR does not establish
-download availability; check [published releases](https://github.com/OnFiala/Dots-Brain/releases).
+[1.0.1 release](https://github.com/OnFiala/Dots-Brain/releases/tag/v1.0.1).
 Start in a new installation directory, then verify the archive before extracting it:
 
 ```sh
 set -eu
-RELEASE_URL=https://github.com/OnFiala/Dots-Brain/releases/download/v1.0.2
+RELEASE_URL=https://github.com/OnFiala/Dots-Brain/releases/download/v1.0.1
 curl --fail --location --output SHA256SUMS "$RELEASE_URL/SHA256SUMS"
-curl --fail --location --output dots-brain-1.0.2-plugin.zip "$RELEASE_URL/dots-brain-1.0.2-plugin.zip"
+curl --fail --location --output dots-brain-1.0.1-plugin.zip "$RELEASE_URL/dots-brain-1.0.1-plugin.zip"
 sha256sum --check --ignore-missing SHA256SUMS
-unzip dots-brain-1.0.2-plugin.zip
+unzip dots-brain-1.0.1-plugin.zip
 cd dots-brain
 uv sync --locked --no-dev --python 3.12
 .venv/bin/dots-brain --version
@@ -41,7 +44,7 @@ uv sync --locked --no-dev --python 3.12
 .venv/bin/dots-brain --data-dir /absolute/private/memory doctor
 ```
 
-The version must be `1.0.2`. Use `--python 3.11` instead if needed. The ZIP
+The version must be `1.0.1`. Use `--python 3.11` instead if needed. The ZIP
 contains the release's dependency lock; keep both together. See
 [installation](docs/installation.md) for the verified wheel alternative and
 prerequisite checks. Use a local POSIX filesystem with working SQLite and

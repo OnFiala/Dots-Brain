@@ -1,6 +1,12 @@
 # Installation and operation
 
-Version 1.0.2 uses schema v2. Linux with Python **3.11 or 3.12** is the
+This page installs the latest published release, **[1.0.1](https://github.com/OnFiala/Dots-Brain/releases/tag/v1.0.1)**.
+The default branch contains unreleased 1.0.2 source; it is not the downloaded
+release. Use the [1.0.1 documentation](https://github.com/OnFiala/Dots-Brain/blob/v1.0.1/docs/README.md)
+with the verified 1.0.1 archive and lock. The commands below target those published
+assets; a future release needs its own verified downloads and matching instructions.
+
+Version 1.0.1 uses schema v2. Linux with Python **3.11 or 3.12** is the
 supported deployment target. Python must provide SQLite **3.42 or newer with
 FTS5**. Data, backups and exports need a local POSIX filesystem with SQLite and advisory lock support.
 macOS supports local development and stdio checks; managed `up` requires Linux
@@ -16,19 +22,17 @@ to the canonical data. Keep host paths and credentials out of public reports.
 
 Use a fresh installation directory, outside the private data directory. The
 commands require [uv](https://docs.astral.sh/uv/), `curl`, `unzip` and GNU
-`sha256sum`. They target the
-[1.0.2 release](https://github.com/OnFiala/Dots-Brain/releases/tag/v1.0.2) and require
-its published, verified assets. Source version metadata and passing CI do not
-establish download availability; check [published releases](https://github.com/OnFiala/Dots-Brain/releases).
+`sha256sum`. They target the published
+[1.0.1 release](https://github.com/OnFiala/Dots-Brain/releases/tag/v1.0.1).
 Download the attached source/plugin ZIP, not a floating `main` checkout:
 
 ```sh
 set -eu
-RELEASE_URL=https://github.com/OnFiala/Dots-Brain/releases/download/v1.0.2
+RELEASE_URL=https://github.com/OnFiala/Dots-Brain/releases/download/v1.0.1
 curl --fail --location --output SHA256SUMS "$RELEASE_URL/SHA256SUMS"
-curl --fail --location --output dots-brain-1.0.2-plugin.zip "$RELEASE_URL/dots-brain-1.0.2-plugin.zip"
+curl --fail --location --output dots-brain-1.0.1-plugin.zip "$RELEASE_URL/dots-brain-1.0.1-plugin.zip"
 sha256sum --check --ignore-missing SHA256SUMS
-unzip dots-brain-1.0.2-plugin.zip
+unzip dots-brain-1.0.1-plugin.zip
 cd dots-brain
 ```
 
@@ -62,12 +66,12 @@ Keep the extracted source ZIP for its matching lock and installed-wheel verifier
 download the wheel next to that directory and verify it with the same manifest:
 
 ```sh
-curl --fail --location --output ../dots_brain-1.0.2-py3-none-any.whl "$RELEASE_URL/dots_brain-1.0.2-py3-none-any.whl"
+curl --fail --location --output ../dots_brain-1.0.1-py3-none-any.whl "$RELEASE_URL/dots_brain-1.0.1-py3-none-any.whl"
 (cd .. && sha256sum --check --ignore-missing SHA256SUMS)
 uv export --locked --no-dev --no-emit-project --format requirements.txt --output-file core-requirements.txt
 uv venv --python 3.12 ../dots-brain-venv
 uv pip sync --python ../dots-brain-venv/bin/python --require-hashes core-requirements.txt
-uv pip install --python ../dots-brain-venv/bin/python --no-deps ../dots_brain-1.0.2-py3-none-any.whl
+uv pip install --python ../dots-brain-venv/bin/python --no-deps ../dots_brain-1.0.1-py3-none-any.whl
 env -u PYTHONPATH ../dots-brain-venv/bin/python scripts/verify_wheel.py
 BRAIN_EXEC="$PWD/../dots-brain-venv/bin/dots-brain"
 "$BRAIN_EXEC" --version
@@ -77,8 +81,8 @@ The checksum check must report both downloaded assets as `OK`. Dependencies
 come from `uv.lock` with required hashes; `--no-deps` prevents the wheel install
 from resolving a different dependency set. The verifier uses disposable stores
 and real local stdio/HTTP MCP calls. It must report `state: "passed"` and version
-`1.0.2`; it does not use your canonical memory directory. This core-only verifier
-expects no semantic extra. See [verification](verification.md#installed-wheel).
+`1.0.1`; it does not use your canonical memory directory. This core-only verifier
+expects no semantic extra. See [verification](https://github.com/OnFiala/Dots-Brain/blob/v1.0.1/docs/verification.md#installed-wheel).
 
 ## Initialize and connect
 
@@ -90,11 +94,11 @@ canonical data directory outside the extracted source and environment:
 "$BRAIN_EXEC" --data-dir /absolute/private/memory doctor
 ```
 
-`--version` must print `1.0.2`; inspect `doctor` for SQLite, storage and capability
+`--version` must print `1.0.1`; inspect `doctor` for SQLite, storage and capability
 failures before starting a service. Python's `sqlite3` library is what matters,
 not a separately installed `sqlite3` shell.
 
-An existing v1 store needs the explicit [offline upgrade](upgrading.md). A new
+An existing v1 store needs the explicit [offline upgrade](https://github.com/OnFiala/Dots-Brain/blob/v1.0.1/docs/upgrading.md). A new
 store uses schema v2. Schema v3/v4 is refused; it is never relabeled or downgraded.
 
 One client can use `serve` for owner stdio MCP. For a managed Linux HTTP service:
@@ -123,7 +127,7 @@ named phase before retrying. Child output is not copied into that result.
 Bootstrap invokes `up --resume`. Before running it on an existing store, establish
 why the store is disabled and confirm that resuming is authorized. Resume accepts
 only ordinary uninstall state, including its recognized legacy form; it never
-bypasses restore or unknown recovery barriers. Follow [recovery](upgrading.md)
+bypasses restore or unknown recovery barriers. Follow [recovery](https://github.com/OnFiala/Dots-Brain/blob/v1.0.1/docs/upgrading.md)
 for those barriers. Bootstrap is not a generic recovery command.
 
 ## An existing supervisor
@@ -136,7 +140,7 @@ absolute path in a supervisor unit. The equivalent shell command is:
 ```
 
 The private port accepts scoped static credentials and OAuth. The second port
-accepts OAuth only; route public HTTPS solely to that port. See [OAuth](oauth.md)
+accepts OAuth only; route public HTTPS solely to that port. See [OAuth](https://github.com/OnFiala/Dots-Brain/blob/v1.0.1/docs/oauth.md)
 for offline configuration and the explicit owner approval flow.
 
 Use an existing private credential for read-only diagnosis. A new local client
@@ -171,7 +175,7 @@ For the wheel installation, use its matching release lock and verified wheel:
 ```sh
 uv export --locked --no-dev --no-emit-project --extra semantic --format requirements.txt --output-file semantic-requirements.txt
 uv pip sync --python ../dots-brain-venv/bin/python --require-hashes semantic-requirements.txt
-uv pip install --python ../dots-brain-venv/bin/python --no-deps ../dots_brain-1.0.2-py3-none-any.whl
+uv pip install --python ../dots-brain-venv/bin/python --no-deps ../dots_brain-1.0.1-py3-none-any.whl
 ```
 
 Keep `BRAIN_EXEC` pointed at the chosen environment. Do not run the core-only
@@ -187,13 +191,13 @@ files. Enable semantic service operation with `--semantic` through the chosen
 supervisor, or a separately authorized `down`/`up --semantic` cycle. `index`
 reports `indexed_now` separately from the total. FTS remains available during
 indexing or a query embedding failure. Relevance, especially short words and
-negative queries, needs a corpus check and owner judgment; see [using memory](using-memory.md).
+negative queries, needs a corpus check and owner judgment; see [using memory](https://github.com/OnFiala/Dots-Brain/blob/v1.0.1/docs/using-memory.md).
 
 ## Installation boundaries
 
 The plugin manifest describes metadata and the setup skill. It does not install
 a service or grant memory access. Capture and CORTEX are disabled and excluded
 from the core distribution; their old configuration does not activate them.
-See [activity](activity.md) for preserved state and activation boundaries. Boot startup, public
+See [activity](https://github.com/OnFiala/Dots-Brain/blob/v1.0.1/docs/activity.md) for preserved state and activation boundaries. Boot startup, public
 TLS, real-assistant behavior and recovery of real data need separate acceptance.
 The deployment templates are examples, not an observed installation.
